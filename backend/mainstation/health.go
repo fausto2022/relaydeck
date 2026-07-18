@@ -183,6 +183,11 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 	if err != nil {
 		return nil, err
 	}
+	if oldHealth != newHealth {
+		if rankingErr := s.ReconcilePoolRanking(ctx, pool.ID, "health"); rankingErr != nil && s.log != nil {
+			s.log.Warn("reconcile main station scheduling rank", "err", rankingErr, "pool_id", pool.ID)
+		}
+	}
 	if newHealth == "unhealthy" || (newHealth == "healthy" && (oldHealth == "unhealthy" || oldHealth == "quarantined" || oldHealth == "degraded")) {
 		s.notifyHealthTransition(ctx, pool, updated, &check, oldHealth, newHealth)
 	}

@@ -63,9 +63,24 @@ func TestAdminClientUsesAPIKeyAndDecodesAccountWrites(t *testing.T) {
 				"data": map[string]any{"id": 8, "name": "existing", "status": "active"},
 			})
 		case http.MethodPut:
-			var body AdminAccount
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			var raw map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 				t.Fatalf("decode update body: %v", err)
+			}
+			if len(raw) == 3 {
+				if raw["concurrency"] != float64(40) || raw["priority"] != float64(2) || raw["load_factor"] != float64(40) {
+					t.Fatalf("scheduling update body = %#v", raw)
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"code": 0,
+					"data": map[string]any{"id": 8, "name": "updated", "status": "active", "concurrency": 40, "priority": 2, "load_factor": 40},
+				})
+				return
+			}
+			encoded, _ := json.Marshal(raw)
+			var body AdminAccount
+			if err := json.Unmarshal(encoded, &body); err != nil {
+				t.Fatalf("decode full update body: %v", err)
 			}
 			if body.Status != "inactive" {
 				t.Fatalf("update status = %q, want inactive", body.Status)
@@ -204,6 +219,17 @@ func TestAdminClientUsesAPIKeyAndDecodesAccountWrites(t *testing.T) {
 	}
 	if account.Name != "updated" || account.Status != "inactive" {
 		t.Fatalf("updated account = %#v", account)
+	}
+	account, err = client.UpdateAccountScheduling(context.Background(), target, 8, AdminAccountSchedulingUpdate{
+		Concurrency: 40,
+		Priority:    2,
+		LoadFactor:  40,
+	})
+	if err != nil {
+		t.Fatalf("UpdateAccountScheduling: %v", err)
+	}
+	if account.Concurrency != 40 || account.Priority != 2 || account.LoadFactor != 40 {
+		t.Fatalf("scheduling account = %#v", account)
 	}
 	account, err = client.SetAccountSchedulable(context.Background(), target, 8, false)
 	if err != nil {

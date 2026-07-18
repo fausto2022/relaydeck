@@ -92,6 +92,12 @@ type AdminAccountTestResult struct {
 	ResponseText string
 }
 
+type AdminAccountSchedulingUpdate struct {
+	Concurrency int `json:"concurrency"`
+	Priority    int `json:"priority"`
+	LoadFactor  int `json:"load_factor"`
+}
+
 func (a *AdminClient) Ping(ctx context.Context, t AdminTarget) error {
 	if _, err := a.ListGroups(ctx, t, true); err != nil {
 		return err
@@ -337,6 +343,26 @@ func (a *AdminClient) UpdateAccount(ctx context.Context, t AdminTarget, id int64
 		return nil, err
 	}
 	return out, nil
+}
+
+func (a *AdminClient) UpdateAccountScheduling(ctx context.Context, t AdminTarget, id int64, req AdminAccountSchedulingUpdate) (*AdminAccount, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := a.client.http.R().
+		SetContext(ctx).
+		SetHeader("Content-Type", "application/json").
+		SetHeader("x-api-key", t.APIKey).
+		SetBody(body).
+		Put(strings.TrimRight(t.BaseURL, "/") + "/api/v1/admin/accounts/" + strconv.FormatInt(id, 10))
+	if err != nil {
+		return nil, err
+	}
+	if resp.IsError() {
+		return nil, fmt.Errorf("update admin account scheduling: %w", connector.HTTPStatusError(resp.StatusCode(), resp.Body()))
+	}
+	return decodeAdminAccount(resp.Body())
 }
 
 func (a *AdminClient) SetAccountSchedulable(ctx context.Context, t AdminTarget, id int64, schedulable bool) (*AdminAccount, error) {

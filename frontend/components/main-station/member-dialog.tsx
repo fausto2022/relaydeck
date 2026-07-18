@@ -54,7 +54,6 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
   const [enabled, setEnabled] = useState(true)
   const [healthEnabled, setHealthEnabled] = useState(true)
   const [healthModel, setHealthModel] = useState("")
-  const [weight, setWeight] = useState(1)
   const [priority, setPriority] = useState(1)
   const [concurrency, setConcurrency] = useState(0)
   const [concurrencyDetected, setConcurrencyDetected] = useState(false)
@@ -76,7 +75,6 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
     setEnabled(true)
     setHealthEnabled(true)
     setHealthModel("")
-    setWeight(1)
     setPriority(1)
     setConcurrency(0)
     setConcurrencyDetected(false)
@@ -154,7 +152,6 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
           remote_account_id: mode === "bound" ? remoteAccountID : undefined,
           manual_binding_confirmed: mode === "bound" ? manualConfirmed : false,
           enabled,
-          weight,
           priority,
           concurrency,
           rate_convert_mode: "raw",
@@ -257,15 +254,15 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
                 {concurrencyDetected ? "已从上游账号自动填入，可按实际情况修改" : concurrencyError || "选择账号来源后自动读取"}
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="account-priority">优先级</Label>
-                <Input id="account-priority" type="number" min={1} value={priority} onChange={(event) => setPriority(Number(event.target.value))} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="account-weight">权重</Label>
-                <Input id="account-weight" type="number" min={1} value={weight} onChange={(event) => setWeight(Number(event.target.value))} />
-              </div>
+            <div className="space-y-2">
+              <Label>调度角色</Label>
+              <Select value={String(priority)} onValueChange={(value) => setPriority(Number(value))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">主力</SelectItem>
+                  <SelectItem value="2">备用</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="account-health-model">完整检测模型（可选）</Label>

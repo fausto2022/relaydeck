@@ -12,6 +12,13 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { apiFetch } from "@/lib/api"
 import type {
@@ -31,7 +38,6 @@ interface Props {
 export function AccountSettingsDialog({ open, onOpenChange, workspace, account, onSaved }: Props) {
   const [concurrency, setConcurrency] = useState(1)
   const [priority, setPriority] = useState(1)
-  const [weight, setWeight] = useState(1)
   const [healthEnabled, setHealthEnabled] = useState(true)
   const [healthModel, setHealthModel] = useState("")
   const [enabled, setEnabled] = useState(true)
@@ -40,8 +46,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
   useEffect(() => {
     if (!open || !account?.member) return
     setConcurrency(account.member.concurrency)
-    setPriority(account.member.priority)
-    setWeight(account.member.weight)
+    setPriority(account.member.priority === 2 ? 2 : 1)
     setHealthEnabled(account.member.health_enabled)
     setHealthModel(account.member.health_model ?? "")
     setEnabled(account.member.enabled)
@@ -50,8 +55,8 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
   async function handleSave() {
     const member = account?.member
     if (!workspace || !account || !member) return
-    if (concurrency <= 0 || priority <= 0 || weight <= 0) {
-      toast.error("并发、优先级和权重必须大于 0")
+    if (concurrency <= 0) {
+      toast.error("并发必须大于 0")
       return
     }
     setBusy(true)
@@ -64,7 +69,6 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
           source_group_id: member.source_group_id ?? null,
           source_group_name: member.source_group_name ?? "",
           enabled,
-          weight,
           priority,
           concurrency,
           health_enabled: healthEnabled,
@@ -91,18 +95,19 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
         </DialogHeader>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2 sm:col-span-2">
+          <div className="space-y-2">
             <Label htmlFor="edit-account-concurrency">并发</Label>
             <Input id="edit-account-concurrency" type="number" min={1} value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))} />
-            <p className="text-xs text-muted-foreground">按主站实际可用并发填写，保存后立即应用到 Account。</p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit-account-priority">优先级</Label>
-            <Input id="edit-account-priority" type="number" min={1} value={priority} onChange={(event) => setPriority(Number(event.target.value))} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="edit-account-weight">权重</Label>
-            <Input id="edit-account-weight" type="number" min={1} value={weight} onChange={(event) => setWeight(Number(event.target.value))} />
+            <Label>调度角色</Label>
+            <Select value={String(priority)} onValueChange={(value) => setPriority(Number(value))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">主力</SelectItem>
+                <SelectItem value="2">备用</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="edit-account-health-model">完整检测模型（可选）</Label>

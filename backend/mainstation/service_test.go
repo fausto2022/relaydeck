@@ -25,6 +25,7 @@ type fakeAdminClient struct {
 	accounts            []sub2api.AdminAccount
 	createRequests      []sub2api.AdminAccount
 	updateRequests      []sub2api.AdminAccount
+	schedulingUpdates   []sub2api.AdminAccountSchedulingUpdate
 	schedulableCalls    []bool
 	setSchedulableErr   error
 	applyBeforeSetError bool
@@ -78,6 +79,20 @@ func (f *fakeAdminClient) UpdateAccount(_ context.Context, _ sub2api.AdminTarget
 		if f.accounts[i].ID == id {
 			f.accounts[i] = req
 			item := req
+			return &item, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+func (f *fakeAdminClient) UpdateAccountScheduling(_ context.Context, _ sub2api.AdminTarget, id int64, req sub2api.AdminAccountSchedulingUpdate) (*sub2api.AdminAccount, error) {
+	f.schedulingUpdates = append(f.schedulingUpdates, req)
+	for i := range f.accounts {
+		if f.accounts[i].ID == id {
+			f.accounts[i].Concurrency = req.Concurrency
+			f.accounts[i].Priority = req.Priority
+			f.accounts[i].Weight = req.LoadFactor
+			f.accounts[i].LoadFactor = float64(req.LoadFactor)
+			item := f.accounts[i]
 			return &item, nil
 		}
 	}
@@ -251,6 +266,9 @@ func TestBoundMemberIsUniqueAndBecomesOrphaned(t *testing.T) {
 	if member.BindingStatus != "manual_confirmed" || member.Status != "active" {
 		t.Fatalf("bound member = %#v", member)
 	}
+	if len(admin.schedulingUpdates) != 1 || admin.schedulingUpdates[0].Concurrency != 12 || admin.schedulingUpdates[0].LoadFactor != 12 || admin.schedulingUpdates[0].Priority != 1 {
+		t.Fatalf("bound scheduling updates = %#v", admin.schedulingUpdates)
+	}
 	if _, err := service.CreateMember(context.Background(), pool.ID, MemberInput{
 		OwnershipMode: "bound", SourceChannelID: channel.ID, RemoteAccountID: &remoteID,
 		ManualBindingConfirmed: true,
@@ -324,7 +342,7 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		AccountName: "OpenAI-01", OwnershipMode: "managed", SourceChannelID: channel.ID, SourceGroupID: &sourceGroupID,
 		SourceGroupName: "source-group", Enabled: boolPtr(true), HealthEnabled: boolPtr(true),
 		HealthAPIMode: "openai_chat",
-		Weight:        2, Priority: 3, RateConvertMode: "raw", CostAdjustment: 1,
+		Priority:      primarySchedulingRole, RateConvertMode: "raw", CostAdjustment: 1,
 	})
 	if err != nil {
 		t.Fatalf("create managed member: %v", err)
@@ -348,21 +366,24 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	if request.Concurrency != channels.concurrency {
 		t.Fatalf("managed account concurrency = %d, want %d", request.Concurrency, channels.concurrency)
 	}
+	if request.Weight != channels.concurrency || request.LoadFactor != float64(channels.concurrency) || request.Priority != 1 {
+		t.Fatalf("managed account automatic scheduling = %#v", request)
+	}
 	if len(admin.schedulableCalls) != 1 || !admin.schedulableCalls[0] {
 		t.Fatalf("schedulable calls = %#v", admin.schedulableCalls)
 	}
 	updated, err := service.UpdateMember(context.Background(), pool.ID, member.ID, MemberInput{
 		AccountName: member.AccountName, SourceChannelID: member.SourceChannelID, SourceGroupID: member.SourceGroupID,
 		SourceGroupName: member.SourceGroupName, Enabled: boolPtr(true), HealthEnabled: boolPtr(true),
-		HealthAPIMode: "openai_chat", Weight: 4, Priority: 5, Concurrency: 37,
+		HealthAPIMode: "openai_chat", Priority: backupSchedulingRole, Concurrency: 37,
 	})
 	if err != nil {
 		t.Fatalf("update managed member: %v", err)
 	}
-	if updated.Concurrency != 37 || updated.Priority != 5 || updated.Weight != 4 {
+	if updated.Concurrency != 37 || updated.Priority != backupSchedulingRole || updated.Weight != 37 {
 		t.Fatalf("updated managed member = %#v", updated)
 	}
-	if len(admin.updateRequests) != 1 || admin.updateRequests[0].Concurrency != 37 || admin.updateRequests[0].Priority != 5 {
+	if len(admin.updateRequests) != 1 || admin.updateRequests[0].Concurrency != 37 || admin.updateRequests[0].Priority != 1 || admin.updateRequests[0].LoadFactor != 37 {
 		t.Fatalf("update requests = %#v", admin.updateRequests)
 	}
 

@@ -38,6 +38,7 @@ type adminClient interface {
 	GetAccount(ctx context.Context, target sub2api.AdminTarget, id int64) (*sub2api.AdminAccount, error)
 	CreateAccount(ctx context.Context, target sub2api.AdminTarget, req sub2api.AdminAccount) (*sub2api.AdminAccount, error)
 	UpdateAccount(ctx context.Context, target sub2api.AdminTarget, id int64, req sub2api.AdminAccount) (*sub2api.AdminAccount, error)
+	UpdateAccountScheduling(ctx context.Context, target sub2api.AdminTarget, id int64, req sub2api.AdminAccountSchedulingUpdate) (*sub2api.AdminAccount, error)
 	SetAccountSchedulable(ctx context.Context, target sub2api.AdminTarget, id int64, schedulable bool) (*sub2api.AdminAccount, error)
 	DeleteAccount(ctx context.Context, target sub2api.AdminTarget, id int64) error
 	TestAccount(ctx context.Context, target sub2api.AdminTarget, id int64, modelID string) (*sub2api.AdminAccountTestResult, error)

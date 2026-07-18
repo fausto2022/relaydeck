@@ -373,12 +373,21 @@ func (s *Service) CreateMember(ctx context.Context, poolID uint, in MemberInput)
 		}
 		in.Concurrency = limits.Concurrency
 	}
+	in.Priority = normalizeSchedulingRole(in.Priority)
+	in.Weight = automaticLoadFactor(in.Concurrency)
 	mode := strings.ToLower(strings.TrimSpace(in.OwnershipMode))
 	switch mode {
 	case "managed":
 		return s.createManagedMember(ctx, poolID, in)
 	case "bound":
-		return s.createBoundMember(poolID, in)
+		member, err := s.createBoundMember(poolID, in)
+		if err != nil {
+			return nil, err
+		}
+		if rankingErr := s.ReconcilePoolRanking(ctx, poolID, "member_bind"); rankingErr != nil && s.log != nil {
+			s.log.Warn("reconcile main station scheduling rank", "err", rankingErr, "pool_id", poolID)
+		}
+		return s.store.FindMember(poolID, member.ID)
 	default:
 		return nil, errors.New("ownership_mode must be managed or bound")
 	}
@@ -413,14 +422,12 @@ func (s *Service) UpdateMember(ctx context.Context, poolID, memberID uint, in Me
 	if in.ProxyID != nil {
 		member.ProxyID = in.ProxyID
 	}
-	if in.Weight > 0 {
-		member.Weight = in.Weight
-	}
 	if in.Priority > 0 {
-		member.Priority = in.Priority
+		member.Priority = normalizeSchedulingRole(in.Priority)
 	}
 	if in.Concurrency > 0 {
 		member.Concurrency = in.Concurrency
+		member.Weight = automaticLoadFactor(in.Concurrency)
 	}
 	if strings.TrimSpace(in.RateConvertMode) != "" {
 		member.RateConvertMode = strings.TrimSpace(in.RateConvertMode)
@@ -444,7 +451,10 @@ func (s *Service) UpdateMember(ctx context.Context, poolID, memberID uint, in Me
 	if member.OwnershipMode == "managed" {
 		return s.SyncMember(ctx, poolID, memberID)
 	}
-	return member, nil
+	if rankingErr := s.ReconcilePoolRanking(ctx, poolID, "member_update"); rankingErr != nil && s.log != nil {
+		s.log.Warn("reconcile main station scheduling rank", "err", rankingErr, "pool_id", poolID)
+	}
+	return s.store.FindMember(poolID, memberID)
 }
 
 func (s *Service) createBoundMember(poolID uint, in MemberInput) (*storage.MainAccountPoolMember, error) {
@@ -525,49 +535,25 @@ func (s *Service) SyncMember(ctx context.Context, poolID, memberID uint) (*stora
 	if member.OwnershipMode != "managed" {
 		return nil, errors.New("bound member configuration is not managed")
 	}
-	channel, err := s.channels.FindByID(member.SourceChannelID)
-	if err != nil {
-		return nil, s.failManagedMember(member, fmt.Errorf("load source channel: %w", err))
-	}
 	_, target, adminAPIKey, err := s.loadAdminTarget()
 	if err != nil {
 		return nil, s.failManagedMember(member, err)
 	}
 	client := s.adminFactory()
 	adminTarget := sub2api.AdminTarget{BaseURL: target.BaseURL, APIKey: adminAPIKey}
-	secret, err := s.ensureManagedSourceAPIKey(ctx, pool, member)
+	priorities, err := s.poolSchedulingPriorities(poolID)
 	if err != nil {
 		return nil, s.failManagedMember(member, err)
 	}
-	groupIDs, err := s.remoteGroupIDsForPool(pool.ID)
+	priority := priorities[member.ID]
+	if priority <= 0 {
+		priority = 1
+	}
+	request, secret, err := s.managedAccountRequest(ctx, pool, member, priority)
 	if err != nil {
 		return nil, s.failManagedMember(member, err)
 	}
-	accountName := managedAccountName(pool, member)
-	accountNotes := fmt.Sprintf("UpstreamOps managed member:%d", member.ID)
-	rateMultiplier, err := s.sourceRateMultiplier(ctx, member)
-	if err != nil {
-		return nil, s.failManagedMember(member, err)
-	}
-	request := sub2api.AdminAccount{
-		Name:           accountName,
-		Platform:       pool.Platform,
-		Type:           "apikey",
-		Status:         "active",
-		Schedulable:    false,
-		Notes:          accountNotes,
-		ProxyID:        member.ProxyID,
-		Concurrency:    member.Concurrency,
-		Priority:       member.Priority,
-		Weight:         member.Weight,
-		LoadFactor:     float64(member.Weight),
-		RateMultiplier: rateMultiplier,
-		GroupIDs:       groupIDs,
-		Credentials: map[string]any{
-			"api_key":  secret,
-			"base_url": strings.TrimRight(channel.SiteURL, "/"),
-		},
-	}
+	accountName := request.Name
 	var remote *sub2api.AdminAccount
 	if member.RemoteAccountID != nil {
 		remote, err = client.UpdateAccount(ctx, adminTarget, *member.RemoteAccountID, request)
@@ -645,7 +631,51 @@ func (s *Service) SyncMember(ctx context.Context, poolID, memberID uint) (*stora
 		return nil, err
 	}
 	_ = s.appendAudit(&poolID, &member.ID, &remoteID, "member_managed_sync", "manual", true, nil, member, nil, "initial health checks passed and scheduling was reconciled", "")
+	if rankingErr := s.ReconcilePoolRanking(ctx, poolID, "member_sync"); rankingErr != nil && s.log != nil {
+		s.log.Warn("reconcile main station scheduling rank", "err", rankingErr, "pool_id", poolID)
+	}
 	return member, nil
+}
+
+func (s *Service) managedAccountRequest(ctx context.Context, pool *storage.MainAccountPool, member *storage.MainAccountPoolMember, priority int) (sub2api.AdminAccount, string, error) {
+	channel, err := s.channels.FindByID(member.SourceChannelID)
+	if err != nil {
+		return sub2api.AdminAccount{}, "", fmt.Errorf("load source channel: %w", err)
+	}
+	secret, err := s.ensureManagedSourceAPIKey(ctx, pool, member)
+	if err != nil {
+		return sub2api.AdminAccount{}, "", err
+	}
+	groupIDs, err := s.remoteGroupIDsForPool(pool.ID)
+	if err != nil {
+		return sub2api.AdminAccount{}, secret, err
+	}
+	rateMultiplier, err := s.sourceRateMultiplier(ctx, member)
+	if err != nil {
+		return sub2api.AdminAccount{}, secret, err
+	}
+	loadFactor := automaticLoadFactor(member.Concurrency)
+	member.Weight = loadFactor
+	member.Priority = normalizeSchedulingRole(member.Priority)
+	return sub2api.AdminAccount{
+		Name:           managedAccountName(pool, member),
+		Platform:       pool.Platform,
+		Type:           "apikey",
+		Status:         "active",
+		Schedulable:    false,
+		Notes:          fmt.Sprintf("UpstreamOps managed member:%d", member.ID),
+		ProxyID:        member.ProxyID,
+		Concurrency:    member.Concurrency,
+		Priority:       priority,
+		Weight:         loadFactor,
+		LoadFactor:     float64(loadFactor),
+		RateMultiplier: rateMultiplier,
+		GroupIDs:       groupIDs,
+		Credentials: map[string]any{
+			"api_key":  secret,
+			"base_url": strings.TrimRight(channel.SiteURL, "/"),
+		},
+	}, secret, nil
 }
 
 func (s *Service) ensureManagedSourceAPIKey(ctx context.Context, pool *storage.MainAccountPool, member *storage.MainAccountPoolMember) (string, error) {
@@ -829,8 +859,8 @@ func memberFromInput(poolID uint, in MemberInput) *storage.MainAccountPoolMember
 		RemoteAccountID:        in.RemoteAccountID,
 		Enabled:                enabled,
 		ProxyID:                in.ProxyID,
-		Weight:                 in.Weight,
-		Priority:               in.Priority,
+		Weight:                 automaticLoadFactor(in.Concurrency),
+		Priority:               normalizeSchedulingRole(in.Priority),
 		Concurrency:            in.Concurrency,
 		RateConvertMode:        strings.TrimSpace(in.RateConvertMode),
 		RateConvertValueMicros: scaleFloat(in.RateConvertValue),
