@@ -201,7 +201,7 @@ export function MonitorHeader() {
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              {"主站账号池"}
+              {"主站账号"}
             </TooltipContent>
           </Tooltip>
 

@@ -156,6 +156,55 @@ func TestConfigIsSingletonAndConnectionErrorIsRedacted(t *testing.T) {
 	}
 }
 
+func TestMainStationGroupsAreDirectAccountWorkspaces(t *testing.T) {
+	service, _, admin, _ := newTestService(t)
+	configureTestStation(t, service)
+	admin.groups = []sub2api.AdminGroup{
+		{ID: 11, Name: "OpenAI", Platform: "openai", RateMultiplier: 1, Status: "active"},
+		{ID: 12, Name: "Claude", Platform: "anthropic", RateMultiplier: 1, Status: "active"},
+	}
+	admin.accounts = []sub2api.AdminAccount{
+		{ID: 21, Name: "openai-01", Status: "active", GroupIDs: []int64{11}},
+		{ID: 22, Name: "shared-01", Status: "active", GroupIDs: []int64{11, 12}},
+	}
+	if _, err := service.Sync(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	workspaces, err := service.ListGroupWorkspaces(false)
+	if err != nil {
+		t.Fatalf("list group workspaces: %v", err)
+	}
+	if len(workspaces) != 2 || workspaces[0].AccountCount != 2 || workspaces[1].AccountCount != 1 {
+		t.Fatalf("workspaces = %#v", workspaces)
+	}
+	firstPoolID, err := service.GroupPoolID(workspaces[0].Group.ID)
+	if err != nil {
+		t.Fatalf("resolve group policy: %v", err)
+	}
+	secondPoolID, err := service.GroupPoolID(workspaces[0].Group.ID)
+	if err != nil || secondPoolID != firstPoolID {
+		t.Fatalf("group policy is not idempotent: first=%d second=%d err=%v", firstPoolID, secondPoolID, err)
+	}
+	accounts, err := service.ListGroupAccounts(workspaces[1].Group.ID, false)
+	if err != nil {
+		t.Fatalf("list group accounts: %v", err)
+	}
+	if len(accounts) != 1 || accounts[0].Name != "shared-01" {
+		t.Fatalf("group accounts = %#v", accounts)
+	}
+	enabled := false
+	updated, err := service.UpdateGroupSettings(workspaces[0].Group.ID, GroupSettingsInput{
+		Enabled: &enabled, MinimumHealthyAccounts: 2, MinimumEffectiveConcurrency: 20, RateSortDirection: "desc",
+	})
+	if err != nil {
+		t.Fatalf("update group settings: %v", err)
+	}
+	if updated.Enabled || updated.MinimumHealthyAccounts != 2 || updated.MinimumEffectiveConcurrency != 20 || updated.RateSortDirection != "desc" {
+		t.Fatalf("updated workspace = %#v", updated)
+	}
+}
+
 func TestBoundMemberIsUniqueAndBecomesOrphaned(t *testing.T) {
 	service, db, admin, _ := newTestService(t)
 	configureTestStation(t, service)
@@ -264,10 +313,10 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		t.Fatalf("create pool: %v", err)
 	}
 	member, err := service.CreateMember(context.Background(), pool.ID, MemberInput{
-		OwnershipMode: "managed", SourceChannelID: channel.ID, SourceGroupID: &sourceGroupID,
+		AccountName: "OpenAI-01", OwnershipMode: "managed", SourceChannelID: channel.ID, SourceGroupID: &sourceGroupID,
 		SourceGroupName: "source-group", Enabled: boolPtr(true), HealthEnabled: boolPtr(true),
-		HealthModel: "gpt-test", HealthAPIMode: "openai_chat",
-		Weight: 2, Priority: 3, Concurrency: 4, RateConvertMode: "raw", CostAdjustment: 1,
+		HealthAPIMode: "openai_chat",
+		Weight:        2, Priority: 3, Concurrency: 4, RateConvertMode: "raw", CostAdjustment: 1,
 	})
 	if err != nil {
 		t.Fatalf("create managed member: %v", err)
@@ -279,6 +328,9 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		t.Fatalf("create calls: keys=%d accounts=%d", len(channels.createdKeys), len(admin.createRequests))
 	}
 	request := admin.createRequests[0]
+	if request.Name != "OpenAI-01" {
+		t.Fatalf("managed account name = %q", request.Name)
+	}
 	if request.Credentials["api_key"] != channels.secret || request.Credentials["base_url"] != channel.SiteURL {
 		t.Fatalf("managed account credentials = %#v", request.Credentials)
 	}

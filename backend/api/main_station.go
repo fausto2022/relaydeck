@@ -96,8 +96,17 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		c.JSON(http.StatusOK, result)
 	})
 	group.GET("/audit-logs", func(c *gin.Context) {
+		poolID := uint(0)
+		if groupID := uint(queryIntDefault(c, "group_id", 0)); groupID != 0 {
+			var err error
+			poolID, err = d.MainStation.GroupPoolID(groupID)
+			if err != nil {
+				failMainStation(c, err)
+				return
+			}
+		}
 		result, err := d.MainStation.ListAuditLogs(
-			uint(queryIntDefault(c, "pool_id", 0)),
+			poolID,
 			uint(queryIntDefault(c, "member_id", 0)),
 			queryIntDefault(c, "page", 1),
 			queryIntDefault(c, "page_size", 20),
@@ -109,7 +118,7 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		c.JSON(http.StatusOK, result)
 	})
 	group.GET("/groups", func(c *gin.Context) {
-		items, err := d.MainStation.ListGroups(queryBool(c, "include_missing"))
+		items, err := d.MainStation.ListGroupWorkspaces(queryBool(c, "include_missing"))
 		if err != nil {
 			failMainStation(c, err)
 			return
@@ -129,153 +138,43 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		}
 		c.JSON(http.StatusOK, items)
 	})
-
-	group.GET("/pools", func(c *gin.Context) {
-		items, err := d.MainStation.ListPools(queryIntDefault(c, "page", 1), queryIntDefault(c, "page_size", 20))
+	group.GET("/groups/:id/accounts", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		items, err := d.MainStation.ListGroupAccounts(groupID, queryBool(c, "include_missing"))
 		if err != nil {
 			failMainStation(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, items)
+		c.JSON(http.StatusOK, gin.H{"items": items})
 	})
-	group.POST("/pools", func(c *gin.Context) {
-		var in mainstation.PoolInput
+	group.PUT("/groups/:id/settings", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		var in mainstation.GroupSettingsInput
 		if err := c.ShouldBindJSON(&in); err != nil {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
-		item, err := d.MainStation.CreatePool(in)
-		if err != nil {
-			failMainStation(c, err)
-			return
-		}
-		c.JSON(http.StatusCreated, item)
-	})
-	group.GET("/pools/:id", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
-		if !ok {
-			return
-		}
-		item, err := d.MainStation.GetPool(poolID)
+		item, err := d.MainStation.UpdateGroupSettings(groupID, in)
 		if err != nil {
 			failMainStation(c, err)
 			return
 		}
 		c.JSON(http.StatusOK, item)
 	})
-	group.PUT("/pools/:id", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
+	group.POST("/groups/:id/accounts", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
 		if !ok {
 			return
 		}
-		var in mainstation.PoolInput
-		if err := c.ShouldBindJSON(&in); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		item, err := d.MainStation.UpdatePool(poolID, in)
+		poolID, err := d.MainStation.GroupPoolID(groupID)
 		if err != nil {
 			failMainStation(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, item)
-	})
-	group.DELETE("/pools/:id", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
-		if !ok {
-			return
-		}
-		if err := d.MainStation.DeletePool(poolID); err != nil {
-			failMainStation(c, err)
-			return
-		}
-		c.Status(http.StatusNoContent)
-	})
-	group.POST("/pools/:id/evaluate", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
-		if !ok {
-			return
-		}
-		result, err := d.MainStation.EvaluatePool(c.Request.Context(), poolID, "manual")
-		if err != nil {
-			failMainStation(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	})
-	group.GET("/pools/:id/capacity", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
-		if !ok {
-			return
-		}
-		result, err := d.MainStation.EvaluatePoolCapacity(c.Request.Context(), poolID)
-		if err != nil {
-			failMainStation(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	})
-	group.POST("/pools/:id/check", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
-		if !ok {
-			return
-		}
-		var in mainstation.HealthCheckInput
-		if err := c.ShouldBindJSON(&in); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		result, err := d.MainStation.BulkCheckPool(c.Request.Context(), poolID, in.Level, in.Force)
-		if err != nil {
-			failMainStation(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	})
-	group.POST("/pools/:id/recover", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
-		if !ok {
-			return
-		}
-		var in struct {
-			Confirm bool `json:"confirm"`
-		}
-		if err := c.ShouldBindJSON(&in); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		if !in.Confirm {
-			fail(c, http.StatusBadRequest, errors.New("bulk recovery requires explicit confirmation"))
-			return
-		}
-		result, err := d.MainStation.BulkRecoverPool(c.Request.Context(), poolID)
-		if err != nil {
-			failMainStation(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	})
-	group.GET("/pools/:id/profit-checks", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
-		if !ok {
-			return
-		}
-		result, err := d.MainStation.ListProfitChecks(
-			poolID,
-			uint(queryIntDefault(c, "member_id", 0)),
-			uint(queryIntDefault(c, "target_group_id", 0)),
-			queryIntDefault(c, "page", 1),
-			queryIntDefault(c, "page_size", 20),
-		)
-		if err != nil {
-			failMainStation(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	})
-	group.POST("/pools/:id/members", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
-		if !ok {
 			return
 		}
 		var in mainstation.MemberInput
@@ -290,13 +189,18 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		}
 		c.JSON(http.StatusCreated, item)
 	})
-	group.PUT("/pools/:id/members/:member_id", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
+	group.PUT("/groups/:id/accounts/:member_id", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
 		if !ok {
 			return
 		}
 		memberID, ok := mainStationUintParam(c, "member_id")
 		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
 			return
 		}
 		var in mainstation.MemberInput
@@ -311,13 +215,18 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		}
 		c.JSON(http.StatusOK, item)
 	})
-	group.POST("/pools/:id/members/:member_id/sync", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
+	group.POST("/groups/:id/accounts/:member_id/sync", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
 		if !ok {
 			return
 		}
 		memberID, ok := mainStationUintParam(c, "member_id")
 		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
 			return
 		}
 		item, err := d.MainStation.SyncMember(c.Request.Context(), poolID, memberID)
@@ -327,13 +236,18 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		}
 		c.JSON(http.StatusOK, item)
 	})
-	group.POST("/pools/:id/members/:member_id/check", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
+	group.POST("/groups/:id/accounts/:member_id/check", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
 		if !ok {
 			return
 		}
 		memberID, ok := mainStationUintParam(c, "member_id")
 		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
 			return
 		}
 		var in mainstation.HealthCheckInput
@@ -348,44 +262,18 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		}
 		c.JSON(http.StatusOK, result)
 	})
-	group.GET("/pools/:id/health-checks", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
-		if !ok {
-			return
-		}
-		memberID := uint(queryIntDefault(c, "member_id", 0))
-		result, err := d.MainStation.ListHealthChecks(
-			poolID,
-			memberID,
-			c.Query("level"),
-			queryIntDefault(c, "page", 1),
-			queryIntDefault(c, "page_size", 20),
-		)
-		if err != nil {
-			failMainStation(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	})
-	group.GET("/pools/:id/health-summary", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
-		if !ok {
-			return
-		}
-		result, err := d.MainStation.PoolHealthSummary(poolID)
-		if err != nil {
-			failMainStation(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"items": result})
-	})
-	group.DELETE("/pools/:id/members/:member_id", func(c *gin.Context) {
-		poolID, ok := mainStationUintParam(c, "id")
+	group.DELETE("/groups/:id/accounts/:member_id", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
 		if !ok {
 			return
 		}
 		memberID, ok := mainStationUintParam(c, "member_id")
 		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
 			return
 		}
 		var in mainstation.DeleteMemberInput
@@ -398,6 +286,113 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 			return
 		}
 		c.Status(http.StatusNoContent)
+	})
+	group.POST("/groups/:id/check", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		var in mainstation.HealthCheckInput
+		if err := c.ShouldBindJSON(&in); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		result, err := d.MainStation.BulkCheckPool(c.Request.Context(), poolID, in.Level, in.Force)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+	group.POST("/groups/:id/evaluate", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		result, err := d.MainStation.EvaluatePool(c.Request.Context(), poolID, "manual")
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+	group.GET("/groups/:id/capacity", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		result, err := d.MainStation.EvaluatePoolCapacity(c.Request.Context(), poolID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+	group.GET("/groups/:id/health-checks", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		result, err := d.MainStation.ListHealthChecks(poolID, uint(queryIntDefault(c, "member_id", 0)), c.Query("level"), queryIntDefault(c, "page", 1), queryIntDefault(c, "page_size", 20))
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+	group.GET("/groups/:id/health-summary", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		result, err := d.MainStation.PoolHealthSummary(poolID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"items": result})
+	})
+	group.GET("/groups/:id/profit-checks", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		result, err := d.MainStation.ListProfitChecks(poolID, uint(queryIntDefault(c, "member_id", 0)), groupID, queryIntDefault(c, "page", 1), queryIntDefault(c, "page_size", 20))
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
 	})
 	group.GET("/accounts/:account_id/locks", func(c *gin.Context) {
 		accountID, ok := mainStationInt64Param(c, "account_id")

@@ -64,7 +64,52 @@ type GroupDTO struct {
 
 type AccountDTO struct {
 	storage.MainStationAccountSnapshot
-	BoundMemberID *uint `json:"bound_member_id,omitempty"`
+	Member *AccountMemberDTO `json:"member,omitempty"`
+}
+
+type AccountMemberDTO struct {
+	ID                       uint       `json:"id"`
+	AccountName              string     `json:"account_name,omitempty"`
+	OwnershipMode            string     `json:"ownership_mode"`
+	BindingStatus            string     `json:"binding_status"`
+	Status                   string     `json:"status"`
+	Enabled                  bool       `json:"enabled"`
+	SourceChannelID          uint       `json:"source_channel_id"`
+	SourceGroupID            *int64     `json:"source_group_id,omitempty"`
+	SourceGroupName          string     `json:"source_group_name,omitempty"`
+	SourceAPIKeyID           *int64     `json:"source_api_key_id,omitempty"`
+	Weight                   int        `json:"weight"`
+	Priority                 int        `json:"priority"`
+	Concurrency              int        `json:"concurrency"`
+	HealthEnabled            bool       `json:"health_enabled"`
+	HealthModel              string     `json:"health_model,omitempty"`
+	LastHealthStatus         string     `json:"last_health_status"`
+	LastHealthAt             *time.Time `json:"last_health_at,omitempty"`
+	ConsecutiveHealthSuccess int        `json:"consecutive_health_success"`
+	ConsecutiveHealthFailure int        `json:"consecutive_health_failure"`
+}
+
+type GroupWorkspaceDTO struct {
+	Group                       storage.UpstreamSyncTargetGroup `json:"group"`
+	Enabled                     bool                            `json:"enabled"`
+	MinimumHealthyAccounts      int                             `json:"minimum_healthy_accounts"`
+	MinimumEffectiveConcurrency int                             `json:"minimum_effective_concurrency"`
+	RateSortDirection           string                          `json:"rate_sort_direction"`
+	HealthPolicy                string                          `json:"health_policy"`
+	MarginPolicy                string                          `json:"margin_policy"`
+	LastStatus                  string                          `json:"last_status"`
+	LastEvaluatedAt             *time.Time                      `json:"last_evaluated_at,omitempty"`
+	AccountCount                int                             `json:"account_count"`
+	ManagedAccountCount         int                             `json:"managed_account_count"`
+}
+
+type GroupSettingsInput struct {
+	Enabled                     *bool  `json:"enabled,omitempty"`
+	MinimumHealthyAccounts      int    `json:"minimum_healthy_accounts"`
+	MinimumEffectiveConcurrency int    `json:"minimum_effective_concurrency"`
+	RateSortDirection           string `json:"rate_sort_direction"`
+	HealthPolicy                string `json:"health_policy"`
+	MarginPolicy                string `json:"margin_policy"`
 }
 
 type Page[T any] struct {
@@ -96,6 +141,7 @@ type PoolDTO struct {
 }
 
 type MemberInput struct {
+	AccountName            string   `json:"account_name"`
 	OwnershipMode          string   `json:"ownership_mode"`
 	SourceChannelID        uint     `json:"source_channel_id"`
 	SourceGroupID          *int64   `json:"source_group_id,omitempty"`

@@ -98,6 +98,7 @@ func (MainAccountPoolGroup) TableName() string { return "main_account_pool_group
 type MainAccountPoolMember struct {
 	ID                       uint       `gorm:"primaryKey" json:"id"`
 	PoolID                   uint       `gorm:"not null;index" json:"pool_id"`
+	AccountName              string     `gorm:"size:256;not null;default:''" json:"account_name,omitempty"`
 	LegacySyncAccountID      *uint      `gorm:"uniqueIndex" json:"legacy_sync_account_id,omitempty"`
 	SourceChannelID          uint       `gorm:"not null;index" json:"source_channel_id"`
 	SourceGroupID            *int64     `json:"source_group_id,omitempty"`

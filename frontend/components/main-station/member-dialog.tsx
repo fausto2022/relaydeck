@@ -27,29 +27,22 @@ import type {
   ChannelAPIKeyGroup,
   ChannelAPIKeyPage,
   MainStationAccount,
+  MainStationGroupWorkspace,
   MainStationMember,
-  MainStationPool,
 } from "@/lib/api-types"
-import { cn } from "@/lib/utils"
 
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
-  pool: MainStationPool | null
+  workspace: MainStationGroupWorkspace | null
   channels: Channel[]
   accounts: MainStationAccount[]
   onSaved: (member: MainStationMember) => void
 }
 
-export function MemberDialog({
-  open,
-  onOpenChange,
-  pool,
-  channels,
-  accounts,
-  onSaved,
-}: Props) {
+export function MemberDialog({ open, onOpenChange, workspace, channels, accounts, onSaved }: Props) {
   const [mode, setMode] = useState<"managed" | "bound">("managed")
+  const [accountName, setAccountName] = useState("")
   const [channelID, setChannelID] = useState(0)
   const [sourceGroups, setSourceGroups] = useState<ChannelAPIKeyGroup[]>([])
   const [sourceGroupValue, setSourceGroupValue] = useState("none")
@@ -69,6 +62,7 @@ export function MemberDialog({
   useEffect(() => {
     if (!open) return
     setMode("managed")
+    setAccountName("")
     setChannelID(channels[0]?.id ?? 0)
     setSourceGroups([])
     setSourceGroupValue("none")
@@ -98,36 +92,45 @@ export function MemberDialog({
       .catch((error: unknown) => {
         setSourceGroups([])
         setSourceKeys([])
-        toast.error(error instanceof Error ? error.message : "加载上游分组失败")
+        toast.error(error instanceof Error ? error.message : "加载账号来源失败")
       })
       .finally(() => setLoadingSource(false))
   }, [channelID, open])
 
+  function changeMode(nextMode: "managed" | "bound") {
+    setMode(nextMode)
+    setSourceKeyValue(nextMode === "managed" ? "new" : "none")
+  }
+
   async function handleSave() {
-    if (!pool || channelID === 0) {
-      toast.error("请选择上游渠道")
+    if (!workspace || channelID === 0) {
+      toast.error("请选择账号来源")
+      return
+    }
+    if (mode === "managed" && !accountName.trim()) {
+      toast.error("请输入账号名称")
       return
     }
     if (mode === "bound" && remoteAccountID === 0) {
-      toast.error("请选择未绑定的主站 Account")
+      toast.error("请选择要接管的主站 Account")
       return
     }
     if (mode === "bound" && !manualConfirmed) {
-      toast.error("绑定已有 Account 必须人工确认映射")
+      toast.error("接管已有 Account 前必须确认映射")
       return
     }
     const selectedGroup = sourceGroups.find((group) => groupValue(group) === sourceGroupValue)
     setBusy(true)
     try {
-      const member = await apiFetch<MainStationMember>(`/main-station/pools/${pool.id}/members`, {
+      const member = await apiFetch<MainStationMember>(`/main-station/groups/${workspace.group.id}/accounts`, {
         method: "POST",
         body: JSON.stringify({
+          account_name: mode === "managed" ? accountName.trim() : "",
           ownership_mode: mode,
           source_channel_id: channelID,
           source_group_id: selectedGroup?.id ?? undefined,
           source_group_name: selectedGroup?.name ?? "",
-          source_api_key_id:
-            mode === "managed" && sourceKeyValue !== "new" ? Number(sourceKeyValue) : undefined,
+          source_api_key_id: sourceKeyValue !== "new" && sourceKeyValue !== "none" ? Number(sourceKeyValue) : undefined,
           remote_account_id: mode === "bound" ? remoteAccountID : undefined,
           manual_binding_confirmed: mode === "bound" ? manualConfirmed : false,
           enabled,
@@ -144,9 +147,9 @@ export function MemberDialog({
       })
       onSaved(member)
       onOpenChange(false)
-      toast.success(mode === "managed" ? "托管成员已创建" : "已有 Account 已绑定")
+      toast.success(mode === "managed" ? "账号已添加" : "已有账号已接管")
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "添加成员失败")
+      toast.error(error instanceof Error ? error.message : "保存账号失败")
     } finally {
       setBusy(false)
     }
@@ -156,156 +159,108 @@ export function MemberDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>添加池成员</DialogTitle>
-          <DialogDescription>{pool?.name}</DialogDescription>
+          <DialogTitle>添加账号</DialogTitle>
+          <DialogDescription>{workspace?.group.name ?? "当前主站分组"}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 rounded-md border p-1">
-            <Button
-              type="button"
-              variant={mode === "managed" ? "secondary" : "ghost"}
-              className="rounded-sm"
-              onClick={() => setMode("managed")}
-            >
-              <Plus className="size-4" />
-              创建托管 Account
+            <Button type="button" variant={mode === "managed" ? "secondary" : "ghost"} className="rounded-sm" onClick={() => changeMode("managed")}>
+              <Plus className="size-4" />新建账号
             </Button>
-            <Button
-              type="button"
-              variant={mode === "bound" ? "secondary" : "ghost"}
-              className="rounded-sm"
-              onClick={() => setMode("bound")}
-            >
-              <Link2 className="size-4" />
-              绑定已有 Account
+            <Button type="button" variant={mode === "bound" ? "secondary" : "ghost"} className="rounded-sm" onClick={() => changeMode("bound")}>
+              <Link2 className="size-4" />接管已有账号
             </Button>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>上游渠道</Label>
-              <Select value={channelID ? String(channelID) : ""} onValueChange={(value) => setChannelID(Number(value))}>
-                <SelectTrigger><SelectValue placeholder="选择渠道" /></SelectTrigger>
-                <SelectContent>
-                  {channels.map((channel) => (
-                    <SelectItem key={channel.id} value={String(channel.id)}>{channel.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>上游分组</Label>
-              <Select value={sourceGroupValue} onValueChange={setSourceGroupValue} disabled={loadingSource}>
-                <SelectTrigger><SelectValue placeholder={loadingSource ? "加载中" : "选择分组"} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">不指定分组</SelectItem>
-                  {sourceGroups.map((group) => (
-                    <SelectItem key={groupValue(group)} value={groupValue(group)}>
-                      {group.name} · {group.ratio}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>源 API Key</Label>
-              <Select value={sourceKeyValue} onValueChange={setSourceKeyValue} disabled={loadingSource}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {mode === "managed" ? <SelectItem value="new">创建独立 API Key</SelectItem> : null}
-                  {sourceKeys.map((key) => (
-                    <SelectItem key={key.id} value={String(key.id)}>{key.name || `Key #${key.id}`}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {mode === "bound" && sourceKeys.length === 0 ? (
-                <p className="text-xs text-amber-700">未选择源 API Key 时无法执行 L0/L1 测活。</p>
-              ) : null}
-            </div>
-            {mode === "bound" ? (
+            {mode === "managed" ? (
               <div className="space-y-2 sm:col-span-2">
-                <Label>未绑定的主站 Account</Label>
-                <Select
-                  value={remoteAccountID ? String(remoteAccountID) : ""}
-                  onValueChange={(value) => setRemoteAccountID(Number(value))}
-                >
-                  <SelectTrigger><SelectValue placeholder="选择 Account" /></SelectTrigger>
+                <Label htmlFor="account-name">账号名称</Label>
+                <Input id="account-name" value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="例如 OpenAI-01" />
+              </div>
+            ) : (
+              <div className="space-y-2 sm:col-span-2">
+                <Label>主站 Account</Label>
+                <Select value={remoteAccountID ? String(remoteAccountID) : ""} onValueChange={(value) => setRemoteAccountID(Number(value))}>
+                  <SelectTrigger><SelectValue placeholder="选择未接管的账号" /></SelectTrigger>
                   <SelectContent>
-                    {accounts.map((account) => (
-                      <SelectItem key={account.remote_account_id} value={String(account.remote_account_id)}>
-                        {account.name} · #{account.remote_account_id}
-                      </SelectItem>
+                    {accounts.filter((account) => !account.member).map((account) => (
+                      <SelectItem key={account.remote_account_id} value={String(account.remote_account_id)}>{account.name} · #{account.remote_account_id}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
-                  <Checkbox
-                    checked={manualConfirmed}
-                    onCheckedChange={(checked) => setManualConfirmed(checked === true)}
-                  />
-                  <span>我已核对上游渠道、分组和主站 Account，确认建立人工映射。</span>
-                </label>
               </div>
-            ) : null}
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="member-concurrency">并发</Label>
-              <Input id="member-concurrency" type="number" min={1} value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))} />
+              <Label>账号来源</Label>
+              <Select value={channelID ? String(channelID) : ""} onValueChange={(value) => setChannelID(Number(value))}>
+                <SelectTrigger><SelectValue placeholder="选择来源" /></SelectTrigger>
+                <SelectContent>
+                  {channels.map((channel) => <SelectItem key={channel.id} value={String(channel.id)}>{channel.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>来源套餐</Label>
+              <Select value={sourceGroupValue} onValueChange={setSourceGroupValue} disabled={loadingSource}>
+                <SelectTrigger><SelectValue placeholder={loadingSource ? "加载中" : "选择套餐"} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">默认套餐</SelectItem>
+                  {sourceGroups.map((group) => <SelectItem key={groupValue(group)} value={groupValue(group)}>{group.name} · {group.ratio}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>来源 API Key</Label>
+              <Select value={sourceKeyValue} onValueChange={setSourceKeyValue} disabled={loadingSource}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {mode === "managed" ? <SelectItem value="new">自动创建独立 API Key</SelectItem> : <SelectItem value="none">不指定</SelectItem>}
+                  {sourceKeys.map((key) => <SelectItem key={key.id} value={String(key.id)}>{key.name || `Key #${key.id}`}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="account-concurrency">并发</Label>
+              <Input id="account-concurrency" type="number" min={1} value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="member-priority">优先级</Label>
-                <Input id="member-priority" type="number" min={1} value={priority} onChange={(event) => setPriority(Number(event.target.value))} />
+                <Label htmlFor="account-priority">优先级</Label>
+                <Input id="account-priority" type="number" min={1} value={priority} onChange={(event) => setPriority(Number(event.target.value))} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="member-weight">权重</Label>
-                <Input id="member-weight" type="number" min={1} value={weight} onChange={(event) => setWeight(Number(event.target.value))} />
+                <Label htmlFor="account-weight">权重</Label>
+                <Input id="account-weight" type="number" min={1} value={weight} onChange={(event) => setWeight(Number(event.target.value))} />
               </div>
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="member-health-model">低成本测试模型</Label>
-              <Input
-                id="member-health-model"
-                value={healthModel}
-                onChange={(event) => setHealthModel(event.target.value)}
-                placeholder="明确指定模型，不自动取第一项"
-              />
+              <Label htmlFor="account-health-model">完整检测模型（可选）</Label>
+              <Input id="account-health-model" value={healthModel} onChange={(event) => setHealthModel(event.target.value)} placeholder="留空时只执行快速检测" />
             </div>
           </div>
 
-          <div className="grid gap-3 border-t pt-4 sm:grid-cols-2">
-            <ToggleLine id="member-enabled" label="启用成员" checked={enabled} onCheckedChange={setEnabled} />
-            <ToggleLine id="member-health" label="启用测活" checked={healthEnabled} onCheckedChange={setHealthEnabled} />
+          {mode === "bound" ? (
+            <label className="flex items-start gap-2 border-t pt-4 text-sm">
+              <Checkbox checked={manualConfirmed} onCheckedChange={(checked) => setManualConfirmed(checked === true)} />
+              <span>我已核对账号来源与主站 Account，确认建立接管关系。</span>
+            </label>
+          ) : null}
+          <div className="flex items-center justify-between border-t pt-4">
+            <Label htmlFor="account-enabled">添加后启用</Label>
+            <Switch id="account-enabled" checked={enabled} onCheckedChange={setEnabled} />
           </div>
         </div>
 
         <DialogFooter>
-          <Button onClick={handleSave} disabled={busy || !pool}>
-            <Save className="size-4" />
-            {busy ? "处理中" : "保存成员"}
+          <Button onClick={handleSave} disabled={busy || !workspace}>
+            <Save className="size-4" />{busy ? "处理中" : "保存账号"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function ToggleLine({
-  id,
-  label,
-  checked,
-  onCheckedChange,
-}: {
-  id: string
-  label: string
-  checked: boolean
-  onCheckedChange: (checked: boolean) => void
-}) {
-  return (
-    <div className={cn("flex items-center justify-between gap-3 rounded-md border px-3 py-2")}>
-      <Label htmlFor={id}>{label}</Label>
-      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
-    </div>
   )
 }
 

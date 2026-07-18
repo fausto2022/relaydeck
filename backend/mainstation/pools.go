@@ -14,6 +14,185 @@ import (
 	"gorm.io/gorm"
 )
 
+func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO, error) {
+	groups, err := s.ListGroups(includeMissing)
+	if err != nil {
+		return nil, err
+	}
+	snapshots, err := s.store.ListAllAccountSnapshots(includeMissing)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]GroupWorkspaceDTO, 0, len(groups))
+	for i := range groups {
+		pool, err := s.poolForGroup(&groups[i])
+		if err != nil {
+			return nil, err
+		}
+		members, err := s.store.ListMembers(pool.ID)
+		if err != nil {
+			return nil, err
+		}
+		accountCount := 0
+		for j := range snapshots {
+			if accountBelongsToRemoteGroup(&snapshots[j], groups[i].RemoteGroupID) {
+				accountCount++
+			}
+		}
+		result = append(result, GroupWorkspaceDTO{
+			Group:                       groups[i],
+			Enabled:                     pool.Enabled,
+			MinimumHealthyAccounts:      pool.MinimumHealthyMembers,
+			MinimumEffectiveConcurrency: pool.MinimumEffectiveConcurrency,
+			RateSortDirection:           pool.RateSortDirection,
+			HealthPolicy:                pool.HealthPolicyJSON,
+			MarginPolicy:                pool.MarginPolicyJSON,
+			LastStatus:                  pool.LastStatus,
+			LastEvaluatedAt:             pool.LastEvaluatedAt,
+			AccountCount:                accountCount,
+			ManagedAccountCount:         len(members),
+		})
+	}
+	return result, nil
+}
+
+func (s *Service) ListGroupAccounts(groupID uint, includeMissing bool) ([]AccountDTO, error) {
+	group, err := s.mainStationGroup(groupID)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.store.ListAllAccountSnapshots(includeMissing)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]AccountDTO, 0)
+	for i := range items {
+		if accountBelongsToRemoteGroup(&items[i], group.RemoteGroupID) {
+			result = append(result, s.accountDTO(items[i]))
+		}
+	}
+	return result, nil
+}
+
+func (s *Service) GroupPoolID(groupID uint) (uint, error) {
+	group, err := s.mainStationGroup(groupID)
+	if err != nil {
+		return 0, err
+	}
+	pool, err := s.poolForGroup(group)
+	if err != nil {
+		return 0, err
+	}
+	return pool.ID, nil
+}
+
+func (s *Service) UpdateGroupSettings(groupID uint, in GroupSettingsInput) (*GroupWorkspaceDTO, error) {
+	group, err := s.mainStationGroup(groupID)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := s.poolForGroup(group)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePolicyJSON("health_policy", in.HealthPolicy); err != nil {
+		return nil, err
+	}
+	if err := validatePolicyJSON("margin_policy", in.MarginPolicy); err != nil {
+		return nil, err
+	}
+	before := *pool
+	if in.Enabled != nil {
+		pool.Enabled = *in.Enabled
+	}
+	pool.MinimumHealthyMembers = in.MinimumHealthyAccounts
+	pool.MinimumEffectiveConcurrency = in.MinimumEffectiveConcurrency
+	if strings.TrimSpace(in.RateSortDirection) != "" {
+		pool.RateSortDirection = strings.TrimSpace(in.RateSortDirection)
+	}
+	pool.HealthPolicyJSON = strings.TrimSpace(in.HealthPolicy)
+	pool.MarginPolicyJSON = strings.TrimSpace(in.MarginPolicy)
+	if err := s.store.UpdatePool(pool, []uint{group.ID}); err != nil {
+		return nil, err
+	}
+	_ = s.appendAudit(&pool.ID, nil, nil, "group_settings_update", "manual", true, before, pool, map[string]any{"group_id": group.ID}, "", "")
+	items, err := s.ListGroupWorkspaces(false)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if items[i].Group.ID == group.ID {
+			return &items[i], nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
+func (s *Service) mainStationGroup(groupID uint) (*storage.UpstreamSyncTargetGroup, error) {
+	if groupID == 0 {
+		return nil, errors.New("invalid main station group id")
+	}
+	config, err := s.store.GetConfig()
+	if err != nil {
+		return nil, ErrNotConfigured
+	}
+	group, err := s.targetGroups.FindByID(groupID)
+	if err != nil {
+		return nil, err
+	}
+	if group.TargetID != config.TargetID || group.Missing {
+		return nil, errors.New("main station group does not belong to the active station")
+	}
+	return group, nil
+}
+
+func (s *Service) poolForGroup(group *storage.UpstreamSyncTargetGroup) (*storage.MainAccountPool, error) {
+	pool, err := s.store.FindPoolByTargetGroupID(group.ID)
+	if err == nil {
+		groupIDs, listErr := s.store.ListPoolGroupIDs(pool.ID)
+		if listErr != nil {
+			return nil, listErr
+		}
+		if len(groupIDs) != 1 || groupIDs[0] != group.ID {
+			return nil, errors.New("main station group has an invalid internal policy mapping")
+		}
+		return pool, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	platform := strings.TrimSpace(group.Platform)
+	if platform == "" {
+		platform = "openai"
+	}
+	pool = &storage.MainAccountPool{
+		Name:        fmt.Sprintf("group-%d-%s", group.RemoteGroupID, compactName(group.Name, 120)),
+		Description: "main station group policy",
+		Platform:    platform,
+		Enabled:     true,
+	}
+	if err := s.store.CreatePool(pool, []uint{group.ID}); err != nil {
+		if existing, findErr := s.store.FindPoolByTargetGroupID(group.ID); findErr == nil {
+			return existing, nil
+		}
+		return nil, err
+	}
+	return pool, nil
+}
+
+func accountBelongsToRemoteGroup(account *storage.MainStationAccountSnapshot, remoteGroupID int64) bool {
+	var ids []int64
+	if err := json.Unmarshal([]byte(account.GroupIDsJSON), &ids); err != nil {
+		return false
+	}
+	for _, id := range ids {
+		if id == remoteGroupID {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) ListPools(page, pageSize int) (*Page[PoolDTO], error) {
 	items, total, err := s.store.ListPools(page, pageSize)
 	if err != nil {
@@ -212,6 +391,9 @@ func (s *Service) UpdateMember(ctx context.Context, poolID, memberID uint, in Me
 	}
 	member.SourceGroupID = in.SourceGroupID
 	member.SourceGroupName = strings.TrimSpace(in.SourceGroupName)
+	if strings.TrimSpace(in.AccountName) != "" {
+		member.AccountName = strings.TrimSpace(in.AccountName)
+	}
 	if in.SourceAPIKeyID != nil {
 		member.SourceAPIKeyID = in.SourceAPIKeyID
 	}
@@ -439,15 +621,14 @@ func (s *Service) SyncMember(ctx context.Context, poolID, memberID uint) (*stora
 		}
 		return nil, s.failManagedMember(member, err)
 	}
-	if strings.TrimSpace(member.HealthModel) == "" {
-		return nil, s.failManagedMember(member, errors.New("initial L1 health model is not configured"))
-	}
-	l1, err := s.CheckMember(ctx, poolID, member.ID, HealthCheckInput{Level: "L1", Force: true})
-	if err != nil || l1.Check.Status != "success" {
-		if err == nil {
-			err = fmt.Errorf("initial L1 health check status: %s", l1.Check.Status)
+	if strings.TrimSpace(member.HealthModel) != "" {
+		l1, err := s.CheckMember(ctx, poolID, member.ID, HealthCheckInput{Level: "L1", Force: true})
+		if err != nil || l1.Check.Status != "success" {
+			if err == nil {
+				err = fmt.Errorf("initial L1 health check status: %s", l1.Check.Status)
+			}
+			return nil, s.failManagedMember(member, err)
 		}
-		return nil, s.failManagedMember(member, err)
 	}
 	if _, err := s.ClearGuardLock(ctx, remoteID, "sync", "syncer"); err != nil {
 		return nil, s.failManagedMember(member, err)
@@ -633,6 +814,7 @@ func memberFromInput(poolID uint, in MemberInput) *storage.MainAccountPoolMember
 	}
 	return &storage.MainAccountPoolMember{
 		PoolID:                 poolID,
+		AccountName:            strings.TrimSpace(in.AccountName),
 		SourceChannelID:        in.SourceChannelID,
 		SourceGroupID:          in.SourceGroupID,
 		SourceGroupName:        strings.TrimSpace(in.SourceGroupName),
@@ -667,6 +849,9 @@ func sameEndpoint(left, right string) bool {
 }
 
 func managedAccountName(pool *storage.MainAccountPool, member *storage.MainAccountPoolMember) string {
+	if name := strings.TrimSpace(member.AccountName); name != "" {
+		return compactName(name, 120)
+	}
 	return fmt.Sprintf("UpstreamOps-%s-%d", compactName(pool.Name, 80), member.ID)
 }
 

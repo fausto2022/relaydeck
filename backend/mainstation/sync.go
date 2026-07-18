@@ -190,17 +190,40 @@ func (s *Service) ListAccounts(page, pageSize int, includeMissing, unboundOnly b
 	}
 	out := make([]AccountDTO, 0, len(items))
 	for _, item := range items {
-		dto := AccountDTO{MainStationAccountSnapshot: item}
-		if member, findErr := s.store.FindMemberByRemoteAccountID(item.RemoteAccountID); findErr == nil {
-			memberID := member.ID
-			dto.BoundMemberID = &memberID
-		}
-		out = append(out, dto)
+		out = append(out, s.accountDTO(item))
 	}
 	page, pageSize = normalizePage(page, pageSize)
 	return &Page[AccountDTO]{
 		Items: out, Total: total, Page: page, PageSize: pageSize, Pages: pageCount(total, pageSize),
 	}, nil
+}
+
+func (s *Service) accountDTO(item storage.MainStationAccountSnapshot) AccountDTO {
+	dto := AccountDTO{MainStationAccountSnapshot: item}
+	if member, err := s.store.FindMemberByRemoteAccountID(item.RemoteAccountID); err == nil {
+		dto.Member = &AccountMemberDTO{
+			ID:                       member.ID,
+			AccountName:              member.AccountName,
+			OwnershipMode:            member.OwnershipMode,
+			BindingStatus:            member.BindingStatus,
+			Status:                   member.Status,
+			Enabled:                  member.Enabled,
+			SourceChannelID:          member.SourceChannelID,
+			SourceGroupID:            member.SourceGroupID,
+			SourceGroupName:          member.SourceGroupName,
+			SourceAPIKeyID:           member.SourceAPIKeyID,
+			Weight:                   member.Weight,
+			Priority:                 member.Priority,
+			Concurrency:              member.Concurrency,
+			HealthEnabled:            member.HealthEnabled,
+			HealthModel:              member.HealthModel,
+			LastHealthStatus:         member.LastHealthStatus,
+			LastHealthAt:             member.LastHealthAt,
+			ConsecutiveHealthSuccess: member.ConsecutiveHealthSuccess,
+			ConsecutiveHealthFailure: member.ConsecutiveHealthFailure,
+		}
+	}
+	return dto
 }
 
 func accountSnapshot(account sub2api.AdminAccount) storage.MainStationAccountSnapshot {

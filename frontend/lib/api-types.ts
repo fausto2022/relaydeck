@@ -648,12 +648,50 @@ export interface MainStationAccount {
   remote_updated_at?: string | null
   last_sync_at: string
   missing: boolean
-  bound_member_id?: number | null
+
+  member?: MainStationAccountMember | null
+}
+
+export interface MainStationAccountMember {
+  id: number
+  account_name?: string
+  ownership_mode: "managed" | "bound"
+  binding_status: "pending" | "verified" | "manual_confirmed" | "invalid" | "orphaned"
+  status: "pending" | "active" | "degraded" | "quarantined" | "disabled" | "orphaned" | "error"
+  enabled: boolean
+  source_channel_id: number
+  source_group_id?: number | null
+  source_group_name?: string
+  source_api_key_id?: number | null
+  weight: number
+  priority: number
+  concurrency: number
+  health_enabled: boolean
+  health_model?: string
+  last_health_status: string
+  last_health_at?: string | null
+  consecutive_health_success: number
+  consecutive_health_failure: number
+}
+
+export interface MainStationGroupWorkspace {
+  group: MainStationGroup
+  enabled: boolean
+  minimum_healthy_accounts: number
+  minimum_effective_concurrency: number
+  rate_sort_direction: "asc" | "desc"
+  health_policy: string
+  margin_policy: string
+  last_status: "healthy" | "degraded" | "critical" | "unknown" | string
+  last_evaluated_at?: string | null
+  account_count: number
+  managed_account_count: number
 }
 
 export interface MainStationMember {
-  id: number
-  pool_id: number
+	id: number
+	pool_id: number
+	account_name?: string
   legacy_sync_account_id?: number | null
   source_channel_id: number
   source_group_id?: number | null
@@ -687,27 +725,6 @@ export interface MainStationMember {
   last_cost_expires_at?: string | null
   created_at: string
   updated_at: string
-}
-
-export interface MainStationPool {
-  id: number
-  legacy_sync_group_id?: number | null
-  name: string
-  description?: string
-  platform?: string
-  enabled: boolean
-  minimum_healthy_members: number
-  minimum_effective_concurrency: number
-  rate_sort_direction: "asc" | "desc"
-  health_policy: string
-  margin_policy: string
-  last_status: "healthy" | "degraded" | "critical" | "unknown" | string
-  last_evaluated_at?: string | null
-  created_at: string
-  updated_at: string
-  target_group_ids: number[]
-  groups: MainStationGroup[]
-  members: MainStationMember[]
 }
 
 export interface MainStationPage<T> {

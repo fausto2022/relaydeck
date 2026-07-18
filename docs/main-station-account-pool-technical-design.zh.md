@@ -1,5 +1,7 @@
 # 主站账号池技术设计
 
+> 本文记录旧版内部实现。当前公开产品模型与 API 已改为 [主站分组账号管理设计](./main-station-group-account-design.zh.md)：分组直接管理 Account，不再提供账号池 CRUD。
+
 ## 1. 调查结论
 
 ### 1.1 现有数据关系

@@ -143,6 +143,18 @@ func (r *MainStationStore) ListAccountSnapshots(page, pageSize int, includeMissi
 	return list, total, nil
 }
 
+func (r *MainStationStore) ListAllAccountSnapshots(includeMissing bool) ([]MainStationAccountSnapshot, error) {
+	q := r.db.Where("main_station_id = ?", MainStationSingletonID)
+	if !includeMissing {
+		q = q.Where("missing = ?", false)
+	}
+	var list []MainStationAccountSnapshot
+	if err := q.Order("remote_account_id ASC, id ASC").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *MainStationStore) MigrateLegacyData() error {
 	return migrateLegacyMainStationData(r.db)
 }
@@ -228,6 +240,20 @@ func (r *MainStationStore) ListPools(page, pageSize int) ([]MainAccountPool, int
 func (r *MainStationStore) FindPool(id uint) (*MainAccountPool, error) {
 	var item MainAccountPool
 	if err := r.db.First(&item, id).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *MainStationStore) FindPoolByTargetGroupID(targetGroupID uint) (*MainAccountPool, error) {
+	var item MainAccountPool
+	err := r.db.Table("main_account_pools AS pools").
+		Select("pools.*").
+		Joins("JOIN main_account_pool_groups AS pool_groups ON pool_groups.pool_id = pools.id").
+		Where("pool_groups.target_group_id = ?", targetGroupID).
+		Order("pools.id ASC").
+		First(&item).Error
+	if err != nil {
 		return nil, err
 	}
 	return &item, nil
