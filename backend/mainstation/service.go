@@ -21,6 +21,12 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	defaultHealthIntervalSeconds = 300
+	minimumHealthIntervalSeconds = 30
+	maximumHealthIntervalSeconds = 86400
+)
+
 type channelService interface {
 	RevealAPIKey(ctx context.Context, channelID uint, keyID int64) (string, error)
 	CreateAPIKey(ctx context.Context, channelID uint, req connector.APIKeyCreateRequest) (*connector.APIKey, error)
@@ -153,6 +159,7 @@ func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto.AutoHealthProtection = config.AutoHealthProtection
 	dto.AutoRecovery = config.AutoRecovery
 	dto.HealthModels = decodeHealthModels(config.HealthModelsJSON)
+	dto.HealthIntervalSeconds = normalizedGlobalHealthInterval(config.HealthIntervalSeconds)
 	dto.ObservationEvaluatedAt = config.ObservationEvaluatedAt
 	dto.HealthObservedAt = config.HealthObservedAt
 	dto.MarginObservedAt = config.MarginObservedAt
@@ -192,10 +199,18 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 	if err != nil {
 		return nil, err
 	}
+	healthIntervalSeconds := defaultHealthIntervalSeconds
+	if in.HealthIntervalSeconds != nil {
+		healthIntervalSeconds = *in.HealthIntervalSeconds
+		if err := validateGlobalHealthInterval(healthIntervalSeconds); err != nil {
+			return nil, err
+		}
+	}
 	config := &storage.MainStationConfig{
-		ID:               storage.MainStationSingletonID,
-		Enabled:          enabled,
-		HealthModelsJSON: healthModelsJSON,
+		ID:                    storage.MainStationSingletonID,
+		Enabled:               enabled,
+		HealthModelsJSON:      healthModelsJSON,
+		HealthIntervalSeconds: healthIntervalSeconds,
 	}
 	target := &storage.UpstreamSyncTarget{
 		Name:              name,
@@ -286,6 +301,12 @@ func (s *Service) UpdateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		if err != nil {
 			return nil, err
 		}
+	}
+	if in.HealthIntervalSeconds != nil {
+		if err := validateGlobalHealthInterval(*in.HealthIntervalSeconds); err != nil {
+			return nil, err
+		}
+		config.HealthIntervalSeconds = *in.HealthIntervalSeconds
 	}
 	if err := s.store.UpdateConfigWithTarget(target, config); err != nil {
 		return nil, err
@@ -458,3 +479,42 @@ func redactSecretError(err error, secret string) error {
 }
 
 func ptrTime(value time.Time) *time.Time { return &value }
+
+func validateGlobalHealthInterval(seconds int) error {
+	if seconds < minimumHealthIntervalSeconds || seconds > maximumHealthIntervalSeconds {
+		return fmt.Errorf("health interval must be between %d and %d seconds", minimumHealthIntervalSeconds, maximumHealthIntervalSeconds)
+	}
+	if seconds%minimumHealthIntervalSeconds != 0 {
+		return fmt.Errorf("health interval must be a multiple of %d seconds", minimumHealthIntervalSeconds)
+	}
+	return nil
+}
+
+func validateMemberHealthInterval(seconds int) error {
+	if seconds == 0 {
+		return nil
+	}
+	return validateGlobalHealthInterval(seconds)
+}
+
+func normalizedGlobalHealthInterval(seconds int) int {
+	if seconds < minimumHealthIntervalSeconds || seconds > maximumHealthIntervalSeconds || seconds%minimumHealthIntervalSeconds != 0 {
+		return defaultHealthIntervalSeconds
+	}
+	return seconds
+}
+
+func effectiveHealthInterval(memberSeconds, globalSeconds int) time.Duration {
+	if memberSeconds >= minimumHealthIntervalSeconds && memberSeconds <= maximumHealthIntervalSeconds && memberSeconds%minimumHealthIntervalSeconds == 0 {
+		return time.Duration(memberSeconds) * time.Second
+	}
+	return time.Duration(normalizedGlobalHealthInterval(globalSeconds)) * time.Second
+}
+
+func (s *Service) configuredHealthIntervalSeconds() int {
+	config, err := s.store.GetConfig()
+	if err != nil {
+		return defaultHealthIntervalSeconds
+	}
+	return normalizedGlobalHealthInterval(config.HealthIntervalSeconds)
+}

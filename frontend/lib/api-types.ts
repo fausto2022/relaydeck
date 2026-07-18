@@ -610,6 +610,7 @@ export interface MainStationConfig {
   auto_health_protection: boolean
   auto_recovery: boolean
   health_models: Record<string, string>
+  health_interval_seconds: number
   observation_evaluated_at?: string | null
   health_observed_at?: string | null
   margin_observed_at?: string | null
@@ -680,6 +681,8 @@ export interface MainStationAccountMember {
   concurrency: number
   health_enabled: boolean
   health_model?: string
+  health_interval_seconds: number
+  recent_20_success_rate?: number | null
   last_health_status: string
   last_health_at?: string | null
   consecutive_health_success: number
@@ -726,6 +729,7 @@ export interface MainStationMember {
   manual_cost_micros?: number | null
   health_enabled: boolean
   health_model?: string
+  health_interval_seconds: number
   health_api_mode: string
   last_health_status: string
   last_health_at?: string | null

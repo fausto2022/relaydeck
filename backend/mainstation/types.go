@@ -33,6 +33,7 @@ type ConfigDTO struct {
 	AutoHealthProtection   bool               `json:"auto_health_protection"`
 	AutoRecovery           bool               `json:"auto_recovery"`
 	HealthModels           map[string]string  `json:"health_models"`
+	HealthIntervalSeconds  int                `json:"health_interval_seconds"`
 	ObservationEvaluatedAt *time.Time         `json:"observation_evaluated_at,omitempty"`
 	HealthObservedAt       *time.Time         `json:"health_observed_at,omitempty"`
 	MarginObservedAt       *time.Time         `json:"margin_observed_at,omitempty"`
@@ -40,15 +41,16 @@ type ConfigDTO struct {
 }
 
 type ConfigInput struct {
-	TargetID             uint              `json:"target_id,omitempty"`
-	Name                 string            `json:"name"`
-	BaseURL              string            `json:"base_url"`
-	AdminAPIKey          string            `json:"admin_api_key"`
-	Enabled              *bool             `json:"enabled,omitempty"`
-	AutoMarginProtection *bool             `json:"auto_margin_protection,omitempty"`
-	AutoHealthProtection *bool             `json:"auto_health_protection,omitempty"`
-	AutoRecovery         *bool             `json:"auto_recovery,omitempty"`
-	HealthModels         map[string]string `json:"health_models,omitempty"`
+	TargetID              uint              `json:"target_id,omitempty"`
+	Name                  string            `json:"name"`
+	BaseURL               string            `json:"base_url"`
+	AdminAPIKey           string            `json:"admin_api_key"`
+	Enabled               *bool             `json:"enabled,omitempty"`
+	AutoMarginProtection  *bool             `json:"auto_margin_protection,omitempty"`
+	AutoHealthProtection  *bool             `json:"auto_health_protection,omitempty"`
+	AutoRecovery          *bool             `json:"auto_recovery,omitempty"`
+	HealthModels          map[string]string `json:"health_models,omitempty"`
+	HealthIntervalSeconds *int              `json:"health_interval_seconds,omitempty"`
 }
 
 type HealthModelCatalog struct {
@@ -92,6 +94,8 @@ type AccountMemberDTO struct {
 	Concurrency              int        `json:"concurrency"`
 	HealthEnabled            bool       `json:"health_enabled"`
 	HealthModel              string     `json:"health_model,omitempty"`
+	HealthIntervalSeconds    int        `json:"health_interval_seconds"`
+	Recent20SuccessRate      *float64   `json:"recent_20_success_rate,omitempty"`
 	LastHealthStatus         string     `json:"last_health_status"`
 	LastHealthAt             *time.Time `json:"last_health_at,omitempty"`
 	ConsecutiveHealthSuccess int        `json:"consecutive_health_success"`
@@ -170,6 +174,7 @@ type MemberInput struct {
 	ManualCostMultiplier   *float64 `json:"manual_cost_multiplier,omitempty"`
 	HealthEnabled          *bool    `json:"health_enabled,omitempty"`
 	HealthModel            string   `json:"health_model,omitempty"`
+	HealthIntervalSeconds  *int     `json:"health_interval_seconds,omitempty"`
 	HealthAPIMode          string   `json:"health_api_mode,omitempty"`
 }
 
@@ -180,8 +185,9 @@ type DeleteMemberInput struct {
 }
 
 type HealthCheckInput struct {
-	Level string `json:"level"`
-	Force bool   `json:"force"`
+	Level     string `json:"level"`
+	Force     bool   `json:"force"`
+	Scheduled bool   `json:"-"`
 }
 
 type HealthStats struct {

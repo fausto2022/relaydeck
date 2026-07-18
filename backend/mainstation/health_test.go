@@ -341,7 +341,7 @@ func TestScheduledHealthChecksContinueForDisabledMemberUntilHealthIsDisabled(t *
 	if err := db.Save(member).Error; err != nil {
 		t.Fatalf("disable member: %v", err)
 	}
-	current := member.CreatedAt.Add(2 * time.Minute)
+	current := member.CreatedAt.Add(6 * time.Minute)
 	service.now = func() time.Time { return current }
 	service.RunDueHealthChecks(context.Background())
 	if calls.Load() != 1 {
@@ -351,10 +351,80 @@ func TestScheduledHealthChecksContinueForDisabledMemberUntilHealthIsDisabled(t *
 	if err := db.Model(member).Update("health_enabled", false).Error; err != nil {
 		t.Fatalf("disable health checks: %v", err)
 	}
-	current = current.Add(2 * time.Minute)
+	current = current.Add(6 * time.Minute)
 	service.RunDueHealthChecks(context.Background())
 	if calls.Load() != 1 {
 		t.Fatalf("health-disabled member probe calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestScheduledHealthUsesMemberIntervalAndRunsOneEffectiveProbe(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("scheduled path = %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "probe"})
+	}))
+	defer server.Close()
+
+	service, db, admin, _ := newTestService(t)
+	member := createHealthMember(t, service, db, admin, server.URL, `{"jitter_percent":0}`)
+	globalInterval := 60
+	if _, err := service.UpdateConfig(context.Background(), ConfigInput{HealthIntervalSeconds: &globalInterval}); err != nil {
+		t.Fatalf("save global interval: %v", err)
+	}
+	memberInterval := 120
+	member.HealthIntervalSeconds = memberInterval
+	if err := db.Save(member).Error; err != nil {
+		t.Fatalf("save member interval: %v", err)
+	}
+
+	current := member.CreatedAt.Add(90 * time.Second)
+	service.now = func() time.Time { return current }
+	service.RunDueHealthChecks(context.Background())
+	if calls.Load() != 0 {
+		t.Fatalf("early scheduled calls = %d", calls.Load())
+	}
+
+	current = member.CreatedAt.Add(121 * time.Second)
+	service.RunDueHealthChecks(context.Background())
+	if calls.Load() != 1 {
+		t.Fatalf("due scheduled calls = %d, want 1", calls.Load())
+	}
+
+	current = current.Add(60 * time.Second)
+	service.RunDueHealthChecks(context.Background())
+	if calls.Load() != 1 {
+		t.Fatalf("member interval was not preferred: calls = %d", calls.Load())
+	}
+}
+
+func TestAccountDTOIncludesRecentConnectivityRate(t *testing.T) {
+	service, db, admin, _ := newTestService(t)
+	member := createHealthMember(t, service, db, admin, "https://upstream.example.com", "")
+	now := time.Now()
+	checks := []storage.MainAccountHealthCheck{
+		{PoolID: member.PoolID, MemberID: member.ID, RemoteAccountID: 21, Level: "L0", Status: "success", CreatedAt: now},
+		{PoolID: member.PoolID, MemberID: member.ID, RemoteAccountID: 21, Level: "L0", Status: "failure", CreatedAt: now.Add(-time.Second)},
+		{PoolID: member.PoolID, MemberID: member.ID, RemoteAccountID: 21, Level: "L1", Status: "success", CreatedAt: now.Add(-2 * time.Second)},
+	}
+	for i := range checks {
+		if err := db.Create(&checks[i]).Error; err != nil {
+			t.Fatalf("create health check: %v", err)
+		}
+	}
+	snapshot, err := service.store.FindAccountSnapshot(21)
+	if err != nil {
+		t.Fatalf("find account snapshot: %v", err)
+	}
+	dto := service.accountDTO(*snapshot)
+	if dto.Member == nil || dto.Member.Recent20SuccessRate == nil {
+		t.Fatalf("account dto = %#v", dto)
+	}
+	if rate := *dto.Member.Recent20SuccessRate; rate < 66.6 || rate > 66.7 {
+		t.Fatalf("recent connectivity rate = %f", rate)
 	}
 }
 

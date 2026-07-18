@@ -189,6 +189,21 @@ func TestConfigIsSingletonAndConnectionErrorIsRedacted(t *testing.T) {
 	if !config.Configured || !config.HasAdminAPIKey || config.AutoMarginProtection || config.AutoHealthProtection || config.AutoRecovery {
 		t.Fatalf("config = %#v", config)
 	}
+	if config.HealthIntervalSeconds != defaultHealthIntervalSeconds {
+		t.Fatalf("default health interval = %d", config.HealthIntervalSeconds)
+	}
+	interval := 60
+	updated, err := service.UpdateConfig(context.Background(), ConfigInput{HealthIntervalSeconds: &interval})
+	if err != nil {
+		t.Fatalf("update health interval: %v", err)
+	}
+	if updated.HealthIntervalSeconds != interval {
+		t.Fatalf("updated health interval = %d", updated.HealthIntervalSeconds)
+	}
+	invalidInterval := 29
+	if _, err := service.UpdateConfig(context.Background(), ConfigInput{HealthIntervalSeconds: &invalidInterval}); err == nil {
+		t.Fatal("invalid health interval was accepted")
+	}
 	if _, err := service.CreateConfig(context.Background(), ConfigInput{
 		Name: "other", BaseURL: "https://other.example.com", AdminAPIKey: "other-key",
 	}); !errors.Is(err, ErrAlreadyConfigured) {

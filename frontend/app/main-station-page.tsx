@@ -421,12 +421,13 @@ export default function MainStationPage() {
                         <TableHead>并发</TableHead>
                         <TableHead>优先级</TableHead>
                         <TableHead>健康</TableHead>
+                        <TableHead>连通率</TableHead>
                         <TableHead>来源</TableHead>
                         <TableHead className="w-24 text-right">操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {accountsLoading ? <EmptyRow columns={7} text="加载中" /> : null}
+                      {accountsLoading ? <EmptyRow columns={8} text="加载中" /> : null}
                       {!accountsLoading && filteredAccounts.map((account) => (
                         <TableRow key={account.remote_account_id}>
                           <TableCell>
@@ -447,6 +448,7 @@ export default function MainStationPage() {
                           <TableCell>{account.member?.concurrency ?? account.concurrency}</TableCell>
                           <TableCell>{account.member?.priority ?? account.priority}</TableCell>
                           <TableCell><HealthBadge account={account} /></TableCell>
+                          <TableCell><ConnectivityRate account={account} /></TableCell>
                           <TableCell>
                             {account.member ? (
                               <div className="max-w-40 truncate text-sm" title={channelName(channels, account.member.source_channel_id)}>{channelName(channels, account.member.source_channel_id)}</div>
@@ -471,7 +473,7 @@ export default function MainStationPage() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {!accountsLoading && filteredAccounts.length === 0 ? <EmptyRow columns={7} text="没有符合条件的账号" /> : null}
+                      {!accountsLoading && filteredAccounts.length === 0 ? <EmptyRow columns={8} text="没有符合条件的账号" /> : null}
                     </TableBody>
                   </Table>
                 </div>
@@ -517,6 +519,7 @@ export default function MainStationPage() {
         onOpenChange={(open) => { if (!open) setEditingAccount(null) }}
         workspace={selectedWorkspace}
         account={editingAccount}
+        config={config}
         onSaved={() => { void loadBase(); void loadAccounts(selectedGroupID) }}
       />
       <GroupSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} workspace={selectedWorkspace} onSaved={(saved) => setWorkspaces((items) => items.map((item) => item.group.id === saved.group.id ? saved : item))} />
@@ -570,6 +573,14 @@ function HealthBadge({ account }: { account: MainStationAccount }) {
   if (status === "unhealthy") return <Badge variant="destructive">异常</Badge>
   if (status === "degraded") return <Badge variant="outline" className="border-amber-300 text-amber-700">波动</Badge>
   return <Badge variant="outline">未检测</Badge>
+}
+
+function ConnectivityRate({ account }: { account: MainStationAccount }) {
+  const rate = account.member?.recent_20_success_rate
+  if (rate == null) return <span className="text-muted-foreground">-</span>
+  const text = rate === Math.round(rate) ? rate.toFixed(0) : rate.toFixed(1)
+  const className = rate >= 95 ? "text-emerald-700" : rate >= 80 ? "text-amber-700" : "text-destructive"
+  return <span className={cn("text-sm font-medium tabular-nums", className)} title="最近 20 次有效探测成功率">{text}%</span>
 }
 
 function ToggleLine({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {

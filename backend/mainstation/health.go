@@ -88,6 +88,7 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 		return nil, errors.New("member binding is invalid")
 	}
 	model := effectiveHealthModel(pool.Platform, member.HealthModel, s.configuredHealthModels())
+	healthInterval := effectiveHealthInterval(member.HealthIntervalSeconds, s.configuredHealthIntervalSeconds())
 	policy := parseHealthPolicy(pool.HealthPolicyJSON)
 	release, err := s.acquireHealthSlot(ctx, member.ID, member.SourceChannelID, level)
 	if err != nil {
@@ -98,9 +99,8 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 	now := s.now()
 	if !in.Force {
 		if last, lastErr := s.store.LastHealthCheck(member.ID, level); lastErr == nil {
-			interval := healthLevelInterval(policy, level)
-			if interval > 0 && now.Sub(last.CreatedAt) < interval {
-				return nil, fmt.Errorf("health check minimum interval has not elapsed; retry after %s", interval-now.Sub(last.CreatedAt))
+			if now.Sub(last.CreatedAt) < healthInterval {
+				return nil, fmt.Errorf("health check minimum interval has not elapsed; retry after %s", healthInterval-now.Sub(last.CreatedAt))
 			}
 		} else if !errors.Is(lastErr, gorm.ErrRecordNotFound) {
 			return nil, lastErr
@@ -111,7 +111,7 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 	if err != nil {
 		return nil, err
 	}
-	if !in.Force && healthBudgetExceeded(level, budget) {
+	if !in.Force && !in.Scheduled && healthBudgetExceeded(level, budget) {
 		check := storage.MainAccountHealthCheck{
 			PoolID: pool.ID, MemberID: member.ID, RemoteAccountID: memberRemoteID(member), Level: level,
 			Status: "skipped_budget", ErrorClass: "budget_exceeded", Message: "daily health probe budget exceeded",
@@ -686,6 +686,14 @@ func (s *Service) MemberHealthStats(memberID uint) (HealthStats, error) {
 	return stats, nil
 }
 
+func (s *Service) recent20SuccessRate(memberID uint) *float64 {
+	checks, err := s.store.ListRecentMemberHealthChecks(memberID, 20)
+	if err != nil {
+		return nil
+	}
+	return successRate(checks, time.Time{})
+}
+
 func (s *Service) ListHealthChecks(poolID, memberID uint, level string, page, pageSize int) (*Page[storage.MainAccountHealthCheck], error) {
 	if _, err := s.store.FindPool(poolID); err != nil {
 		return nil, err
@@ -770,6 +778,11 @@ func (s *Service) RunDueHealthChecks(ctx context.Context) {
 	tasks := make([]task, 0, healthSchedulerBatchLimit)
 	poolCache := make(map[uint]*storage.MainAccountPool)
 	globalModels := s.configuredHealthModels()
+	globalIntervalSeconds := s.configuredHealthIntervalSeconds()
+	now := s.now()
+	sort.SliceStable(members, func(i, j int) bool {
+		return memberHealthOrderTime(members[i]).Before(memberHealthOrderTime(members[j]))
+	})
 	for _, member := range members {
 		if len(tasks) >= healthSchedulerBatchLimit {
 			break
@@ -785,18 +798,14 @@ func (s *Service) RunDueHealthChecks(ctx context.Context) {
 			}
 			poolCache[member.PoolID] = pool
 		}
-		policy := parseHealthPolicy(pool.HealthPolicyJSON)
 		model := effectiveHealthModel(pool.Platform, member.HealthModel, globalModels)
-		for _, level := range []string{"L0", "L1", "L2"} {
-			if level != "L0" && model == "" {
-				continue
-			}
-			if s.healthLevelDue(&member, policy, level, s.now()) {
-				tasks = append(tasks, task{poolID: member.PoolID, memberID: member.ID, level: level})
-				if len(tasks) >= healthSchedulerBatchLimit {
-					break
-				}
-			}
+		level := "L0"
+		if model != "" {
+			level = "L1"
+		}
+		interval := effectiveHealthInterval(member.HealthIntervalSeconds, globalIntervalSeconds)
+		if s.healthLevelDue(&member, level, now, interval) {
+			tasks = append(tasks, task{poolID: member.PoolID, memberID: member.ID, level: level})
 		}
 	}
 	var wait sync.WaitGroup
@@ -805,7 +814,7 @@ func (s *Service) RunDueHealthChecks(ctx context.Context) {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			if _, err := s.CheckMember(ctx, item.poolID, item.memberID, HealthCheckInput{Level: item.level}); err != nil && s.log != nil && !strings.Contains(err.Error(), "minimum interval") {
+			if _, err := s.CheckMember(ctx, item.poolID, item.memberID, HealthCheckInput{Level: item.level, Scheduled: true}); err != nil && s.log != nil && !strings.Contains(err.Error(), "minimum interval") {
 				s.log.Warn("scheduled main station health check", "err", err, "member_id", item.memberID, "level", item.level)
 			}
 		}()
@@ -813,8 +822,7 @@ func (s *Service) RunDueHealthChecks(ctx context.Context) {
 	wait.Wait()
 }
 
-func (s *Service) healthLevelDue(member *storage.MainAccountPoolMember, policy healthPolicy, level string, now time.Time) bool {
-	interval := healthLevelInterval(policy, level)
+func (s *Service) healthLevelDue(member *storage.MainAccountPoolMember, level string, now time.Time, interval time.Duration) bool {
 	if interval <= 0 {
 		return false
 	}
@@ -825,8 +833,15 @@ func (s *Service) healthLevelDue(member *storage.MainAccountPoolMember, policy h
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false
 	}
-	due := base.Add(interval + deterministicJitter(member.ID, level, interval, policy.JitterPercent))
+	due := base.Add(interval)
 	return !now.Before(due)
+}
+
+func memberHealthOrderTime(member storage.MainAccountPoolMember) time.Time {
+	if member.LastHealthAt != nil {
+		return *member.LastHealthAt
+	}
+	return member.CreatedAt
 }
 
 func (s *Service) acquireHealthSlot(ctx context.Context, memberID, channelID uint, level string) (func(), error) {

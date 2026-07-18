@@ -19,6 +19,7 @@ type MainStationConfig struct {
 	AutoHealthProtection   bool       `gorm:"not null;default:false" json:"auto_health_protection"`
 	AutoRecovery           bool       `gorm:"not null;default:false" json:"auto_recovery"`
 	HealthModelsJSON       string     `gorm:"type:text;not null;default:'{}'" json:"-"`
+	HealthIntervalSeconds  int        `gorm:"not null;default:300" json:"health_interval_seconds"`
 	ObservationEvaluatedAt *time.Time `json:"observation_evaluated_at,omitempty"`
 	HealthObservedAt       *time.Time `json:"health_observed_at,omitempty"`
 	MarginObservedAt       *time.Time `json:"margin_observed_at,omitempty"`
@@ -122,6 +123,7 @@ type MainAccountPoolMember struct {
 	ManualCostMicros         *int64     `json:"manual_cost_micros,omitempty"`
 	HealthEnabled            bool       `gorm:"not null;default:true" json:"health_enabled"`
 	HealthModel              string     `gorm:"size:256;not null;default:''" json:"health_model,omitempty"`
+	HealthIntervalSeconds    int        `gorm:"not null;default:0" json:"health_interval_seconds"`
 	HealthAPIMode            string     `gorm:"size:32;not null;default:'openai_chat'" json:"health_api_mode"`
 	LastHealthStatus         string     `gorm:"size:32;not null;default:'unknown';index" json:"last_health_status"`
 	LastHealthAt             *time.Time `json:"last_health_at,omitempty"`

@@ -201,6 +201,7 @@ func (s *Service) ListAccounts(page, pageSize int, includeMissing, unboundOnly b
 func (s *Service) accountDTO(item storage.MainStationAccountSnapshot) AccountDTO {
 	dto := AccountDTO{MainStationAccountSnapshot: item}
 	if member, err := s.store.FindMemberByRemoteAccountID(item.RemoteAccountID); err == nil {
+		recent20SuccessRate := s.recent20SuccessRate(member.ID)
 		dto.Member = &AccountMemberDTO{
 			ID:                       member.ID,
 			AccountName:              member.AccountName,
@@ -218,6 +219,8 @@ func (s *Service) accountDTO(item storage.MainStationAccountSnapshot) AccountDTO
 			Concurrency:              member.Concurrency,
 			HealthEnabled:            member.HealthEnabled,
 			HealthModel:              member.HealthModel,
+			HealthIntervalSeconds:    member.HealthIntervalSeconds,
+			Recent20SuccessRate:      recent20SuccessRate,
 			LastHealthStatus:         member.LastHealthStatus,
 			LastHealthAt:             member.LastHealthAt,
 			ConsecutiveHealthSuccess: member.ConsecutiveHealthSuccess,

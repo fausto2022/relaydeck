@@ -373,6 +373,11 @@ func (s *Service) CreateMember(ctx context.Context, poolID uint, in MemberInput)
 		}
 		in.Concurrency = limits.Concurrency
 	}
+	if in.HealthIntervalSeconds != nil {
+		if err := validateMemberHealthInterval(*in.HealthIntervalSeconds); err != nil {
+			return nil, err
+		}
+	}
 	in.Priority = normalizeSchedulingPriority(in.Priority)
 	in.Weight = automaticLoadFactor(in.Concurrency)
 	mode := strings.ToLower(strings.TrimSpace(in.OwnershipMode))
@@ -421,6 +426,12 @@ func (s *Service) UpdateMember(ctx context.Context, poolID, memberID uint, in Me
 	}
 	if in.HealthEnabled != nil {
 		member.HealthEnabled = *in.HealthEnabled
+	}
+	if in.HealthIntervalSeconds != nil {
+		if err := validateMemberHealthInterval(*in.HealthIntervalSeconds); err != nil {
+			return nil, err
+		}
+		member.HealthIntervalSeconds = *in.HealthIntervalSeconds
 	}
 	if in.ProxyID != nil {
 		member.ProxyID = in.ProxyID
@@ -847,6 +858,10 @@ func memberFromInput(poolID uint, in MemberInput) *storage.MainAccountPoolMember
 	if in.Preferred != nil {
 		preferred = *in.Preferred
 	}
+	healthIntervalSeconds := 0
+	if in.HealthIntervalSeconds != nil {
+		healthIntervalSeconds = *in.HealthIntervalSeconds
+	}
 	costAdjustment := in.CostAdjustment
 	if costAdjustment == 0 {
 		costAdjustment = 1
@@ -876,6 +891,7 @@ func memberFromInput(poolID uint, in MemberInput) *storage.MainAccountPoolMember
 		ManualCostMicros:       manualCost,
 		HealthEnabled:          healthEnabled,
 		HealthModel:            strings.TrimSpace(in.HealthModel),
+		HealthIntervalSeconds:  healthIntervalSeconds,
 		HealthAPIMode:          strings.TrimSpace(in.HealthAPIMode),
 		LastHealthStatus:       "unknown",
 	}

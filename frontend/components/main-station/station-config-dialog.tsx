@@ -47,6 +47,7 @@ export function StationConfigDialog({
   const [adminAPIKey, setAdminAPIKey] = useState("")
   const [enabled, setEnabled] = useState(true)
   const [healthModels, setHealthModels] = useState<Record<string, string>>({})
+  const [healthIntervalSeconds, setHealthIntervalSeconds] = useState(300)
   const [modelCatalogs, setModelCatalogs] = useState<MainStationHealthModelCatalog[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [busy, setBusy] = useState<"test" | "save" | null>(null)
@@ -59,6 +60,7 @@ export function StationConfigDialog({
     setAdminAPIKey("")
     setEnabled(config?.enabled ?? true)
     setHealthModels(config?.health_models ?? {})
+    setHealthIntervalSeconds(config?.health_interval_seconds ?? 300)
     setModelCatalogs([])
     if (config?.configured) void loadHealthModels()
     if (!config?.configured && config?.migration?.status === "requires_confirmation") {
@@ -131,6 +133,10 @@ export function StationConfigDialog({
       toast.error("首次配置必须填写 Admin API Key")
       return
     }
+    if (healthIntervalSeconds < 30 || healthIntervalSeconds > 86400 || healthIntervalSeconds % 30 !== 0) {
+      toast.error("全局探活间隔必须是 30 到 86400 秒之间的 30 秒整数倍")
+      return
+    }
     setBusy("save")
     try {
       const saved = await apiFetch<MainStationConfig>("/main-station", {
@@ -142,6 +148,7 @@ export function StationConfigDialog({
           admin_api_key: adminAPIKey.trim(),
           enabled,
           health_models: healthModels,
+          health_interval_seconds: healthIntervalSeconds,
         }),
       })
       onSaved(saved)
@@ -255,6 +262,19 @@ export function StationConfigDialog({
                     </div>
                   )
                 })}
+              </div>
+              <div className="space-y-2 border-t pt-3">
+                <Label htmlFor="main-station-health-interval">全局探活间隔（秒）</Label>
+                <Input
+                  id="main-station-health-interval"
+                  type="number"
+                  min={30}
+                  max={86400}
+                  step={30}
+                  value={healthIntervalSeconds}
+                  onChange={(event) => setHealthIntervalSeconds(Number(event.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">账号未单独设置时使用此间隔，最短 30 秒。</p>
               </div>
             </div>
           ) : null}

@@ -396,6 +396,18 @@ func (r *MainStationStore) ListMemberHealthChecksSince(memberID uint, since time
 	return list, nil
 }
 
+func (r *MainStationStore) ListRecentMemberHealthChecks(memberID uint, limit int) ([]MainAccountHealthCheck, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var list []MainAccountHealthCheck
+	if err := r.db.Where("member_id = ? AND status IN ?", memberID, []string{"success", "failure"}).
+		Order("created_at DESC, id DESC").Limit(limit).Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *MainStationStore) CountDailyHealthChecks(memberID uint, level string, since time.Time) (int64, error) {
 	var count int64
 	err := r.db.Model(&MainAccountHealthCheck{}).

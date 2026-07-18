@@ -12,11 +12,20 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { apiFetch } from "@/lib/api"
 import type {
   MainStationAccount,
+  MainStationConfig,
   MainStationGroupWorkspace,
+  MainStationHealthModelCatalog,
   MainStationMember,
 } from "@/lib/api-types"
 
@@ -25,15 +34,18 @@ interface Props {
   onOpenChange: (open: boolean) => void
   workspace: MainStationGroupWorkspace | null
   account: MainStationAccount | null
+  config: MainStationConfig | null
   onSaved: (member: MainStationMember) => void
 }
 
-export function AccountSettingsDialog({ open, onOpenChange, workspace, account, onSaved }: Props) {
+export function AccountSettingsDialog({ open, onOpenChange, workspace, account, config, onSaved }: Props) {
   const [concurrency, setConcurrency] = useState(1)
   const [priority, setPriority] = useState(1)
   const [preferred, setPreferred] = useState(false)
   const [healthEnabled, setHealthEnabled] = useState(true)
   const [healthModel, setHealthModel] = useState("")
+  const [healthInterval, setHealthInterval] = useState("")
+  const [modelCatalogs, setModelCatalogs] = useState<MainStationHealthModelCatalog[]>([])
   const [enabled, setEnabled] = useState(true)
   const [busy, setBusy] = useState(false)
 
@@ -44,7 +56,15 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
     setPreferred(account.member.preferred)
     setHealthEnabled(account.member.health_enabled)
     setHealthModel(account.member.health_model ?? "")
+    setHealthInterval(account.member.health_interval_seconds > 0 ? String(account.member.health_interval_seconds) : "")
     setEnabled(account.member.enabled)
+    setModelCatalogs([])
+    void apiFetch<MainStationHealthModelCatalog[]>("/main-station/health-models")
+      .then(setModelCatalogs)
+      .catch((error: unknown) => {
+        setModelCatalogs([])
+        toast.error(error instanceof Error ? error.message : "获取模型列表失败")
+      })
   }, [account, open])
 
   async function handleSave() {
@@ -56,6 +76,11 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
     }
     if (priority <= 0) {
       toast.error("优先级必须大于 0")
+      return
+    }
+    const healthIntervalSeconds = healthInterval === "" ? 0 : Number(healthInterval)
+    if (healthIntervalSeconds !== 0 && (healthIntervalSeconds < 30 || healthIntervalSeconds > 86400 || healthIntervalSeconds % 30 !== 0)) {
+      toast.error("账号探活间隔必须是 30 到 86400 秒之间的 30 秒整数倍")
       return
     }
     setBusy(true)
@@ -73,6 +98,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
           concurrency,
           health_enabled: healthEnabled,
           health_model: healthModel.trim(),
+          health_interval_seconds: healthIntervalSeconds,
           health_api_mode: "openai_chat",
         }),
       })
@@ -85,6 +111,11 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
       setBusy(false)
     }
   }
+
+  const platform = healthPlatformKey(account?.platform)
+  const globalModel = config?.health_models?.[platform] ?? ""
+  const catalog = modelCatalogs.find((item) => item.platform === platform)
+  const modelOptions = Array.from(new Set([...(catalog?.models ?? []), healthModel].filter(Boolean)))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -104,8 +135,28 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
             <Input id="edit-account-priority" type="number" min={1} step={1} value={priority} onChange={(event) => setPriority(Number(event.target.value))} />
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="edit-account-health-model">账号探活模型（可选）</Label>
-            <Input id="edit-account-health-model" value={healthModel} onChange={(event) => setHealthModel(event.target.value)} placeholder="留空继承平台全局模型" />
+            <Label>账号探活模型</Label>
+            <Select value={healthModel || "__inherit__"} onValueChange={(value) => setHealthModel(value === "__inherit__" ? "" : value)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__inherit__">继承全局{globalModel ? `（${globalModel}）` : "（仅快速检测）"}</SelectItem>
+                {modelOptions.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {catalog?.error ? <p className="text-xs text-destructive">{catalog.error}</p> : null}
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="edit-account-health-interval">账号探活间隔（秒）</Label>
+            <Input
+              id="edit-account-health-interval"
+              type="number"
+              min={30}
+              max={86400}
+              step={30}
+              value={healthInterval}
+              onChange={(event) => setHealthInterval(event.target.value)}
+              placeholder={`留空继承全局（${config?.health_interval_seconds ?? 300} 秒）`}
+            />
           </div>
           <div className="flex items-center justify-between gap-4 border-t pt-4 sm:col-span-2">
             <Label htmlFor="edit-account-preferred">优先调度</Label>
@@ -129,4 +180,12 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
       </DialogContent>
     </Dialog>
   )
+}
+
+function healthPlatformKey(platform?: string) {
+  const normalized = (platform ?? "").trim().toLowerCase()
+  if (normalized === "claude") return "anthropic"
+  if (normalized === "google") return "gemini"
+  if (normalized === "xai") return "grok"
+  return normalized
 }
