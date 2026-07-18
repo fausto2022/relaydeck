@@ -113,6 +113,7 @@ type fakeChannelService struct {
 	groups      []connector.APIKeyGroup
 	createdKeys []connector.APIKeyCreateRequest
 	deletedKeys []int64
+	concurrency int
 }
 
 func (f *fakeChannelService) RevealAPIKey(context.Context, uint, int64) (string, error) {
@@ -128,6 +129,13 @@ func (f *fakeChannelService) DeleteAPIKey(_ context.Context, _ uint, id int64) e
 }
 func (f *fakeChannelService) ListAPIKeyGroups(context.Context, uint) ([]connector.APIKeyGroup, error) {
 	return append([]connector.APIKeyGroup(nil), f.groups...), nil
+}
+func (f *fakeChannelService) GetAccountLimits(context.Context, uint) (*connector.AccountLimits, error) {
+	concurrency := f.concurrency
+	if concurrency <= 0 {
+		concurrency = 10
+	}
+	return &connector.AccountLimits{Concurrency: concurrency}, nil
 }
 
 func TestConfigIsSingletonAndConnectionErrorIsRedacted(t *testing.T) {
@@ -316,7 +324,7 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		AccountName: "OpenAI-01", OwnershipMode: "managed", SourceChannelID: channel.ID, SourceGroupID: &sourceGroupID,
 		SourceGroupName: "source-group", Enabled: boolPtr(true), HealthEnabled: boolPtr(true),
 		HealthAPIMode: "openai_chat",
-		Weight:        2, Priority: 3, Concurrency: 4, RateConvertMode: "raw", CostAdjustment: 1,
+		Weight:        2, Priority: 3, RateConvertMode: "raw", CostAdjustment: 1,
 	})
 	if err != nil {
 		t.Fatalf("create managed member: %v", err)
@@ -336,6 +344,9 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	}
 	if len(request.GroupIDs) != 1 || request.GroupIDs[0] != 31 || request.RateMultiplier != 0.8 {
 		t.Fatalf("managed account request = %#v", request)
+	}
+	if request.Concurrency != channels.concurrency {
+		t.Fatalf("managed account concurrency = %d, want %d", request.Concurrency, channels.concurrency)
 	}
 	if len(admin.schedulableCalls) != 1 || !admin.schedulableCalls[0] {
 		t.Fatalf("schedulable calls = %#v", admin.schedulableCalls)
@@ -374,7 +385,7 @@ func newTestService(t *testing.T) (*Service, *gorm.DB, *fakeAdminClient, *fakeCh
 		t.Fatalf("new cipher: %v", err)
 	}
 	admin := &fakeAdminClient{}
-	channelSvc := &fakeChannelService{secret: "sk-source-secret"}
+	channelSvc := &fakeChannelService{secret: "sk-source-secret", concurrency: 12}
 	service := New(
 		storage.NewMainStationStore(db),
 		storage.NewUpstreamSyncTargets(db),

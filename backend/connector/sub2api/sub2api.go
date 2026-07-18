@@ -209,6 +209,23 @@ func (c *Client) GetBalance(ctx context.Context, ch *connector.Channel, session 
 	}, nil
 }
 
+func (c *Client) GetAccountLimits(ctx context.Context, ch *connector.Channel, session *connector.AuthSession) (*connector.AccountLimits, error) {
+	body, err := c.getJSON(ctx, strings.TrimRight(ch.SiteURL, "/")+"/api/v1/auth/me", session)
+	if err != nil {
+		return nil, fmt.Errorf("sub2api me: %w", err)
+	}
+	var me struct {
+		Concurrency int `json:"concurrency"`
+	}
+	if err := json.Unmarshal(body, &me); err != nil {
+		return nil, fmt.Errorf("sub2api me decode: %w", err)
+	}
+	if me.Concurrency <= 0 {
+		return nil, errors.New("sub2api account concurrency is unavailable")
+	}
+	return &connector.AccountLimits{Concurrency: me.Concurrency}, nil
+}
+
 func (c *Client) GetCosts(ctx context.Context, ch *connector.Channel, session *connector.AuthSession) (*connector.CostResult, error) {
 	body, err := c.getJSON(ctx, strings.TrimRight(ch.SiteURL, "/")+"/api/v1/usage/dashboard/stats", session)
 	if err != nil {

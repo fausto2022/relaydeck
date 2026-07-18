@@ -95,6 +95,11 @@ type CostResult struct {
 	TotalCost float64
 }
 
+// AccountLimits 是上游账号本身的调度限制，不是单条 API Key 的限额。
+type AccountLimits struct {
+	Concurrency int `json:"concurrency"`
+}
+
 // RateResult 一条倍率记录。ModelName 在两个上游分别是"分组名"，Description 是该分组的描述（来自上游接口）。
 type RateResult struct {
 	GroupID         *int64
@@ -357,6 +362,11 @@ type Connector interface {
 // SessionRefresher 是支持 refresh_token 续期的 connector 可选能力。
 type SessionRefresher interface {
 	RefreshSession(ctx context.Context, channel *Channel, session *AuthSession) (*AuthSession, error)
+}
+
+// AccountLimitsProvider 由能够读取当前用户限制的 connector 可选实现。
+type AccountLimitsProvider interface {
+	GetAccountLimits(ctx context.Context, channel *Channel, session *AuthSession) (*AccountLimits, error)
 }
 
 type ProxySetter interface {

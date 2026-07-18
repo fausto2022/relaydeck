@@ -24,6 +24,7 @@ import { Switch } from "@/components/ui/switch"
 import { apiFetch } from "@/lib/api"
 import type {
   Channel,
+  ChannelAccountLimits,
   ChannelAPIKeyGroup,
   ChannelAPIKeyPage,
   MainStationAccount,
@@ -55,7 +56,9 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
   const [healthModel, setHealthModel] = useState("")
   const [weight, setWeight] = useState(1)
   const [priority, setPriority] = useState(1)
-  const [concurrency, setConcurrency] = useState(10)
+  const [concurrency, setConcurrency] = useState(0)
+  const [concurrencyDetected, setConcurrencyDetected] = useState(false)
+  const [concurrencyError, setConcurrencyError] = useState("")
   const [loadingSource, setLoadingSource] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -75,19 +78,36 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
     setHealthModel("")
     setWeight(1)
     setPriority(1)
-    setConcurrency(10)
+    setConcurrency(0)
+    setConcurrencyDetected(false)
+    setConcurrencyError("")
   }, [channels, open])
 
   useEffect(() => {
     if (!open || channelID === 0) return
     setLoadingSource(true)
+    setConcurrency(0)
+    setConcurrencyDetected(false)
+    setConcurrencyError("")
     Promise.all([
       apiFetch<ChannelAPIKeyGroup[]>(`/channels/${channelID}/api-keys/groups`),
       apiFetch<ChannelAPIKeyPage>(`/channels/${channelID}/api-keys?page=1&page_size=100`),
+      apiFetch<ChannelAccountLimits>(`/channels/${channelID}/account-limits`)
+        .then((limits) => ({ limits, error: "" }))
+        .catch((error: unknown) => ({
+          limits: null,
+          error: error instanceof Error ? error.message : "无法读取上游并发",
+        })),
     ])
-      .then(([groups, keys]) => {
+      .then(([groups, keys, limitsResult]) => {
         setSourceGroups(groups)
         setSourceKeys(keys.items)
+        if (limitsResult.limits?.concurrency && limitsResult.limits.concurrency > 0) {
+          setConcurrency(limitsResult.limits.concurrency)
+          setConcurrencyDetected(true)
+        } else {
+          setConcurrencyError(limitsResult.error || "上游未返回最高并发")
+        }
       })
       .catch((error: unknown) => {
         setSourceGroups([])
@@ -223,8 +243,20 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="account-concurrency">并发</Label>
-              <Input id="account-concurrency" type="number" min={1} value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))} />
+              <Label htmlFor="account-concurrency">上游最高并发</Label>
+              <Input
+                id="account-concurrency"
+                type="number"
+                min={1}
+                value={concurrency || ""}
+                onChange={(event) => setConcurrency(Number(event.target.value))}
+                placeholder={loadingSource ? "正在读取" : "自动获取失败时手动填写"}
+                readOnly={concurrencyDetected}
+                disabled={loadingSource}
+              />
+              <p className={concurrencyDetected ? "text-xs text-emerald-700" : "text-xs text-muted-foreground"}>
+                {concurrencyDetected ? `已从上游账号获取：${concurrency}` : concurrencyError || "选择账号来源后自动读取"}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">

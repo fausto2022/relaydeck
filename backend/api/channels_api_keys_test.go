@@ -53,6 +53,10 @@ func (s *apiKeyChannelServiceStub) ListAPIKeyGroups(ctx context.Context, channel
 	return s.groups, nil
 }
 
+func (s *apiKeyChannelServiceStub) GetAccountLimits(context.Context, uint) (*connector.AccountLimits, error) {
+	return &connector.AccountLimits{Concurrency: 24}, nil
+}
+
 func (s *apiKeyChannelServiceStub) CreateAPIKey(ctx context.Context, channelID uint, req connector.APIKeyCreateRequest) (*connector.APIKey, error) {
 	return s.created, nil
 }
@@ -126,6 +130,13 @@ func TestChannelAPIKeyEndpoints(t *testing.T) {
 	r.ServeHTTP(groupsRec, groupsReq)
 	if groupsRec.Code != http.StatusOK {
 		t.Fatalf("groups status = %d body = %s", groupsRec.Code, groupsRec.Body.String())
+	}
+
+	limitsReq := httptest.NewRequest(http.MethodGet, "/api/channels/1/account-limits", nil)
+	limitsRec := httptest.NewRecorder()
+	r.ServeHTTP(limitsRec, limitsReq)
+	if limitsRec.Code != http.StatusOK || !strings.Contains(limitsRec.Body.String(), `"concurrency":24`) {
+		t.Fatalf("limits status = %d body = %s", limitsRec.Code, limitsRec.Body.String())
 	}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/channels/1/api-keys", strings.NewReader(`{"name":"created"}`))

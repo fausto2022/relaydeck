@@ -586,6 +586,10 @@ export interface UpstreamSyncLogPage {
   pages: number
 }
 
+export interface ChannelAccountLimits {
+  concurrency: number
+}
+
 export interface MainStationMigrationState {
   status: string
   detail?: string

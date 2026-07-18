@@ -366,6 +366,13 @@ func (s *Service) CreateMember(ctx context.Context, poolID uint, in MemberInput)
 	if _, err := s.channels.FindByID(in.SourceChannelID); err != nil {
 		return nil, fmt.Errorf("load source channel: %w", err)
 	}
+	if in.Concurrency <= 0 {
+		limits, err := s.channelSvc.GetAccountLimits(ctx, in.SourceChannelID)
+		if err != nil {
+			return nil, fmt.Errorf("load source account concurrency: %w", err)
+		}
+		in.Concurrency = limits.Concurrency
+	}
 	mode := strings.ToLower(strings.TrimSpace(in.OwnershipMode))
 	switch mode {
 	case "managed":

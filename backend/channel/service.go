@@ -1119,6 +1119,23 @@ func (s *Service) ListAPIKeyGroups(ctx context.Context, channelID uint) ([]conne
 	return groups, nil
 }
 
+func (s *Service) GetAccountLimits(ctx context.Context, channelID uint) (*connector.AccountLimits, error) {
+	c, resolved, conn, session, err := s.prepareConnectorCall(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	provider, ok := conn.(connector.AccountLimitsProvider)
+	if !ok {
+		return nil, errors.New("该上游不支持读取账号并发")
+	}
+	limits, err := provider.GetAccountLimits(ctx, resolved, session)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.Channels.SetLastError(c.ID, "")
+	return limits, nil
+}
+
 func (s *Service) CreateAPIKey(ctx context.Context, channelID uint, req connector.APIKeyCreateRequest) (*connector.APIKey, error) {
 	c, resolved, conn, session, err := s.prepareConnectorCall(ctx, channelID)
 	if err != nil {

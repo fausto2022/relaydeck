@@ -38,6 +38,7 @@ func registerChannels(g *gin.RouterGroup, d *Deps) {
 	gp.POST("/:id/subscription", func(c *gin.Context) { createChannelSubscription(c, d) })
 	gp.GET("/:id/subscription-usage", func(c *gin.Context) { channelSubscriptionUsage(c, d) })
 	gp.GET("/:id/api-keys/groups", func(c *gin.Context) { listChannelAPIKeyGroups(c, d) })
+	gp.GET("/:id/account-limits", func(c *gin.Context) { channelAccountLimits(c, d) })
 	gp.GET("/:id/api-keys", func(c *gin.Context) { listChannelAPIKeys(c, d) })
 	gp.POST("/:id/api-keys", func(c *gin.Context) { createChannelAPIKey(c, d) })
 	gp.PUT("/:id/api-keys/:key_id", func(c *gin.Context) { updateChannelAPIKey(c, d) })
@@ -549,6 +550,20 @@ func listChannelAPIKeyGroups(c *gin.Context, d *Deps) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": res})
+}
+
+func channelAccountLimits(c *gin.Context, d *Deps) {
+	id, err := uintParam(c, "id")
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	limits, err := d.ChannelSvc.GetAccountLimits(c.Request.Context(), id)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": limits})
 }
 
 func createChannelAPIKey(c *gin.Context, d *Deps) {
