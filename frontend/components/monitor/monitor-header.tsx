@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { useNavigate } from "react-router-dom"
 import { useTheme } from "next-themes"
 import { Activity, Github, Home, LogOut, RefreshCw, ServerCog, Sun, Moon, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -18,7 +17,6 @@ import { relativeTime } from "@/lib/format"
 import { toast } from "sonner"
 
 export function MonitorHeader() {
-  const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
   const { username, authDisabled, logout } = useAuth()
   const refresh = useTriggerRefresh()
@@ -173,13 +171,13 @@ export function MonitorHeader() {
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <Button
+                asChild
                 variant="outline"
                 size="icon"
-                onClick={() => navigate("/")}
                 className="size-8 border-border bg-background text-foreground hover:bg-muted"
                 aria-label="主页"
               >
-                <Home className="size-3.5" />
+                <a href="/"><Home className="size-3.5" /></a>
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
@@ -190,14 +188,16 @@ export function MonitorHeader() {
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <Button
+                asChild
                 variant="outline"
                 size="sm"
-                onClick={() => navigate("/main-station")}
                 className="h-8 gap-1.5 border-border bg-background px-2 text-foreground hover:bg-muted"
                 aria-label="主站"
               >
-                <ServerCog className="size-3.5" />
-                <span className="hidden lg:inline">主站</span>
+                <a href="/main-station">
+                  <ServerCog className="size-3.5" />
+                  <span className="hidden lg:inline">主站</span>
+                </a>
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
@@ -209,13 +209,13 @@ export function MonitorHeader() {
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <Button
+                asChild
                 variant="outline"
                 size="icon"
-                onClick={() => navigate("/settings")}
                 className="size-8 border-border bg-background text-foreground hover:bg-muted"
                 aria-label="系统设置"
               >
-                <Settings className="size-3.5" />
+                <a href="/settings"><Settings className="size-3.5" /></a>
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">

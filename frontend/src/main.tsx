@@ -9,6 +9,7 @@ import { RefreshProvider } from '@/lib/refresh-context'
 import { AddChannelProvider } from '@/lib/add-channel-context'
 import { AuthGate } from '@/components/auth/auth-gate'
 import { AppShell } from '@/components/app-shell'
+import { AppErrorBoundary } from '@/components/app-error-boundary'
 import { Toaster } from '@/components/ui/sonner'
 import DashboardPage from '@/app/page'
 import CaptchaPage from '@/app/captcha-page'
@@ -20,26 +21,28 @@ import '@/app/globals.css'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-      <AuthProvider>
-        <AuthGate>
-          <RefreshProvider>
-            <BrowserRouter>
-              <AddChannelProvider>
-                <Routes>
-                  <Route element={<AppShell />}>
-                    <Route index element={<DashboardPage />} />
-                    <Route path="captcha" element={<CaptchaPage />} />
-                    <Route path="notifications" element={<NotificationsPage />} />
-                    <Route path="main-station" element={<MainStationPage />} />
-                    <Route path="settings" element={<SettingsPage />} />
-                  </Route>
-                </Routes>
-              </AddChannelProvider>
-            </BrowserRouter>
-          </RefreshProvider>
-          <Toaster richColors closeButton position="top-right" />
-        </AuthGate>
-      </AuthProvider>
+      <AppErrorBoundary>
+        <AuthProvider>
+          <AuthGate>
+            <RefreshProvider>
+              <BrowserRouter>
+                <AddChannelProvider>
+                  <Routes>
+                    <Route element={<AppShell />}>
+                      <Route index element={<DashboardPage />} />
+                      <Route path="captcha" element={<CaptchaPage />} />
+                      <Route path="notifications" element={<NotificationsPage />} />
+                      <Route path="main-station" element={<MainStationPage />} />
+                      <Route path="settings" element={<SettingsPage />} />
+                    </Route>
+                  </Routes>
+                </AddChannelProvider>
+              </BrowserRouter>
+            </RefreshProvider>
+            <Toaster richColors closeButton position="top-right" />
+          </AuthGate>
+        </AuthProvider>
+      </AppErrorBoundary>
     </ThemeProvider>
   </StrictMode>,
 )
