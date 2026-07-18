@@ -116,8 +116,8 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 	}
 	today := time.Now().In(location)
 	for _, snapshot := range []storage.MainStationProfitSnapshot{
-		{Day: today.Format("2006-01-02"), Revenue: 10, Cost: 6, SampledAt: today},
-		{Day: today.AddDate(0, 0, -1).Format("2006-01-02"), Revenue: 7, Cost: 5, SampledAt: today},
+		{Day: today.Format("2006-01-02"), Revenue: 10, Cost: 600, SampledAt: today},
+		{Day: today.AddDate(0, 0, -1).Format("2006-01-02"), Revenue: 7, Cost: 500, SampledAt: today},
 	} {
 		if err := storage.NewMainStationStore(db).UpsertProfitSnapshot(&snapshot); err != nil {
 			t.Fatalf("save profit snapshot: %v", err)
@@ -188,7 +188,7 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 	if len(resp.Data.RecentRateChanges) != 1 {
 		t.Fatalf("recent rate changes = %#v", resp.Data.RecentRateChanges)
 	}
-	if resp.Data.Profit.TodayProfit != 4 || resp.Data.Profit.SevenDayProfit != 6 || resp.Data.Profit.SampledDays != 2 {
+	if resp.Data.Profit.TodayProfit != 6 || resp.Data.Profit.SevenDayProfit != 13 || resp.Data.Profit.SampledDays != 2 {
 		t.Fatalf("profit summary = %#v", resp.Data.Profit)
 	}
 	change := resp.Data.RecentRateChanges[0]

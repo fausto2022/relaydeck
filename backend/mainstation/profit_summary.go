@@ -58,17 +58,16 @@ func (s *Service) syncProfitSnapshots(ctx context.Context, client adminClient, t
 			s.logProfitSyncError("fetch main station profit", statsErr)
 			return
 		}
-		var revenue, cost float64
+		var revenue float64
 		for _, group := range groups {
-			if group.ActualCost == nil || group.AccountCost == nil {
-				s.logProfitSyncError("main station profit response has no actual/account cost", nil)
+			if group.ActualCost == nil {
+				s.logProfitSyncError("main station profit response has no actual cost", nil)
 				return
 			}
 			revenue += *group.ActualCost
-			cost += *group.AccountCost
 		}
 		if err := s.store.UpsertProfitSnapshot(&storage.MainStationProfitSnapshot{
-			Day: day, Revenue: revenue, Cost: cost, SampledAt: sampledAt,
+			Day: day, Revenue: revenue, SampledAt: sampledAt,
 		}); err != nil {
 			s.logProfitSyncError("save main station profit", err)
 			return
@@ -91,11 +90,9 @@ func (s *Service) ProfitSummary(days int) (*ProfitSummary, error) {
 	for i := range items {
 		item := items[i]
 		summary.SevenDayRevenue += item.Revenue
-		summary.SevenDayCost += item.Cost
 		if item.Day == todayKey {
 			summary.TodayAvailable = true
 			summary.TodayRevenue = item.Revenue
-			summary.TodayCost = item.Cost
 		}
 		if summary.LastSampledAt == nil || item.SampledAt.After(*summary.LastSampledAt) {
 			sampledAt := item.SampledAt
@@ -103,9 +100,43 @@ func (s *Service) ProfitSummary(days int) (*ProfitSummary, error) {
 		}
 	}
 	summary.Available = len(items) > 0
+	if err := s.applyUpstreamCosts(summary, days, todayKey); err != nil {
+		return nil, err
+	}
 	summary.TodayProfit = summary.TodayRevenue - summary.TodayCost
 	summary.SevenDayProfit = summary.SevenDayRevenue - summary.SevenDayCost
 	return summary, nil
+}
+
+func (s *Service) applyUpstreamCosts(summary *ProfitSummary, days int, todayKey string) error {
+	var trendTodayCost float64
+	if s.rates != nil {
+		trend, err := s.rates.AggregateCostTrend(days)
+		if err != nil {
+			return err
+		}
+		for _, item := range trend {
+			summary.SevenDayCost += item.Cost
+			if item.Day.Format("2006-01-02") == todayKey {
+				trendTodayCost = item.Cost
+			}
+		}
+	}
+	if s.channels == nil {
+		summary.TodayCost = trendTodayCost
+		return nil
+	}
+	channels, err := s.channels.List()
+	if err != nil {
+		return err
+	}
+	for _, channel := range channels {
+		if channel.TodayCost != nil {
+			summary.TodayCost += *channel.TodayCost
+		}
+	}
+	summary.SevenDayCost += summary.TodayCost - trendTodayCost
+	return nil
 }
 
 func (s *Service) logProfitSyncError(message string, err error) {

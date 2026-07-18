@@ -1,9 +1,9 @@
 "use client"
 
-import { ArrowUpRight, ChartNoAxesCombined, DollarSign, HandCoins, MessageSquare, Wallet } from "lucide-react"
+import { DollarSign, HandCoins, Wallet } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { useDashboardSummary, useRateChanges } from "@/lib/queries"
+import { useDashboardSummary } from "@/lib/queries"
 import { money } from "@/lib/format"
 import type { LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
@@ -17,27 +17,14 @@ interface Kpi {
   footer: ReactNode
 }
 
-function countTodayChanges(changes: { changed_at: string }[]) {
-  const startOfDay = new Date()
-  startOfDay.setHours(0, 0, 0, 0)
-  return changes.filter((c) => new Date(c.changed_at) >= startOfDay).length
-}
-
 export function KpiRow() {
   const summary = useDashboardSummary()
-  const recentChanges = useRateChanges(1, 100)
 
   const data = summary.data
-  const total = data?.total_channels ?? 0
-  const active = data?.active_channels ?? 0
-  const failed = data?.failed_channels ?? 0
   const totalBalance = data?.total_balance ?? 0
   const todayTotalCost = data?.today_total_cost ?? 0
-  const totalCost = data?.total_cost ?? 0
   const lowest = data?.lowest_balance ?? null
   const profit = data?.profit ?? null
-
-  const todayChangeCount = countTodayChanges(recentChanges.data?.items ?? [])
 
   const kpis: Kpi[] = [
     {
@@ -58,26 +45,14 @@ export function KpiRow() {
       ),
     },
     {
-      label: "今日总消费",
+      label: "今日消费",
       value: money(todayTotalCost),
       icon: Wallet,
       iconBg: "bg-warning/10",
       iconColor: "text-warning",
       footer: (
         <span className="text-muted-foreground">
-          {todayTotalCost > 0 ? "按实际扣费统计" : "今日暂无消费"}
-        </span>
-      ),
-    },
-    {
-      label: "累计消费",
-      value: money(totalCost),
-      icon: DollarSign,
-      iconBg: "bg-brand/10",
-      iconColor: "text-brand",
-      footer: (
-        <span className="text-muted-foreground">
-          {totalCost > 0 ? "全渠道累计实际扣费" : "暂无累计消费"}
+          {todayTotalCost > 0 ? "已按渠道充值倍率换算" : "今日暂无消费"}
         </span>
       ),
     },
@@ -95,66 +70,10 @@ export function KpiRow() {
         <span className="text-muted-foreground">等待主站同步采样</span>
       ),
     },
-    {
-      label: "最近 7 天利润",
-      value: profit?.available ? (
-        <span className={cn(profit.seven_day_profit < 0 ? "text-danger" : "text-success")}>{money(profit.seven_day_profit)}</span>
-      ) : "—",
-      icon: ChartNoAxesCombined,
-      iconBg: "bg-brand/10",
-      iconColor: "text-brand",
-      footer: profit?.available ? (
-        <span className="text-muted-foreground">
-          {profit.complete ? "7 天完整" : `已采样 ${profit.sampled_days}/7 天`} · 收入 {money(profit.seven_day_revenue)} · 成本 {money(profit.seven_day_cost)}
-        </span>
-      ) : (
-        <span className="text-muted-foreground">等待最近 7 天回填</span>
-      ),
-    },
-    {
-      label: "渠道状态",
-      value: (
-        <span>
-          {active}
-          <span className="mx-1 text-lg font-normal text-muted-foreground">{"/"}</span>
-          <span className="text-lg font-normal text-muted-foreground">{total}</span>
-        </span>
-      ),
-      icon: MessageSquare,
-      iconBg: "bg-success/10",
-      iconColor: "text-success",
-      footer: (
-        <span className="text-muted-foreground">
-          <span className="text-success font-medium">{active} 健康</span>
-          {failed > 0 ? (
-            <>
-              {" · "}
-              <span className="text-danger font-medium">{failed} 失败</span>
-            </>
-          ) : null}
-        </span>
-      ),
-    },
-    {
-      label: "今日倍率变动",
-      value: (
-        <span className={cn(todayChangeCount > 0 ? "text-danger" : "text-foreground")}>
-          {todayChangeCount}
-        </span>
-      ),
-      icon: ArrowUpRight,
-      iconBg: "bg-danger/10",
-      iconColor: "text-danger",
-      footer: (
-        <span className="text-muted-foreground">
-          {todayChangeCount > 0 ? `检测到 ${todayChangeCount} 次变动` : "今日无变动"}
-        </span>
-      ),
-    },
   ]
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       {kpis.map((k) => (
         <Card
           key={k.label}
