@@ -239,6 +239,10 @@ func (s *Service) sourceGroupRate(member *storage.MainAccountPoolMember) (*float
 	if s.rates == nil || member == nil {
 		return nil, nil
 	}
+	if member.SourceGroupID == nil && strings.TrimSpace(member.SourceGroupName) == "" {
+		ratio := 1.0
+		return &ratio, nil
+	}
 	snapshots, err := s.rates.ListByChannel(member.SourceChannelID)
 	if err != nil {
 		return nil, nil

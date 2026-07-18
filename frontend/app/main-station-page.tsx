@@ -605,9 +605,9 @@ function SourceGroupRate({ account }: { account: MainStationAccount }) {
   if (rate == null || !Number.isFinite(rate)) {
     return <span className="text-muted-foreground" title={`来源分组：${groupName}；暂无倍率快照`}>-</span>
   }
-  const observedAt = relativeTime(member.source_group_rate_observed_at)
+  const observedAt = member.source_group_rate_observed_at ? `倍率采集于 ${relativeTime(member.source_group_rate_observed_at)}` : "默认分组倍率"
   return (
-    <div className="leading-tight" title={`来源分组：${groupName}；倍率采集于 ${observedAt}`}>
+    <div className="leading-tight" title={`来源分组：${groupName}；${observedAt}`}>
       <div className="font-medium tabular-nums">{rate.toFixed(2)}</div>
       <div className="max-w-24 truncate text-xs text-muted-foreground">{groupName}</div>
     </div>

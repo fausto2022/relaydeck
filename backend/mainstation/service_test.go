@@ -270,6 +270,10 @@ func TestMainStationGroupsAreDirectAccountWorkspaces(t *testing.T) {
 
 func TestMainStationAccountUsesLatestSourceGroupRate(t *testing.T) {
 	service, db, admin, _ := newTestService(t)
+	defaultRate, defaultObservedAt := service.sourceGroupRate(&storage.MainAccountPoolMember{SourceChannelID: 1})
+	if defaultRate == nil || *defaultRate != 1 || defaultObservedAt != nil {
+		t.Fatalf("default source group rate = %v observed_at=%v", defaultRate, defaultObservedAt)
+	}
 	configureTestStation(t, service)
 	admin.groups = []sub2api.AdminGroup{{ID: 11, Name: "main", RateMultiplier: 1, Status: "active"}}
 	admin.accounts = []sub2api.AdminAccount{{ID: 21, Name: "managed", Status: "active", GroupIDs: []int64{11}}}
