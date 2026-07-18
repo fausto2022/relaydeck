@@ -769,6 +769,52 @@ export interface MainStationMember {
   updated_at: string
 }
 
+export interface MainStationBindingCandidate {
+  id: string
+  source_channel_id: number
+  source_channel_name: string
+  source_channel_type: string
+  source_group_id?: number | null
+  source_group_name?: string
+  source_api_key_id?: number | null
+  source_api_key_name?: string
+  concurrency: number
+  score: number
+  confidence: "high" | "medium" | "low" | "none"
+  reasons: string[]
+}
+
+export interface MainStationBindingRecommendation {
+  remote_account_id: number
+  remote_account_name: string
+  platform?: string
+  status: string
+  suggested_candidate_id?: string
+  score: number
+  confidence: "high" | "medium" | "low" | "none"
+  conflict: boolean
+  reasons: string[]
+  candidates: MainStationBindingCandidate[]
+}
+
+export interface MainStationBindingRecommendationResult {
+  items: MainStationBindingRecommendation[]
+  warnings: string[]
+  generated_at: string
+}
+
+export interface MainStationBindingBatchResult {
+  items: Array<{
+    remote_account_id: number
+    success: boolean
+    member?: MainStationMember
+    error?: string
+  }>
+  succeeded: number
+  failed: number
+  ranking_error?: string
+}
+
 export interface MainStationPage<T> {
   items: T[]
   total: number

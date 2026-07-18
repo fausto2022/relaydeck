@@ -144,6 +144,7 @@ func (f *fakeAdminClient) TestAccount(context.Context, sub2api.AdminTarget, int6
 type fakeChannelService struct {
 	secret      string
 	groups      []connector.APIKeyGroup
+	keys        []connector.APIKey
 	createdKeys []connector.APIKeyCreateRequest
 	deletedKeys []int64
 	concurrency int
@@ -162,6 +163,9 @@ func (f *fakeChannelService) DeleteAPIKey(_ context.Context, _ uint, id int64) e
 }
 func (f *fakeChannelService) ListAPIKeyGroups(context.Context, uint) ([]connector.APIKeyGroup, error) {
 	return append([]connector.APIKeyGroup(nil), f.groups...), nil
+}
+func (f *fakeChannelService) ListAPIKeys(context.Context, uint, connector.APIKeyQuery) (*connector.APIKeyPage, error) {
+	return &connector.APIKeyPage{Items: append([]connector.APIKey(nil), f.keys...), Total: int64(len(f.keys)), Page: 1, PageSize: 100, Pages: 1}, nil
 }
 func (f *fakeChannelService) GetAccountLimits(context.Context, uint) (*connector.AccountLimits, error) {
 	concurrency := f.concurrency
@@ -521,6 +525,80 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	}
 	if len(admin.schedulableCalls) != 3 || admin.schedulableCalls[2] {
 		t.Fatalf("delete schedulable calls = %#v", admin.schedulableCalls)
+	}
+}
+
+func TestRecommendBindingsUsesEndpointNameAndSourceGroup(t *testing.T) {
+	service, db, admin, channels := newTestService(t)
+	configureTestStation(t, service)
+	admin.groups = []sub2api.AdminGroup{{ID: 11, Name: "OpenAI", Platform: "openai", RateMultiplier: 1, Status: "active"}}
+	admin.accounts = []sub2api.AdminAccount{{
+		ID: 21, Name: "OpenAI-01", Platform: "openai", Status: "active", GroupIDs: []int64{11},
+		Credentials: map[string]any{"base_url": "https://upstream.example.com", "api_key": "***masked***"},
+	}}
+	if _, err := service.Sync(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	channel := createTestChannel(t, db)
+	channel.Name = "OpenAI source"
+	if err := db.Save(channel).Error; err != nil {
+		t.Fatalf("update channel: %v", err)
+	}
+	groupID := int64(301)
+	channels.keys = []connector.APIKey{{ID: 77, Name: "OpenAI-01", Status: "active", GroupID: &groupID, GroupName: "OpenAI"}}
+	groups, err := service.ListGroups(false)
+	if err != nil || len(groups) != 1 {
+		t.Fatalf("groups = %#v, err=%v", groups, err)
+	}
+
+	result, err := service.RecommendBindings(context.Background(), groups[0].ID)
+	if err != nil {
+		t.Fatalf("recommend bindings: %v", err)
+	}
+	if len(result.Items) != 1 || len(result.Items[0].Candidates) != 1 {
+		t.Fatalf("recommendations = %#v", result)
+	}
+	recommendation := result.Items[0]
+	candidate := recommendation.Candidates[0]
+	if recommendation.Confidence != "high" || recommendation.Conflict || candidate.SourceChannelID != channel.ID ||
+		candidate.SourceAPIKeyID == nil || *candidate.SourceAPIKeyID != 77 || candidate.SourceGroupID == nil || *candidate.SourceGroupID != groupID {
+		t.Fatalf("recommendation = %#v", recommendation)
+	}
+}
+
+func TestBindMembersBatchAllowsPartialSuccess(t *testing.T) {
+	service, db, admin, _ := newTestService(t)
+	configureTestStation(t, service)
+	admin.groups = []sub2api.AdminGroup{{ID: 11, Name: "OpenAI", Platform: "openai", RateMultiplier: 1, Status: "active"}}
+	admin.accounts = []sub2api.AdminAccount{{
+		ID: 21, Name: "OpenAI-01", Platform: "openai", Status: "active", Schedulable: true, GroupIDs: []int64{11},
+		Credentials: map[string]any{"base_url": "https://upstream.example.com", "api_key": "***masked***"},
+	}}
+	if _, err := service.Sync(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	channel := createTestChannel(t, db)
+	groups, err := service.ListGroups(false)
+	if err != nil || len(groups) != 1 {
+		t.Fatalf("groups = %#v, err=%v", groups, err)
+	}
+	validID := int64(21)
+	invalidID := int64(999)
+	result, err := service.BindMembersBatch(context.Background(), groups[0].ID, BindingBatchInput{Items: []MemberInput{
+		{RemoteAccountID: &validID, SourceChannelID: channel.ID, Concurrency: 12},
+		{RemoteAccountID: &invalidID, SourceChannelID: channel.ID, Concurrency: 12},
+	}})
+	if err != nil {
+		t.Fatalf("bind members batch: %v", err)
+	}
+	if result.Succeeded != 1 || result.Failed != 1 || !result.Items[0].Success || result.Items[1].Success {
+		t.Fatalf("batch result = %#v", result)
+	}
+	if result.Items[0].Member == nil || result.Items[0].Member.RemoteAccountID == nil || *result.Items[0].Member.RemoteAccountID != validID {
+		t.Fatalf("bound member = %#v", result.Items[0].Member)
+	}
+	if !strings.Contains(result.Items[1].Error, "selected group") {
+		t.Fatalf("invalid row error = %q", result.Items[1].Error)
 	}
 }
 

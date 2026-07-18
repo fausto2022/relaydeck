@@ -158,6 +158,35 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		}
 		c.JSON(http.StatusOK, gin.H{"items": items})
 	})
+	group.GET("/groups/:id/binding-recommendations", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		result, err := d.MainStation.RecommendBindings(c.Request.Context(), groupID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+	group.POST("/groups/:id/accounts/bind-batch", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		var in mainstation.BindingBatchInput
+		if err := c.ShouldBindJSON(&in); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		result, err := d.MainStation.BindMembersBatch(c.Request.Context(), groupID, in)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
 	group.PUT("/groups/:id/settings", func(c *gin.Context) {
 		groupID, ok := mainStationUintParam(c, "id")
 		if !ok {

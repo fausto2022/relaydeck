@@ -14,6 +14,7 @@ import {
   ServerCog,
   Settings2,
   ShieldAlert,
+  Sparkles,
   Star,
   TestTube2,
   Trash2,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { AccountSettingsDialog } from "@/components/main-station/account-settings-dialog"
+import { BindingRecommendationsDialog } from "@/components/main-station/binding-recommendations-dialog"
 import { GroupSettingsDialog } from "@/components/main-station/group-settings-dialog"
 import { HealthHistoryDialog } from "@/components/main-station/health-history-dialog"
 import { MemberDialog } from "@/components/main-station/member-dialog"
@@ -90,6 +92,8 @@ export default function MainStationPage() {
   const [busyAccountID, setBusyAccountID] = useState<number | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
   const [memberOpen, setMemberOpen] = useState(false)
+  const [bindingRecommendationsOpen, setBindingRecommendationsOpen] = useState(false)
+  const [bindingAccount, setBindingAccount] = useState<MainStationAccount | null>(null)
   const [editingAccount, setEditingAccount] = useState<MainStationAccount | null>(null)
   const [healthHistoryAccount, setHealthHistoryAccount] = useState<MainStationAccount | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -398,7 +402,8 @@ export default function MainStationPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     {selectedWorkspace ? <IconButton label="分组设置" onClick={() => setSettingsOpen(true)}><Settings2 className="size-4" /></IconButton> : null}
-                    <Button onClick={() => setMemberOpen(true)} disabled={!selectedWorkspace}>
+                    {selectedWorkspace ? <Button variant="outline" onClick={() => setBindingRecommendationsOpen(true)}><Sparkles className="size-4" />推荐绑定</Button> : null}
+                    <Button onClick={() => { setBindingAccount(null); setMemberOpen(true) }} disabled={!selectedWorkspace}>
                       <Plus className="size-4" />添加账号
                     </Button>
                   </div>
@@ -476,7 +481,7 @@ export default function MainStationPage() {
                                     {selectedWorkspace ? <IconButton label="编辑账号" onClick={() => setEditingAccount(account)}><Pencil className="size-4" /></IconButton> : null}
                                   </>
                                 ) : selectedWorkspace ? (
-                                  <IconButton label="接管账号" onClick={() => setMemberOpen(true)}><Link2 className="size-4" /></IconButton>
+                                  <IconButton label="接管账号" onClick={() => { setBindingAccount(account); setMemberOpen(true) }}><Link2 className="size-4" /></IconButton>
                                 ) : null}
                                 <AccountMenu account={account} canManage={selectedWorkspace != null} onCheck={handleCheck} onSync={handleSyncAccount} onDelete={handleDelete} />
                               </div>
@@ -518,7 +523,21 @@ export default function MainStationPage() {
       )}
 
       <StationConfigDialog open={configOpen} onOpenChange={setConfigOpen} config={config} onSaved={() => void loadBase()} />
-      <MemberDialog open={memberOpen} onOpenChange={setMemberOpen} workspace={selectedWorkspace} channels={channels} accounts={accounts} onSaved={() => { void loadBase(); void loadAccounts(selectedGroupID) }} />
+      <MemberDialog
+        open={memberOpen}
+        onOpenChange={(open) => { setMemberOpen(open); if (!open) setBindingAccount(null) }}
+        workspace={selectedWorkspace}
+        channels={channels}
+        accounts={accounts}
+        initialAccount={bindingAccount}
+        onSaved={() => { void loadBase(); void loadAccounts(selectedGroupID) }}
+      />
+      <BindingRecommendationsDialog
+        open={bindingRecommendationsOpen}
+        onOpenChange={setBindingRecommendationsOpen}
+        workspace={selectedWorkspace}
+        onSaved={() => { void loadBase(); void loadAccounts(selectedGroupID); void loadRisk(selectedGroupID) }}
+      />
       <AccountSettingsDialog
         open={editingAccount != null}
         onOpenChange={(open) => { if (!open) setEditingAccount(null) }}
@@ -694,6 +713,7 @@ function channelName(channels: Channel[], channelID: number) {
 function actionLabel(action: string) {
   const labels: Record<string, string> = {
     member_bind: "接管账号",
+    member_bind_batch: "批量接管账号",
     member_managed_sync: "同步账号",
     member_update: "更新账号",
     member_delete: "删除账号",

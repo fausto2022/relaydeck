@@ -190,6 +190,58 @@ type MemberInput struct {
 	HealthAPIMode           string   `json:"health_api_mode,omitempty"`
 }
 
+type BindingRecommendationCandidate struct {
+	ID                string   `json:"id"`
+	SourceChannelID   uint     `json:"source_channel_id"`
+	SourceChannelName string   `json:"source_channel_name"`
+	SourceChannelType string   `json:"source_channel_type"`
+	SourceGroupID     *int64   `json:"source_group_id,omitempty"`
+	SourceGroupName   string   `json:"source_group_name,omitempty"`
+	SourceAPIKeyID    *int64   `json:"source_api_key_id,omitempty"`
+	SourceAPIKeyName  string   `json:"source_api_key_name,omitempty"`
+	Concurrency       int      `json:"concurrency"`
+	Score             int      `json:"score"`
+	Confidence        string   `json:"confidence"`
+	Reasons           []string `json:"reasons"`
+}
+
+type BindingRecommendation struct {
+	RemoteAccountID      int64                            `json:"remote_account_id"`
+	RemoteAccountName    string                           `json:"remote_account_name"`
+	Platform             string                           `json:"platform,omitempty"`
+	Status               string                           `json:"status"`
+	SuggestedCandidateID string                           `json:"suggested_candidate_id,omitempty"`
+	Score                int                              `json:"score"`
+	Confidence           string                           `json:"confidence"`
+	Conflict             bool                             `json:"conflict"`
+	Reasons              []string                         `json:"reasons"`
+	Candidates           []BindingRecommendationCandidate `json:"candidates"`
+}
+
+type BindingRecommendationResult struct {
+	Items       []BindingRecommendation `json:"items"`
+	Warnings    []string                `json:"warnings"`
+	GeneratedAt time.Time               `json:"generated_at"`
+}
+
+type BindingBatchInput struct {
+	Items []MemberInput `json:"items"`
+}
+
+type BindingBatchItemResult struct {
+	RemoteAccountID int64                          `json:"remote_account_id"`
+	Success         bool                           `json:"success"`
+	Member          *storage.MainAccountPoolMember `json:"member,omitempty"`
+	Error           string                         `json:"error,omitempty"`
+}
+
+type BindingBatchResult struct {
+	Items        []BindingBatchItemResult `json:"items"`
+	Succeeded    int                      `json:"succeeded"`
+	Failed       int                      `json:"failed"`
+	RankingError string                   `json:"ranking_error,omitempty"`
+}
+
 type DeleteMemberInput struct {
 	DeleteRemoteAccount bool `json:"delete_remote_account"`
 	DeleteSourceAPIKey  bool `json:"delete_source_api_key"`

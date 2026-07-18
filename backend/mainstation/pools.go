@@ -363,33 +363,11 @@ func (s *Service) CreateMember(ctx context.Context, poolID uint, in MemberInput)
 	if _, err := s.store.FindPool(poolID); err != nil {
 		return nil, err
 	}
-	if _, err := s.channels.FindByID(in.SourceChannelID); err != nil {
-		return nil, fmt.Errorf("load source channel: %w", err)
+	prepared, err := s.prepareMemberInput(ctx, in)
+	if err != nil {
+		return nil, err
 	}
-	if in.Concurrency <= 0 {
-		limits, err := s.channelSvc.GetAccountLimits(ctx, in.SourceChannelID)
-		if err != nil {
-			return nil, fmt.Errorf("load source account concurrency: %w", err)
-		}
-		in.Concurrency = limits.Concurrency
-	}
-	if in.HealthIntervalSeconds != nil {
-		if err := validateMemberHealthInterval(*in.HealthIntervalSeconds); err != nil {
-			return nil, err
-		}
-	}
-	if in.HealthFailureThreshold != nil {
-		if err := validateMemberHealthThreshold("member health failure threshold", *in.HealthFailureThreshold); err != nil {
-			return nil, err
-		}
-	}
-	if in.HealthRecoveryThreshold != nil {
-		if err := validateMemberHealthThreshold("member health recovery threshold", *in.HealthRecoveryThreshold); err != nil {
-			return nil, err
-		}
-	}
-	in.Priority = normalizeSchedulingPriority(in.Priority)
-	in.Weight = automaticLoadFactor(in.Concurrency)
+	in = prepared
 	mode := strings.ToLower(strings.TrimSpace(in.OwnershipMode))
 	switch mode {
 	case "managed":
@@ -406,6 +384,40 @@ func (s *Service) CreateMember(ctx context.Context, poolID uint, in MemberInput)
 	default:
 		return nil, errors.New("ownership_mode must be managed or bound")
 	}
+}
+
+func (s *Service) prepareMemberInput(ctx context.Context, in MemberInput) (MemberInput, error) {
+	if _, err := s.channels.FindByID(in.SourceChannelID); err != nil {
+		return in, fmt.Errorf("load source channel: %w", err)
+	}
+	if in.Concurrency <= 0 {
+		limits, err := s.channelSvc.GetAccountLimits(ctx, in.SourceChannelID)
+		if err != nil {
+			return in, fmt.Errorf("load source account concurrency: %w", err)
+		}
+		if limits == nil || limits.Concurrency <= 0 {
+			return in, errors.New("source account concurrency is unavailable")
+		}
+		in.Concurrency = limits.Concurrency
+	}
+	if in.HealthIntervalSeconds != nil {
+		if err := validateMemberHealthInterval(*in.HealthIntervalSeconds); err != nil {
+			return in, err
+		}
+	}
+	if in.HealthFailureThreshold != nil {
+		if err := validateMemberHealthThreshold("member health failure threshold", *in.HealthFailureThreshold); err != nil {
+			return in, err
+		}
+	}
+	if in.HealthRecoveryThreshold != nil {
+		if err := validateMemberHealthThreshold("member health recovery threshold", *in.HealthRecoveryThreshold); err != nil {
+			return in, err
+		}
+	}
+	in.Priority = normalizeSchedulingPriority(in.Priority)
+	in.Weight = automaticLoadFactor(in.Concurrency)
+	return in, nil
 }
 
 func (s *Service) UpdateMember(ctx context.Context, poolID, memberID uint, in MemberInput) (*storage.MainAccountPoolMember, error) {

@@ -38,10 +38,11 @@ interface Props {
   workspace: MainStationGroupWorkspace | null
   channels: Channel[]
   accounts: MainStationAccount[]
+  initialAccount?: MainStationAccount | null
   onSaved: (member: MainStationMember) => void
 }
 
-export function MemberDialog({ open, onOpenChange, workspace, channels, accounts, onSaved }: Props) {
+export function MemberDialog({ open, onOpenChange, workspace, channels, accounts, initialAccount, onSaved }: Props) {
   const [mode, setMode] = useState<"managed" | "bound">("managed")
   const [accountName, setAccountName] = useState("")
   const [channelID, setChannelID] = useState(0)
@@ -65,14 +66,14 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
 
   useEffect(() => {
     if (!open) return
-    setMode("managed")
+    setMode(initialAccount ? "bound" : "managed")
     setAccountName("")
     setChannelID(channels[0]?.id ?? 0)
     setSourceGroups([])
     setSourceGroupValue("none")
     setSourceKeys([])
-    setSourceKeyValue("new")
-    setRemoteAccountID(0)
+    setSourceKeyValue(initialAccount ? "none" : "new")
+    setRemoteAccountID(initialAccount?.remote_account_id ?? 0)
     setManualConfirmed(false)
     setBindingSuggested(false)
     setEnabled(true)
@@ -83,7 +84,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
     setConcurrency(0)
     setConcurrencyDetected(false)
     setConcurrencyError("")
-  }, [channels, open])
+  }, [channels, initialAccount, open])
 
   useEffect(() => {
     if (!open || channelID === 0) return
@@ -123,6 +124,11 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
     if (!open || mode !== "bound" || channelID === 0) return
     const channel = channels.find((item) => item.id === channelID)
     if (!channel) return
+    if (initialAccount && !initialAccount.member) {
+      setRemoteAccountID(initialAccount.remote_account_id)
+      setBindingSuggested(false)
+      return
+    }
     const candidates = accounts.filter((account) => !account.member)
     const channelHost = safeHost(channel.site_url)
     const channelName = normalizeMatchText(channel.name)
@@ -139,7 +145,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
     } else {
       setBindingSuggested(false)
     }
-  }, [accounts, channelID, channels, mode, open])
+  }, [accounts, channelID, channels, initialAccount, mode, open])
 
   function changeMode(nextMode: "managed" | "bound") {
     setMode(nextMode)
