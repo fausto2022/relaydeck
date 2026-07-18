@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner"
 import { AccountSettingsDialog } from "@/components/main-station/account-settings-dialog"
 import { GroupSettingsDialog } from "@/components/main-station/group-settings-dialog"
+import { HealthHistoryDialog } from "@/components/main-station/health-history-dialog"
 import { MemberDialog } from "@/components/main-station/member-dialog"
 import { StationConfigDialog } from "@/components/main-station/station-config-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -90,6 +91,7 @@ export default function MainStationPage() {
   const [configOpen, setConfigOpen] = useState(false)
   const [memberOpen, setMemberOpen] = useState(false)
   const [editingAccount, setEditingAccount] = useState<MainStationAccount | null>(null)
+  const [healthHistoryAccount, setHealthHistoryAccount] = useState<MainStationAccount | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const selectedWorkspace = useMemo(
@@ -473,6 +475,7 @@ export default function MainStationPage() {
                               <div className="flex justify-end gap-1">
                                 {account.member ? (
                                   <>
+                                    {selectedWorkspace ? <IconButton label="探测记录" onClick={() => setHealthHistoryAccount(account)}><History className="size-4" /></IconButton> : null}
                                     <IconButton label={account.schedulable ? "停用账号" : "恢复账号"} onClick={() => void handleScheduling(account)}>
                                       {account.schedulable ? <Pause className="size-4" /> : <Play className="size-4" />}
                                     </IconButton>
@@ -535,6 +538,12 @@ export default function MainStationPage() {
         account={editingAccount}
         config={config}
         onSaved={() => { void loadBase(); void loadAccounts(selectedGroupID) }}
+      />
+      <HealthHistoryDialog
+        open={healthHistoryAccount != null}
+        onOpenChange={(open) => { if (!open) setHealthHistoryAccount(null) }}
+        groupID={selectedWorkspace?.group.id ?? null}
+        account={healthHistoryAccount}
       />
       <GroupSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} workspace={selectedWorkspace} onSaved={(saved) => setWorkspaces((items) => items.map((item) => item.group.id === saved.group.id ? saved : item))} />
       {confirmDialog}
