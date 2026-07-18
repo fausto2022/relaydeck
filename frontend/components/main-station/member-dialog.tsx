@@ -137,6 +137,10 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
       toast.error("接管已有 Account 前必须确认映射")
       return
     }
+    if (priority <= 0) {
+      toast.error("优先级必须大于 0")
+      return
+    }
     const selectedGroup = sourceGroups.find((group) => groupValue(group) === sourceGroupValue)
     setBusy(true)
     try {
@@ -255,14 +259,8 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
               </p>
             </div>
             <div className="space-y-2">
-              <Label>调度角色</Label>
-              <Select value={String(priority)} onValueChange={(value) => setPriority(Number(value))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">主力</SelectItem>
-                  <SelectItem value="2">备用</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="account-priority">优先级</Label>
+              <Input id="account-priority" type="number" min={1} step={1} value={priority} onChange={(event) => setPriority(Number(event.target.value))} />
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="account-health-model">完整检测模型（可选）</Label>

@@ -12,26 +12,21 @@ import (
 	"github.com/bejix/upstream-ops/backend/storage"
 )
 
-const (
-	primarySchedulingRole = 1
-	backupSchedulingRole  = 2
-)
-
 type schedulingRankSignal struct {
 	MemberID      uint
 	HealthBand    int
-	Role          int
+	Priority      int
 	CostKnown     bool
 	CostMicros    int64
 	SuccessBucket int
 	LatencyBucket int
 }
 
-func normalizeSchedulingRole(priority int) int {
-	if priority == backupSchedulingRole {
-		return backupSchedulingRole
+func normalizeSchedulingPriority(priority int) int {
+	if priority > 0 {
+		return priority
 	}
-	return primarySchedulingRole
+	return 1
 }
 
 func automaticLoadFactor(concurrency int) int {
@@ -62,7 +57,7 @@ func (s *Service) poolSchedulingPriorities(poolID uint) (map[uint]int, error) {
 		signals = append(signals, schedulingRankSignal{
 			MemberID:      member.ID,
 			HealthBand:    schedulingHealthBand(member),
-			Role:          normalizeSchedulingRole(member.Priority),
+			Priority:      normalizeSchedulingPriority(member.Priority),
 			CostKnown:     costKnown,
 			CostMicros:    costMicros,
 			SuccessBucket: schedulingSuccessBucket(stats.Recent20SuccessRate),
@@ -78,8 +73,8 @@ func rankSchedulingSignals(signals []schedulingRankSignal) map[uint]int {
 		switch {
 		case left.HealthBand != right.HealthBand:
 			return left.HealthBand < right.HealthBand
-		case left.Role != right.Role:
-			return left.Role < right.Role
+		case left.Priority != right.Priority:
+			return left.Priority < right.Priority
 		case left.CostKnown != right.CostKnown:
 			return left.CostKnown
 		case left.CostKnown && left.CostMicros != right.CostMicros:
@@ -108,7 +103,7 @@ func rankSchedulingSignals(signals []schedulingRankSignal) map[uint]int {
 
 func sameSchedulingRank(left, right schedulingRankSignal) bool {
 	return left.HealthBand == right.HealthBand &&
-		left.Role == right.Role &&
+		left.Priority == right.Priority &&
 		left.CostKnown == right.CostKnown &&
 		(!left.CostKnown || left.CostMicros == right.CostMicros) &&
 		left.SuccessBucket == right.SuccessBucket &&
@@ -195,9 +190,9 @@ func (s *Service) ReconcilePoolRanking(ctx context.Context, poolID uint, source 
 			desiredPriority = 1
 		}
 		desiredLoadFactor := automaticLoadFactor(member.Concurrency)
-		if member.Weight != desiredLoadFactor || member.Priority != normalizeSchedulingRole(member.Priority) {
+		if member.Weight != desiredLoadFactor || member.Priority != normalizeSchedulingPriority(member.Priority) {
 			member.Weight = desiredLoadFactor
-			member.Priority = normalizeSchedulingRole(member.Priority)
+			member.Priority = normalizeSchedulingPriority(member.Priority)
 			if updateErr := s.store.UpdateMember(member); updateErr != nil {
 				reconcileErrors = append(reconcileErrors, fmt.Errorf("update member %d automatic scheduling fields: %w", member.ID, updateErr))
 				continue

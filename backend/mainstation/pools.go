@@ -373,7 +373,7 @@ func (s *Service) CreateMember(ctx context.Context, poolID uint, in MemberInput)
 		}
 		in.Concurrency = limits.Concurrency
 	}
-	in.Priority = normalizeSchedulingRole(in.Priority)
+	in.Priority = normalizeSchedulingPriority(in.Priority)
 	in.Weight = automaticLoadFactor(in.Concurrency)
 	mode := strings.ToLower(strings.TrimSpace(in.OwnershipMode))
 	switch mode {
@@ -423,7 +423,7 @@ func (s *Service) UpdateMember(ctx context.Context, poolID, memberID uint, in Me
 		member.ProxyID = in.ProxyID
 	}
 	if in.Priority > 0 {
-		member.Priority = normalizeSchedulingRole(in.Priority)
+		member.Priority = normalizeSchedulingPriority(in.Priority)
 	}
 	if in.Concurrency > 0 {
 		member.Concurrency = in.Concurrency
@@ -656,7 +656,7 @@ func (s *Service) managedAccountRequest(ctx context.Context, pool *storage.MainA
 	}
 	loadFactor := automaticLoadFactor(member.Concurrency)
 	member.Weight = loadFactor
-	member.Priority = normalizeSchedulingRole(member.Priority)
+	member.Priority = normalizeSchedulingPriority(member.Priority)
 	return sub2api.AdminAccount{
 		Name:           managedAccountName(pool, member),
 		Platform:       pool.Platform,
@@ -860,7 +860,7 @@ func memberFromInput(poolID uint, in MemberInput) *storage.MainAccountPoolMember
 		Enabled:                enabled,
 		ProxyID:                in.ProxyID,
 		Weight:                 automaticLoadFactor(in.Concurrency),
-		Priority:               normalizeSchedulingRole(in.Priority),
+		Priority:               normalizeSchedulingPriority(in.Priority),
 		Concurrency:            in.Concurrency,
 		RateConvertMode:        strings.TrimSpace(in.RateConvertMode),
 		RateConvertValueMicros: scaleFloat(in.RateConvertValue),

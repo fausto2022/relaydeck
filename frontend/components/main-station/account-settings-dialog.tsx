@@ -12,13 +12,6 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { apiFetch } from "@/lib/api"
 import type {
@@ -46,7 +39,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
   useEffect(() => {
     if (!open || !account?.member) return
     setConcurrency(account.member.concurrency)
-    setPriority(account.member.priority === 2 ? 2 : 1)
+    setPriority(account.member.priority > 0 ? account.member.priority : 1)
     setHealthEnabled(account.member.health_enabled)
     setHealthModel(account.member.health_model ?? "")
     setEnabled(account.member.enabled)
@@ -57,6 +50,10 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
     if (!workspace || !account || !member) return
     if (concurrency <= 0) {
       toast.error("并发必须大于 0")
+      return
+    }
+    if (priority <= 0) {
+      toast.error("优先级必须大于 0")
       return
     }
     setBusy(true)
@@ -100,14 +97,8 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
             <Input id="edit-account-concurrency" type="number" min={1} value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))} />
           </div>
           <div className="space-y-2">
-            <Label>调度角色</Label>
-            <Select value={String(priority)} onValueChange={(value) => setPriority(Number(value))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">主力</SelectItem>
-                <SelectItem value="2">备用</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label htmlFor="edit-account-priority">优先级</Label>
+            <Input id="edit-account-priority" type="number" min={1} step={1} value={priority} onChange={(event) => setPriority(Number(event.target.value))} />
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="edit-account-health-model">完整检测模型（可选）</Label>

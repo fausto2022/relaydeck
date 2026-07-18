@@ -416,7 +416,7 @@ export default function MainStationPage() {
                         <TableHead>Account</TableHead>
                         <TableHead>状态</TableHead>
                         <TableHead>并发</TableHead>
-                        <TableHead>角色</TableHead>
+                        <TableHead>优先级</TableHead>
                         <TableHead>健康</TableHead>
                         <TableHead>来源</TableHead>
                         <TableHead className="w-24 text-right">操作</TableHead>
@@ -432,7 +432,7 @@ export default function MainStationPage() {
                           </TableCell>
                           <TableCell><ScheduleBadge account={account} /></TableCell>
                           <TableCell>{account.member?.concurrency ?? account.concurrency}</TableCell>
-                          <TableCell>{account.member ? <Badge variant="outline">{account.member.priority === 2 ? "备用" : "主力"}</Badge> : "-"}</TableCell>
+                          <TableCell>{account.member?.priority ?? account.priority}</TableCell>
                           <TableCell><HealthBadge account={account} /></TableCell>
                           <TableCell>
                             {account.member ? (

@@ -350,7 +350,7 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		AccountName: "OpenAI-01", OwnershipMode: "managed", SourceChannelID: channel.ID, SourceGroupID: &sourceGroupID,
 		SourceGroupName: "source-group", Enabled: boolPtr(true), HealthEnabled: boolPtr(true),
 		HealthAPIMode: "openai_chat",
-		Priority:      primarySchedulingRole, RateConvertMode: "raw", CostAdjustment: 1,
+		Priority:      1, RateConvertMode: "raw", CostAdjustment: 1,
 	})
 	if err != nil {
 		t.Fatalf("create managed member: %v", err)
@@ -383,12 +383,12 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	updated, err := service.UpdateMember(context.Background(), pool.ID, member.ID, MemberInput{
 		AccountName: member.AccountName, SourceChannelID: member.SourceChannelID, SourceGroupID: member.SourceGroupID,
 		SourceGroupName: member.SourceGroupName, Enabled: boolPtr(true), HealthEnabled: boolPtr(true),
-		HealthAPIMode: "openai_chat", Priority: backupSchedulingRole, Concurrency: 37,
+		HealthAPIMode: "openai_chat", Priority: 9, Concurrency: 37,
 	})
 	if err != nil {
 		t.Fatalf("update managed member: %v", err)
 	}
-	if updated.Concurrency != 37 || updated.Priority != backupSchedulingRole || updated.Weight != 37 {
+	if updated.Concurrency != 37 || updated.Priority != 9 || updated.Weight != 37 {
 		t.Fatalf("updated managed member = %#v", updated)
 	}
 	if len(admin.updateRequests) != 1 || admin.updateRequests[0].Concurrency != 37 || admin.updateRequests[0].Priority != 1 || admin.updateRequests[0].LoadFactor != 37 {
