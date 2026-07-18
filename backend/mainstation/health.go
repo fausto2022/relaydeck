@@ -662,7 +662,7 @@ func (s *Service) MemberHealthStats(memberID uint) (HealthStats, error) {
 			effective = append(effective, check)
 		}
 	}
-	stats.Recent20SuccessRate = successRate(limitChecks(effective, 20), time.Time{})
+	stats.Recent20SuccessRate = successRate(limitChecks(effective, 100), time.Time{})
 	stats.OneHourSuccessRate = successRate(effective, now.Add(-time.Hour))
 	stats.TwentyFourHourSuccessRate = successRate(effective, now.Add(-24*time.Hour))
 	stats.SevenDaySuccessRate = successRate(effective, now.Add(-7*24*time.Hour))

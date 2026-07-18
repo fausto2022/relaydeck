@@ -658,7 +658,7 @@ func applyPoolDefaults(item *MainAccountPool) {
 	if item.MinimumEffectiveConcurrency < 0 {
 		item.MinimumEffectiveConcurrency = 0
 	}
-	if item.RateSortDirection != "desc" {
+	if item.RateSortDirection != "desc" && item.RateSortDirection != "stability" {
 		item.RateSortDirection = "asc"
 	}
 	if strings.TrimSpace(item.HealthPolicyJSON) == "" {

@@ -19,6 +19,15 @@ func (s *Service) Sync(ctx context.Context) (*SyncResult, error) {
 }
 
 func (s *Service) SyncForScheduler(ctx context.Context) {
+	s.syncScheduleMu.Lock()
+	defer s.syncScheduleMu.Unlock()
+	config, err := s.store.GetConfig()
+	if err != nil || !config.Enabled {
+		return
+	}
+	if config.LastSyncAt != nil && s.now().Sub(*config.LastSyncAt) < time.Duration(normalizedSyncInterval(config.SyncIntervalSeconds))*time.Second {
+		return
+	}
 	if _, err := s.sync(ctx, "scheduler"); err != nil && s.log != nil {
 		s.log.Warn("scheduled main station sync", "err", err)
 	}

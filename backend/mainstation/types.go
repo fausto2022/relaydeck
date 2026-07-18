@@ -36,6 +36,7 @@ type ConfigDTO struct {
 	HealthIntervalSeconds   int                `json:"health_interval_seconds"`
 	HealthFailureThreshold  int                `json:"health_failure_threshold"`
 	HealthRecoveryThreshold int                `json:"health_recovery_threshold"`
+	SyncIntervalSeconds     int                `json:"sync_interval_seconds"`
 	ObservationEvaluatedAt  *time.Time         `json:"observation_evaluated_at,omitempty"`
 	HealthObservedAt        *time.Time         `json:"health_observed_at,omitempty"`
 	MarginObservedAt        *time.Time         `json:"margin_observed_at,omitempty"`
@@ -55,6 +56,7 @@ type ConfigInput struct {
 	HealthIntervalSeconds   *int              `json:"health_interval_seconds,omitempty"`
 	HealthFailureThreshold  *int              `json:"health_failure_threshold,omitempty"`
 	HealthRecoveryThreshold *int              `json:"health_recovery_threshold,omitempty"`
+	SyncIntervalSeconds     *int              `json:"sync_interval_seconds,omitempty"`
 }
 
 type HealthModelCatalog struct {

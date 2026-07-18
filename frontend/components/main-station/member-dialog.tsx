@@ -51,6 +51,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
   const [sourceKeyValue, setSourceKeyValue] = useState("new")
   const [remoteAccountID, setRemoteAccountID] = useState(0)
   const [manualConfirmed, setManualConfirmed] = useState(false)
+  const [bindingSuggested, setBindingSuggested] = useState(false)
   const [enabled, setEnabled] = useState(true)
   const [preferred, setPreferred] = useState(false)
   const [healthEnabled, setHealthEnabled] = useState(true)
@@ -73,6 +74,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
     setSourceKeyValue("new")
     setRemoteAccountID(0)
     setManualConfirmed(false)
+    setBindingSuggested(false)
     setEnabled(true)
     setPreferred(false)
     setHealthEnabled(true)
@@ -116,6 +118,28 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
       })
       .finally(() => setLoadingSource(false))
   }, [channelID, open])
+
+  useEffect(() => {
+    if (!open || mode !== "bound" || channelID === 0) return
+    const channel = channels.find((item) => item.id === channelID)
+    if (!channel) return
+    const candidates = accounts.filter((account) => !account.member)
+    const channelHost = safeHost(channel.site_url)
+    const channelName = normalizeMatchText(channel.name)
+    const ranked = candidates.map((account) => {
+      let score = 0
+      if (channelHost && safeHost(account.base_url) === channelHost) score += 100
+      const accountName = normalizeMatchText(account.name)
+      if (channelName && (accountName.includes(channelName) || channelName.includes(accountName))) score += 20
+      return { account, score }
+    }).filter((item) => item.score > 0).sort((left, right) => right.score - left.score || left.account.remote_account_id - right.account.remote_account_id)
+    if (ranked.length > 0) {
+      setRemoteAccountID(ranked[0].account.remote_account_id)
+      setBindingSuggested(true)
+    } else {
+      setBindingSuggested(false)
+    }
+  }, [accounts, channelID, channels, mode, open])
 
   function changeMode(nextMode: "managed" | "bound") {
     setMode(nextMode)
@@ -214,6 +238,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
                     ))}
                   </SelectContent>
                 </Select>
+                {bindingSuggested ? <p className="text-xs text-emerald-700">已根据上游地址和账号名称自动建议，请人工确认后保存</p> : null}
               </div>
             )}
 
@@ -299,4 +324,13 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
 
 function groupValue(group: ChannelAPIKeyGroup) {
   return group.id != null ? `id:${group.id}` : `name:${group.name}`
+}
+
+function safeHost(value?: string) {
+  if (!value) return ""
+  try { return new URL(value).host.toLowerCase() } catch { return "" }
+}
+
+function normalizeMatchText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "")
 }

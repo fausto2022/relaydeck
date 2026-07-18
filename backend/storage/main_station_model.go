@@ -22,6 +22,7 @@ type MainStationConfig struct {
 	HealthIntervalSeconds   int        `gorm:"not null;default:30" json:"health_interval_seconds"`
 	HealthFailureThreshold  int        `gorm:"not null;default:10" json:"health_failure_threshold"`
 	HealthRecoveryThreshold int        `gorm:"not null;default:3" json:"health_recovery_threshold"`
+	SyncIntervalSeconds     int        `gorm:"not null;default:300" json:"sync_interval_seconds"`
 	ObservationEvaluatedAt  *time.Time `json:"observation_evaluated_at,omitempty"`
 	HealthObservedAt        *time.Time `json:"health_observed_at,omitempty"`
 	MarginObservedAt        *time.Time `json:"margin_observed_at,omitempty"`

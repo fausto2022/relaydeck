@@ -46,10 +46,14 @@ export function StationConfigDialog({
   const [baseURL, setBaseURL] = useState("")
   const [adminAPIKey, setAdminAPIKey] = useState("")
   const [enabled, setEnabled] = useState(true)
+  const [autoHealthProtection, setAutoHealthProtection] = useState(false)
+  const [autoMarginProtection, setAutoMarginProtection] = useState(false)
+  const [autoRecovery, setAutoRecovery] = useState(false)
   const [healthModels, setHealthModels] = useState<Record<string, string>>({})
   const [healthIntervalSeconds, setHealthIntervalSeconds] = useState(30)
   const [healthFailureThreshold, setHealthFailureThreshold] = useState(10)
   const [healthRecoveryThreshold, setHealthRecoveryThreshold] = useState(3)
+  const [syncIntervalSeconds, setSyncIntervalSeconds] = useState(300)
   const [modelCatalogs, setModelCatalogs] = useState<MainStationHealthModelCatalog[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [busy, setBusy] = useState<"test" | "save" | null>(null)
@@ -61,10 +65,14 @@ export function StationConfigDialog({
     setBaseURL(config?.base_url ?? "")
     setAdminAPIKey("")
     setEnabled(config?.enabled ?? true)
+    setAutoHealthProtection(config?.auto_health_protection ?? false)
+    setAutoMarginProtection(config?.auto_margin_protection ?? false)
+    setAutoRecovery(config?.auto_recovery ?? false)
     setHealthModels(config?.health_models ?? {})
     setHealthIntervalSeconds(config?.health_interval_seconds ?? 30)
     setHealthFailureThreshold(config?.health_failure_threshold ?? 10)
     setHealthRecoveryThreshold(config?.health_recovery_threshold ?? 3)
+    setSyncIntervalSeconds(config?.sync_interval_seconds ?? 300)
     setModelCatalogs([])
     if (config?.configured) void loadHealthModels()
     if (!config?.configured && config?.migration?.status === "requires_confirmation") {
@@ -141,6 +149,10 @@ export function StationConfigDialog({
       toast.error("全局探活间隔必须在 30 到 86400 秒之间")
       return
     }
+    if (syncIntervalSeconds < 30 || syncIntervalSeconds > 86400) {
+      toast.error("主站同步间隔必须在 30 到 86400 秒之间")
+      return
+    }
     if (healthFailureThreshold < 1 || healthFailureThreshold > 100 || healthRecoveryThreshold < 1 || healthRecoveryThreshold > 100) {
       toast.error("失败和恢复次数必须在 1 到 100 之间")
       return
@@ -155,10 +167,14 @@ export function StationConfigDialog({
           base_url: baseURL.trim(),
           admin_api_key: adminAPIKey.trim(),
           enabled,
+          auto_health_protection: autoHealthProtection,
+          auto_margin_protection: autoMarginProtection,
+          auto_recovery: autoRecovery,
           health_models: healthModels,
           health_interval_seconds: healthIntervalSeconds,
           health_failure_threshold: healthFailureThreshold,
           health_recovery_threshold: healthRecoveryThreshold,
+          sync_interval_seconds: syncIntervalSeconds,
         }),
       })
       onSaved(saved)
@@ -238,6 +254,18 @@ export function StationConfigDialog({
               autoComplete="new-password"
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="main-station-sync-interval">主站信息同步间隔（秒）</Label>
+            <Input id="main-station-sync-interval" type="number" min={30} max={86400} value={syncIntervalSeconds} onChange={(event) => setSyncIntervalSeconds(Number(event.target.value))} />
+          </div>
+          {config?.configured ? (
+            <div className="space-y-3 border-t pt-4">
+              <Label>自动保护</Label>
+              <div className="flex items-center justify-between"><span className="text-sm">健康异常自动停用</span><Switch checked={autoHealthProtection} onCheckedChange={setAutoHealthProtection} /></div>
+              <div className="flex items-center justify-between"><span className="text-sm">利润不足自动停用</span><Switch checked={autoMarginProtection} onCheckedChange={setAutoMarginProtection} /></div>
+              <div className="flex items-center justify-between"><span className="text-sm">条件恢复后自动启用</span><Switch checked={autoRecovery} onCheckedChange={setAutoRecovery} /></div>
+            </div>
+          ) : null}
           {config?.configured ? (
             <div className="space-y-3 border-t pt-4">
               <div className="flex items-center justify-between">

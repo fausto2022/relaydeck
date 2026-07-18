@@ -509,7 +509,7 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		updated.HealthFailureThreshold != 20 || updated.HealthRecoveryThreshold != 4 {
 		t.Fatalf("updated managed member = %#v", updated)
 	}
-	if len(admin.updateRequests) != 1 || admin.updateRequests[0].Concurrency != 37 || admin.updateRequests[0].Priority != 1 || admin.updateRequests[0].LoadFactor != 37 {
+	if len(admin.updateRequests) != 1 || admin.updateRequests[0].Concurrency != 37 || admin.updateRequests[0].Priority != 9 || admin.updateRequests[0].LoadFactor != 37 {
 		t.Fatalf("update requests = %#v", admin.updateRequests)
 	}
 

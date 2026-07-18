@@ -21,6 +21,7 @@ type schedulingRankSignal struct {
 	CostMicros    int64
 	SuccessBucket int
 	LatencyBucket int
+	Enabled       bool
 }
 
 func normalizeSchedulingPriority(priority int) int {
@@ -38,6 +39,10 @@ func automaticLoadFactor(concurrency int) int {
 }
 
 func (s *Service) poolSchedulingPriorities(poolID uint) (map[uint]int, error) {
+	pool, err := s.store.FindPool(poolID)
+	if err != nil {
+		return nil, err
+	}
 	members, err := s.store.ListMembers(poolID)
 	if err != nil {
 		return nil, err
@@ -64,24 +69,35 @@ func (s *Service) poolSchedulingPriorities(poolID uint) (map[uint]int, error) {
 			CostMicros:    costMicros,
 			SuccessBucket: schedulingSuccessBucket(stats.Recent20SuccessRate),
 			LatencyBucket: schedulingLatencyBucket(stats.P95LatencyMS),
+			Enabled: member.Enabled && member.BindingStatus != "invalid" && member.BindingStatus != "orphaned" &&
+				member.LastHealthStatus != "unhealthy" && member.Status != "quarantined",
 		})
 	}
-	return rankSchedulingSignals(signals), nil
+	return rankSchedulingSignals(signals, pool.RateSortDirection), nil
 }
 
-func rankSchedulingSignals(signals []schedulingRankSignal) map[uint]int {
+func rankSchedulingSignals(signals []schedulingRankSignal, rateSortDirection string) map[uint]int {
 	sort.SliceStable(signals, func(i, j int) bool {
 		left, right := signals[i], signals[j]
 		switch {
+		case left.Enabled != right.Enabled:
+			return left.Enabled
 		case left.HealthBand != right.HealthBand:
 			return left.HealthBand < right.HealthBand
 		case left.Preferred != right.Preferred:
 			return left.Preferred
 		case left.Priority != right.Priority:
 			return left.Priority < right.Priority
+		case rateSortDirection == "stability" && left.SuccessBucket != right.SuccessBucket:
+			return left.SuccessBucket < right.SuccessBucket
+		case rateSortDirection == "stability" && left.LatencyBucket != right.LatencyBucket:
+			return left.LatencyBucket < right.LatencyBucket
 		case left.CostKnown != right.CostKnown:
 			return left.CostKnown
 		case left.CostKnown && left.CostMicros != right.CostMicros:
+			if rateSortDirection == "desc" {
+				return left.CostMicros > right.CostMicros
+			}
 			return left.CostMicros < right.CostMicros
 		case left.SuccessBucket != right.SuccessBucket:
 			return left.SuccessBucket < right.SuccessBucket
@@ -94,24 +110,29 @@ func rankSchedulingSignals(signals []schedulingRankSignal) map[uint]int {
 	priorities := make(map[uint]int, len(signals))
 	priority := 0
 	var previous *schedulingRankSignal
+	previousPriority := 0
 	for i := range signals {
 		signal := signals[i]
-		if previous == nil || !sameSchedulingRank(*previous, signal) {
-			priority++
+		basePriority := normalizeSchedulingPriority(signal.Priority)
+		if previous != nil && sameSchedulingRank(*previous, signal) {
+			priorities[signal.MemberID] = previousPriority
+			continue
+		}
+		if priority < basePriority {
+			priority = basePriority
 		}
 		priorities[signal.MemberID] = priority
 		previous = &signals[i]
+		previousPriority = priority
+		priority++
 	}
 	return priorities
 }
 
 func sameSchedulingRank(left, right schedulingRankSignal) bool {
-	return left.HealthBand == right.HealthBand &&
-		left.Preferred == right.Preferred &&
-		left.Priority == right.Priority &&
-		left.CostKnown == right.CostKnown &&
-		(!left.CostKnown || left.CostMicros == right.CostMicros) &&
-		left.SuccessBucket == right.SuccessBucket &&
+	return left.Enabled == right.Enabled && left.HealthBand == right.HealthBand && left.Preferred == right.Preferred &&
+		left.Priority == right.Priority && left.CostKnown == right.CostKnown &&
+		(!left.CostKnown || left.CostMicros == right.CostMicros) && left.SuccessBucket == right.SuccessBucket &&
 		left.LatencyBucket == right.LatencyBucket
 }
 

@@ -45,7 +45,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
-import { Switch } from "@/components/ui/switch"
 import {
   Table,
   TableBody,
@@ -186,6 +185,14 @@ export default function MainStationPage() {
     })
   }, [accounts, search, statusFilter])
 
+  const sortedAccounts = useMemo(() => [...filteredAccounts].sort((left, right) => {
+    if (Boolean(left.member) !== Boolean(right.member)) return left.member ? -1 : 1
+    if (left.schedulable !== right.schedulable) return left.schedulable ? -1 : 1
+    const priorityDiff = (left.priority || 1) - (right.priority || 1)
+    if (priorityDiff !== 0) return priorityDiff
+    return left.name.localeCompare(right.name)
+  }), [filteredAccounts])
+
   async function handleSync() {
     setSyncing(true)
     try {
@@ -319,19 +326,6 @@ export default function MainStationPage() {
     }
   }
 
-  async function updateProtection(field: "auto_margin_protection" | "auto_health_protection" | "auto_recovery", checked: boolean) {
-    try {
-      const updated = await apiFetch<MainStationConfig>("/main-station/protection", {
-        method: "PUT",
-        body: JSON.stringify({ [field]: checked }),
-      })
-      setConfig(updated)
-      await loadRisk(selectedGroupID)
-    } catch (policyError) {
-      toast.error(policyError instanceof Error ? policyError.message : "保护策略更新失败")
-    }
-  }
-
   if (loading) {
     return <div className="flex min-h-72 items-center justify-center"><Spinner /></div>
   }
@@ -434,7 +428,6 @@ export default function MainStationPage() {
                       <TableRow>
                         <TableHead>Account</TableHead>
                         <TableHead>状态</TableHead>
-                        <TableHead>并发</TableHead>
                         <TableHead>实际优先级</TableHead>
                         <TableHead>上游倍率</TableHead>
                         <TableHead>健康</TableHead>
@@ -444,8 +437,8 @@ export default function MainStationPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {accountsLoading ? <EmptyRow columns={9} text="加载中" /> : null}
-                      {!accountsLoading && filteredAccounts.map((account) => (
+                      {accountsLoading ? <EmptyRow columns={8} text="加载中" /> : null}
+                      {!accountsLoading && sortedAccounts.map((account) => (
                         <TableRow key={account.remote_account_id}>
                           <TableCell>
                             <div className="flex max-w-64 items-center gap-1.5">
@@ -462,7 +455,6 @@ export default function MainStationPage() {
                             <div className="text-xs text-muted-foreground">#{account.remote_account_id} · {account.platform || "未知平台"}</div>
                           </TableCell>
                           <TableCell><ScheduleBadge account={account} /></TableCell>
-                          <TableCell>{account.member?.concurrency ?? account.concurrency}</TableCell>
                           <TableCell><SchedulingPriority account={account} /></TableCell>
                           <TableCell><SourceGroupRate account={account} /></TableCell>
                           <TableCell><HealthBadge account={account} /></TableCell>
@@ -492,7 +484,7 @@ export default function MainStationPage() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {!accountsLoading && filteredAccounts.length === 0 ? <EmptyRow columns={9} text="没有符合条件的账号" /> : null}
+                      {!accountsLoading && filteredAccounts.length === 0 ? <EmptyRow columns={8} text="没有符合条件的账号" /> : null}
                     </TableBody>
                   </Table>
                 </div>
@@ -506,13 +498,7 @@ export default function MainStationPage() {
               <Metric label="活动停用原因" value={preview?.active_locks.length ?? 0} danger={(preview?.active_locks.length ?? 0) > 0} />
               <Metric label="利润风险账号" value={preview?.margin_risk_member_ids.length ?? 0} danger={(preview?.margin_risk_member_ids.length ?? 0) > 0} />
             </div>
-            <div className="grid gap-4 border-y py-4 lg:grid-cols-2">
-              <div className="space-y-3">
-                <p className="text-sm font-semibold">自动保护</p>
-                <ToggleLine label="健康异常自动停用" checked={config.auto_health_protection} onCheckedChange={(checked) => void updateProtection("auto_health_protection", checked)} />
-                <ToggleLine label="利润不足自动停用" checked={config.auto_margin_protection} onCheckedChange={(checked) => void updateProtection("auto_margin_protection", checked)} />
-                <ToggleLine label="条件恢复后自动启用" checked={config.auto_recovery} onCheckedChange={(checked) => void updateProtection("auto_recovery", checked)} />
-              </div>
+            <div className="border-y py-4">
               <div className="space-y-3">
                 <p className="text-sm font-semibold">分组操作</p>
                 <div className="flex flex-wrap gap-2">
@@ -522,11 +508,11 @@ export default function MainStationPage() {
                 </div>
               </div>
             </div>
-            <AuditTable items={auditLogs.filter((item) => !item.success || item.action.includes("lock") || item.action.includes("evaluate"))} empty="暂无风险事件" />
+            <AuditTable items={auditLogs.filter((item) => !item.success || item.action.includes("lock") || item.action.includes("evaluate"))} accounts={accounts} empty="暂无风险事件" />
           </TabsContent>
 
           <TabsContent value="logs" className="mt-0">
-            <AuditTable items={auditLogs} empty="暂无操作记录" />
+            <AuditTable items={auditLogs} accounts={accounts} empty="暂无操作记录" />
           </TabsContent>
         </Tabs>
       )}
@@ -605,7 +591,7 @@ function ConnectivityRate({ account }: { account: MainStationAccount }) {
   if (rate == null) return <span className="text-muted-foreground">-</span>
   const text = rate === Math.round(rate) ? rate.toFixed(0) : rate.toFixed(1)
   const className = rate >= 95 ? "text-emerald-700" : rate >= 80 ? "text-amber-700" : "text-destructive"
-  return <span className={cn("text-sm font-medium tabular-nums", className)} title="最近 20 次有效探测成功率">{text}%</span>
+  return <span className={cn("text-sm font-medium tabular-nums", className)} title="最近 100 次有效探测成功率">{text}%</span>
 }
 
 function SchedulingPriority({ account }: { account: MainStationAccount }) {
@@ -666,11 +652,7 @@ function schedulingBlockedMessage(decision: MainStationSchedulingDecision) {
   return reasons[decision.reason] || "账号当前仍不满足调度条件"
 }
 
-function ToggleLine({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {
-  return <div className="flex items-center justify-between gap-4 border-b py-2 text-sm"><span>{label}</span><Switch checked={checked} onCheckedChange={onCheckedChange} /></div>
-}
-
-function AuditTable({ items, empty }: { items: MainStationAuditLog[]; empty: string }) {
+function AuditTable({ items, accounts, empty }: { items: MainStationAuditLog[]; accounts: MainStationAccount[]; empty: string }) {
   return (
     <div className="overflow-x-auto border">
       <Table>
@@ -680,10 +662,10 @@ function AuditTable({ items, empty }: { items: MainStationAuditLog[]; empty: str
             <TableRow key={item.id}>
               <TableCell className="whitespace-nowrap text-xs">{relativeTime(item.created_at)}</TableCell>
               <TableCell>{actionLabel(item.action)}</TableCell>
-              <TableCell>{item.remote_account_id ? `#${item.remote_account_id}` : "-"}</TableCell>
-              <TableCell>{item.source}</TableCell>
+              <TableCell>{item.remote_account_id ? `${accounts.find((account) => account.remote_account_id === item.remote_account_id)?.name ?? "Account"} #${item.remote_account_id}` : "-"}</TableCell>
+              <TableCell>{sourceLabel(item.source)}</TableCell>
               <TableCell>{item.success ? <Badge variant="outline">成功</Badge> : <Badge variant="destructive">失败</Badge>}</TableCell>
-              <TableCell className="max-w-80 truncate" title={item.error_message || item.detail}>{item.error_message || item.detail || "-"}</TableCell>
+              <TableCell className="max-w-80 truncate" title={auditDetail(item.error_message || item.detail)}>{auditDetail(item.error_message || item.detail)}</TableCell>
             </TableRow>
           ))}
           {items.length === 0 ? <EmptyRow columns={6} text={empty} /> : null}
@@ -719,6 +701,27 @@ function actionLabel(action: string) {
     group_settings_update: "更新分组设置",
     schedulable_reconcile: "更新调度状态",
     pool_profit_evaluate: "利润评估",
+    member_scheduling_rank: "调整账号优先级",
+    guard_lock_activate: "启用停用保护",
+    guard_lock_clear: "解除停用保护",
+    main_station_sync: "同步主站信息",
+    protection_policy_update: "更新保护策略",
+    main_station_update: "更新主站配置",
   }
   return labels[action] ?? action
+}
+
+function sourceLabel(source: string) {
+  return ({ manual: "人工操作", admin: "管理员", health: "健康探测", scheduler: "定时任务", margin: "利润保护", system: "系统" } as Record<string, string>)[source] ?? source
+}
+
+function auditDetail(detail?: string) {
+  if (!detail) return "-"
+  const labels: Record<string, string> = {
+    "remote state already matches decision": "主站当前调度状态已符合系统决策，无需修改",
+    "remote schedulable updated": "已更新主站账号调度状态",
+    "automatic scheduling fields applied": "已更新主站账号优先级和调度参数",
+    "current health locks reconciled; disabling still preserves existing locks": "已按当前健康状态更新保护锁",
+  }
+  return labels[detail] ?? detail
 }

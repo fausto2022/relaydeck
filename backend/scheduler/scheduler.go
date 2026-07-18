@@ -109,6 +109,7 @@ func (s *Scheduler) runMainStationHealth() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	s.mainStation.RunDueHealthChecks(ctx)
+	s.mainStation.SyncForScheduler(ctx)
 }
 
 func (s *Scheduler) Stop() {

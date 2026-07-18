@@ -620,6 +620,7 @@ export interface MainStationConfig {
   health_interval_seconds: number
   health_failure_threshold: number
   health_recovery_threshold: number
+  sync_interval_seconds: number
   observation_evaluated_at?: string | null
   health_observed_at?: string | null
   margin_observed_at?: string | null
@@ -707,7 +708,7 @@ export interface MainStationGroupWorkspace {
   enabled: boolean
   minimum_healthy_accounts: number
   minimum_effective_concurrency: number
-  rate_sort_direction: "asc" | "desc"
+  rate_sort_direction: "asc" | "desc" | "stability"
   health_policy: string
   margin_policy: string
   last_status: "healthy" | "degraded" | "critical" | "unknown" | string

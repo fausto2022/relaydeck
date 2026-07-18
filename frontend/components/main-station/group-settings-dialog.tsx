@@ -36,7 +36,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
   const [enabled, setEnabled] = useState(true)
   const [minimumHealthy, setMinimumHealthy] = useState(1)
   const [minimumConcurrency, setMinimumConcurrency] = useState(1)
-  const [rateSortDirection, setRateSortDirection] = useState<"asc" | "desc">("asc")
+  const [rateSortDirection, setRateSortDirection] = useState<"asc" | "desc" | "stability">("asc")
   const [healthPolicy, setHealthPolicy] = useState("")
   const [marginPolicy, setMarginPolicy] = useState("")
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -96,12 +96,13 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
             <Input id="minimum-concurrency" type="number" min={0} value={minimumConcurrency} onChange={(event) => setMinimumConcurrency(Number(event.target.value))} />
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label>成本排序</Label>
-            <Select value={rateSortDirection} onValueChange={(value) => setRateSortDirection(value as "asc" | "desc")}>
+            <Label>调度排序</Label>
+            <Select value={rateSortDirection} onValueChange={(value) => setRateSortDirection(value as "asc" | "desc" | "stability")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="asc">低成本优先</SelectItem>
                 <SelectItem value="desc">高成本优先</SelectItem>
+                <SelectItem value="stability">稳定性优先</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -28,6 +28,7 @@ const (
 	maximumHealthIntervalSeconds       = 86400
 	defaultHealthFailureThreshold      = 10
 	defaultHealthRecoveryThreshold     = 3
+	defaultMainStationSyncInterval     = 300
 	maximumHealthThreshold             = 100
 )
 
@@ -80,6 +81,7 @@ type Service struct {
 	healthGlobal     chan struct{}
 	healthChannels   map[uint]chan struct{}
 	healthScheduleMu sync.Mutex
+	syncScheduleMu   sync.Mutex
 	probeConfigMu    sync.RWMutex
 	proxyConfig      config.ProxyConfig
 	probeTimeout     time.Duration
@@ -174,6 +176,7 @@ func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto.HealthIntervalSeconds = normalizedGlobalHealthInterval(config.HealthIntervalSeconds)
 	dto.HealthFailureThreshold = normalizedHealthThreshold(config.HealthFailureThreshold, defaultHealthFailureThreshold)
 	dto.HealthRecoveryThreshold = normalizedHealthThreshold(config.HealthRecoveryThreshold, defaultHealthRecoveryThreshold)
+	dto.SyncIntervalSeconds = normalizedSyncInterval(config.SyncIntervalSeconds)
 	dto.ObservationEvaluatedAt = config.ObservationEvaluatedAt
 	dto.HealthObservedAt = config.HealthObservedAt
 	dto.MarginObservedAt = config.MarginObservedAt
@@ -234,6 +237,13 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 			return nil, err
 		}
 	}
+	syncIntervalSeconds := defaultMainStationSyncInterval
+	if in.SyncIntervalSeconds != nil {
+		syncIntervalSeconds = *in.SyncIntervalSeconds
+		if err := validateSyncInterval(syncIntervalSeconds); err != nil {
+			return nil, err
+		}
+	}
 	config := &storage.MainStationConfig{
 		ID:                      storage.MainStationSingletonID,
 		Enabled:                 enabled,
@@ -241,6 +251,7 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		HealthIntervalSeconds:   healthIntervalSeconds,
 		HealthFailureThreshold:  healthFailureThreshold,
 		HealthRecoveryThreshold: healthRecoveryThreshold,
+		SyncIntervalSeconds:     syncIntervalSeconds,
 	}
 	target := &storage.UpstreamSyncTarget{
 		Name:              name,
@@ -351,6 +362,12 @@ func (s *Service) UpdateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		}
 		config.HealthRecoveryThreshold = *in.HealthRecoveryThreshold
 	}
+	if in.SyncIntervalSeconds != nil {
+		if err := validateSyncInterval(*in.SyncIntervalSeconds); err != nil {
+			return nil, err
+		}
+		config.SyncIntervalSeconds = *in.SyncIntervalSeconds
+	}
 	if err := s.store.UpdateConfigWithTarget(target, config); err != nil {
 		return nil, err
 	}
@@ -359,6 +376,20 @@ func (s *Service) UpdateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 	}
 	_ = s.appendAudit(nil, nil, nil, "main_station_update", "manual", true, before, target, nil, "", "")
 	return s.GetConfig()
+}
+
+func normalizedSyncInterval(value int) int {
+	if value < 30 || value > 86400 {
+		return defaultMainStationSyncInterval
+	}
+	return value
+}
+
+func validateSyncInterval(value int) error {
+	if value < 30 || value > 86400 {
+		return errors.New("main station sync interval must be between 30 and 86400 seconds")
+	}
+	return nil
 }
 
 func (s *Service) TestConnection(ctx context.Context, in *ConfigInput) error {
