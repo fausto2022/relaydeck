@@ -172,6 +172,7 @@ function MultiplierChangeRow({
   const delta = ratioDelta(item.old_ratio, item.new_ratio)
   const isUp = delta.direction === "up"
   const chType = ch?.type ?? ""
+  const rechargeRule = item.recharge_multiplier_mode === "multiply" ? "乘以" : "除以"
 
   return (
     <li className={cn("flex items-start gap-2.5 sm:gap-3", compact ? "px-4 py-3" : "px-4 py-3.5 sm:px-6")}>
@@ -200,7 +201,9 @@ function MultiplierChangeRow({
         </div>
         <div className="mt-1.5 flex items-center text-xs">
           <div>
-            <span className="text-muted-foreground">{"倍率"}</span>
+            <span className="text-muted-foreground">
+              {item.recharge_adjusted ? "换算后倍率" : "倍率"}
+            </span>
             <p className="mt-0.5 tabular-nums">
               <span className="text-muted-foreground">
                 {formatRatio(item.old_ratio)}
@@ -210,6 +213,11 @@ function MultiplierChangeRow({
                 {formatRatio(item.new_ratio)}
               </span>
             </p>
+            {item.recharge_adjusted ? (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {`上游原始 ${formatRatio(item.raw_old_ratio)} → ${formatRatio(item.raw_new_ratio)} · ${rechargeRule}充值倍率 ${formatRatio(item.recharge_multiplier)}`}
+              </p>
+            ) : null}
           </div>
         </div>
       </div>

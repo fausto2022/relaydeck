@@ -125,6 +125,13 @@ export interface RateChangeLog {
   new_ratio: number
   old_completion_ratio?: number | null
   new_completion_ratio?: number
+  raw_old_ratio?: number | null
+  raw_new_ratio?: number
+  raw_old_completion_ratio?: number | null
+  raw_new_completion_ratio?: number
+  recharge_adjusted?: boolean
+  recharge_multiplier?: number | null
+  recharge_multiplier_mode?: RechargeMultiplierMode
   changed_at: string
 }
 

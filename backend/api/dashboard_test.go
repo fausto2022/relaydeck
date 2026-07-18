@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/bejix/upstream-ops/backend/channel"
+	"github.com/bejix/upstream-ops/backend/connector"
 	_ "github.com/bejix/upstream-ops/backend/connector/sub2api"
 	"github.com/bejix/upstream-ops/backend/crypto"
 	"github.com/bejix/upstream-ops/backend/monitor"
@@ -56,18 +57,31 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 	balance1 := 20.0
 	today1 := 1.25
 	total1 := 10.5
+	rechargeMultiplier := 6.5
 	if err := channels.Create(&storage.Channel{
-		Name:           "a",
-		Type:           storage.ChannelTypeNewAPI,
-		SiteURL:        "https://a.example.com",
-		Username:       "u1",
-		PasswordCipher: "x",
-		MonitorEnabled: true,
-		LastBalance:    &balance1,
-		TodayCost:      &today1,
-		TotalCost:      &total1,
+		Name:                   "a",
+		Type:                   storage.ChannelTypeNewAPI,
+		SiteURL:                "https://a.example.com",
+		Username:               "u1",
+		PasswordCipher:         "x",
+		MonitorEnabled:         true,
+		LastBalance:            &balance1,
+		TodayCost:              &today1,
+		TotalCost:              &total1,
+		RechargeMultiplier:     &rechargeMultiplier,
+		RechargeMultiplierMode: connector.RechargeMultiplierModeDivide,
 	}); err != nil {
 		t.Fatalf("create channel1: %v", err)
+	}
+	oldRatio := 0.45
+	if err := rates.AppendChange(&storage.RateChangeLog{
+		ChannelID: 1,
+		ModelName: "福利gpt",
+		OldRatio:  &oldRatio,
+		NewRatio:  0.26,
+		ChangedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("append rate change: %v", err)
 	}
 
 	balance2 := 15.0
@@ -121,6 +135,7 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 				TodayCost float64 `json:"today_cost"`
 				TotalCost float64 `json:"total_cost"`
 			} `json:"channels"`
+			RecentRateChanges []rateChangeOutput `json:"recent_rate_changes"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -134,6 +149,76 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 	}
 	if len(resp.Data.Channels) != 2 {
 		t.Fatalf("channels len = %d, want 2", len(resp.Data.Channels))
+	}
+	if len(resp.Data.RecentRateChanges) != 1 {
+		t.Fatalf("recent rate changes = %#v", resp.Data.RecentRateChanges)
+	}
+	change := resp.Data.RecentRateChanges[0]
+	if change.OldRatio == nil || *change.OldRatio != 0.0692 || change.NewRatio != 0.04 {
+		t.Fatalf("adjusted rate change = %#v", change)
+	}
+	if change.RawOldRatio == nil || *change.RawOldRatio != 0.45 || change.RawNewRatio != 0.26 || !change.RechargeAdjusted {
+		t.Fatalf("raw rate change = %#v", change)
+	}
+}
+
+func TestRateChangesPageAppliesRechargeMultiplier(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := openTestDB(t)
+	channels := storage.NewChannels(db)
+	rates := storage.NewRates(db)
+	multiplier := 2.0
+	if err := channels.Create(&storage.Channel{
+		Name:                   "adjusted",
+		Type:                   storage.ChannelTypeSub2API,
+		SiteURL:                "https://adjusted.example.com",
+		Username:               "u",
+		PasswordCipher:         "x",
+		RechargeMultiplier:     &multiplier,
+		RechargeMultiplierMode: connector.RechargeMultiplierModeMultiply,
+	}); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	oldRatio := 0.25
+	if err := rates.AppendChange(&storage.RateChangeLog{
+		ChannelID: 1,
+		ModelName: "group",
+		OldRatio:  &oldRatio,
+		NewRatio:  0.5,
+		ChangedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("append rate change: %v", err)
+	}
+
+	r := gin.New()
+	api := r.Group("/api")
+	registerRates(api, &Deps{Channels: channels, Rates: rates})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/rate-changes?page=1&page_size=10", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			Items []rateChangeOutput `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Data.Items) != 1 {
+		t.Fatalf("items = %#v", resp.Data.Items)
+	}
+	item := resp.Data.Items[0]
+	if item.OldRatio == nil || *item.OldRatio != 0.5 || item.NewRatio != 1 {
+		t.Fatalf("adjusted item = %#v", item)
+	}
+	if item.RawOldRatio == nil || *item.RawOldRatio != 0.25 || item.RawNewRatio != 0.5 || !item.RechargeAdjusted {
+		t.Fatalf("raw item = %#v", item)
 	}
 }
 

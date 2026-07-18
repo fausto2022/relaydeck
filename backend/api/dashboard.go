@@ -93,7 +93,7 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 			"total_cost":          totalCost,
 			"lowest_balance":      lowest,
 			"channels":            stats,
-			"recent_rate_changes": recentChanges,
+			"recent_rate_changes": rateChangeOutputs(recentChanges, channels),
 		},
 	})
 }
