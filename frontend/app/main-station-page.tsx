@@ -383,7 +383,10 @@ export default function MainStationPage() {
               <section className="min-w-0">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{selectedWorkspace?.group.name ?? "全部账号"}</p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm font-semibold">{selectedWorkspace?.group.name ?? "全部账号"}</p>
+                      {selectedWorkspace ? <Badge variant="outline" className="shrink-0 tabular-nums">倍率 {formatMainStationMultiplier(selectedWorkspace.group.rate_multiplier_micros)}</Badge> : null}
+                    </div>
                     <p className="text-xs text-muted-foreground">{accounts.length} 个 Account</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -420,6 +423,7 @@ export default function MainStationPage() {
                         <TableHead>状态</TableHead>
                         <TableHead>并发</TableHead>
                         <TableHead>优先级</TableHead>
+                        <TableHead>倍率</TableHead>
                         <TableHead>健康</TableHead>
                         <TableHead>连通率</TableHead>
                         <TableHead>来源</TableHead>
@@ -427,7 +431,7 @@ export default function MainStationPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {accountsLoading ? <EmptyRow columns={8} text="加载中" /> : null}
+                      {accountsLoading ? <EmptyRow columns={9} text="加载中" /> : null}
                       {!accountsLoading && filteredAccounts.map((account) => (
                         <TableRow key={account.remote_account_id}>
                           <TableCell>
@@ -447,6 +451,7 @@ export default function MainStationPage() {
                           <TableCell><ScheduleBadge account={account} /></TableCell>
                           <TableCell>{account.member?.concurrency ?? account.concurrency}</TableCell>
                           <TableCell>{account.member?.priority ?? account.priority}</TableCell>
+                          <TableCell className="tabular-nums">{formatMainStationMultiplier(account.rate_multiplier_micros)}</TableCell>
                           <TableCell><HealthBadge account={account} /></TableCell>
                           <TableCell><ConnectivityRate account={account} /></TableCell>
                           <TableCell>
@@ -473,7 +478,7 @@ export default function MainStationPage() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {!accountsLoading && filteredAccounts.length === 0 ? <EmptyRow columns={8} text="没有符合条件的账号" /> : null}
+                      {!accountsLoading && filteredAccounts.length === 0 ? <EmptyRow columns={9} text="没有符合条件的账号" /> : null}
                     </TableBody>
                   </Table>
                 </div>
@@ -581,6 +586,11 @@ function ConnectivityRate({ account }: { account: MainStationAccount }) {
   const text = rate === Math.round(rate) ? rate.toFixed(0) : rate.toFixed(1)
   const className = rate >= 95 ? "text-emerald-700" : rate >= 80 ? "text-amber-700" : "text-destructive"
   return <span className={cn("text-sm font-medium tabular-nums", className)} title="最近 20 次有效探测成功率">{text}%</span>
+}
+
+function formatMainStationMultiplier(value: number) {
+  if (!Number.isFinite(value)) return "-"
+  return (value / 1_000_000).toFixed(2)
 }
 
 function ToggleLine({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {
