@@ -730,6 +730,14 @@ export interface MainStationAccount {
   member?: MainStationAccountMember | null
 }
 
+export interface MainStationAccountProfit {
+  status: "healthy" | "risk" | "unknown" | "unsupported" | string
+  sale_multiplier_micros: number
+  cost_multiplier_micros: number
+  margin_basis_points: number
+  observed_at: string
+}
+
 export interface MainStationAccountMember {
   id: number
   account_name?: string
@@ -743,6 +751,7 @@ export interface MainStationAccountMember {
   source_group_name?: string
   source_group_rate_multiplier?: number | null
   source_group_rate_observed_at?: string | null
+  latest_profit?: MainStationAccountProfit | null
   source_api_key_id?: number | null
   weight: number
   priority: number

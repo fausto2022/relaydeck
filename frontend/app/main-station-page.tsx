@@ -78,7 +78,7 @@ import type {
   MainStationSchedulingDecision,
   MainStationSyncResult,
 } from "@/lib/api-types"
-import { relativeTime } from "@/lib/format"
+import { dateTime, relativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export default function MainStationPage() {
@@ -534,7 +534,7 @@ export default function MainStationPage() {
                           </TableCell>
                           <TableCell><ScheduleBadge account={account} /></TableCell>
                           <TableCell><SchedulingPriority account={account} /></TableCell>
-                          <TableCell><SourceGroupRate account={account} /></TableCell>
+                          <TableCell><SourceGroupRate account={account} showProfit={selectedWorkspace != null} /></TableCell>
                           <TableCell><HealthBadge account={account} /></TableCell>
                           <TableCell><ConnectivityRate account={account} /></TableCell>
                           <TableCell>
@@ -757,7 +757,7 @@ function SchedulingPriority({ account }: { account: MainStationAccount }) {
   )
 }
 
-function SourceGroupRate({ account }: { account: MainStationAccount }) {
+function SourceGroupRate({ account, showProfit }: { account: MainStationAccount; showProfit: boolean }) {
   const member = account.member
   if (!member) return <span className="text-muted-foreground">-</span>
   const rate = member.source_group_rate_multiplier
@@ -766,11 +766,45 @@ function SourceGroupRate({ account }: { account: MainStationAccount }) {
     return <span className="text-muted-foreground" title={`来源分组：${groupName}；暂无倍率快照`}>-</span>
   }
   const observedAt = member.source_group_rate_observed_at ? `倍率采集于 ${relativeTime(member.source_group_rate_observed_at)}` : "默认分组倍率"
-  return (
-    <div className="leading-tight" title={`来源分组：${groupName}；${observedAt}`}>
-      <div className="font-medium tabular-nums">{rate.toFixed(3)}</div>
+  const profit = showProfit ? member.latest_profit : null
+  const profitEvaluated = profit != null && (profit.status === "healthy" || profit.status === "risk") && profit.sale_multiplier_micros > 0 && profit.cost_multiplier_micros > 0
+  const marginPercent = profitEvaluated ? profit.margin_basis_points / 100 : null
+  const marginText = marginPercent == null ? "待评估" : `${marginPercent > 0 ? "+" : ""}${marginPercent.toFixed(1)}%`
+  const marginClassName = marginPercent == null
+    ? "text-muted-foreground"
+    : profit?.status === "risk" || marginPercent <= 0
+      ? "text-destructive"
+      : "text-emerald-700 dark:text-emerald-400"
+  const content = (
+    <div className="leading-tight">
+      <div className="flex items-baseline gap-1 whitespace-nowrap">
+        <span className="font-medium tabular-nums">{rate.toFixed(3)}</span>
+        {showProfit ? <span className={cn("text-[11px] font-medium tabular-nums", marginClassName)}>（利润 {marginText}）</span> : null}
+      </div>
       <div className="max-w-24 truncate text-xs text-muted-foreground">{groupName}</div>
     </div>
+  )
+  if (!showProfit) {
+    return <div title={`来源分组：${groupName}；${observedAt}`}>{content}</div>
+  }
+  return (
+    <Tooltip delayDuration={150}>
+      <TooltipTrigger asChild>{content}</TooltipTrigger>
+      <TooltipContent side="top" className="max-w-72 space-y-1 text-xs">
+        <div>上游分组：{groupName}</div>
+        <div>当前上游倍率：{rate.toFixed(3)}（{observedAt}）</div>
+        {profitEvaluated && profit ? (
+          <>
+            <div>主站销售倍率：{formatMainStationMultiplier(profit.sale_multiplier_micros)}</div>
+            <div>有效成本倍率：{formatMainStationMultiplier(profit.cost_multiplier_micros)}</div>
+            <div>利润率：{marginText}</div>
+            <div>评估时间：{dateTime(profit.observed_at)}</div>
+          </>
+        ) : (
+          <div>利润率：等待后台完成利润评估</div>
+        )}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

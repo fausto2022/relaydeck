@@ -340,6 +340,33 @@ func TestMainStationAccountUsesLatestSourceGroupRate(t *testing.T) {
 	if err := service.store.CreateMember(member); err != nil {
 		t.Fatalf("create member: %v", err)
 	}
+	if err := service.store.AppendProfitCheck(&storage.MainAccountProfitCheck{
+		PoolID:               poolID,
+		MemberID:             member.ID,
+		TargetGroupID:        groups[0].ID,
+		SaleMultiplierMicros: 150000,
+		CostMultiplierMicros: 165000,
+		MarginValueMicros:    -15000,
+		MarginBasisPoints:    -1000,
+		Status:               "risk",
+		ObservedAt:           time.Now().Add(-time.Minute).Truncate(time.Second),
+	}); err != nil {
+		t.Fatalf("create previous profit check: %v", err)
+	}
+	profitObservedAt := time.Now().Add(-30 * time.Second).Truncate(time.Second)
+	if err := service.store.AppendProfitCheck(&storage.MainAccountProfitCheck{
+		PoolID:               poolID,
+		MemberID:             member.ID,
+		TargetGroupID:        groups[0].ID,
+		SaleMultiplierMicros: 150000,
+		CostMultiplierMicros: 108000,
+		MarginValueMicros:    42000,
+		MarginBasisPoints:    2800,
+		Status:               "healthy",
+		ObservedAt:           profitObservedAt,
+	}); err != nil {
+		t.Fatalf("create profit check: %v", err)
+	}
 	observedAt := time.Now().Add(-time.Minute).Truncate(time.Second)
 	if _, err := service.rates.Upsert(&storage.RateSnapshot{
 		ChannelID: channel.ID, RemoteGroupID: &sourceGroupID, ModelName: "plus", Ratio: 0.15, LastSeenAt: observedAt,
@@ -353,6 +380,13 @@ func TestMainStationAccountUsesLatestSourceGroupRate(t *testing.T) {
 	if accounts[0].Member.SourceGroupRateMultiplier == nil || *accounts[0].Member.SourceGroupRateMultiplier != 0.075 ||
 		accounts[0].Member.SourceGroupRateObservedAt == nil || !accounts[0].Member.SourceGroupRateObservedAt.Equal(observedAt) {
 		t.Fatalf("source group rate = %#v", accounts[0].Member)
+	}
+	if accounts[0].Member.LatestProfit == nil || accounts[0].Member.LatestProfit.Status != "healthy" ||
+		accounts[0].Member.LatestProfit.SaleMultiplierMicros != 150000 ||
+		accounts[0].Member.LatestProfit.CostMultiplierMicros != 108000 ||
+		accounts[0].Member.LatestProfit.MarginBasisPoints != 2800 ||
+		!accounts[0].Member.LatestProfit.ObservedAt.Equal(profitObservedAt) {
+		t.Fatalf("latest profit = %#v", accounts[0].Member.LatestProfit)
 	}
 
 	updatedAt := time.Now().Truncate(time.Second)

@@ -148,7 +148,23 @@ func (s *Service) ListGroupAccounts(groupID uint, includeMissing bool) ([]Accoun
 	result := make([]AccountDTO, 0)
 	for i := range items {
 		if accountBelongsToRemoteGroup(&items[i], group.RemoteGroupID) {
-			result = append(result, s.accountDTO(items[i]))
+			dto := s.accountDTO(items[i])
+			if dto.Member != nil {
+				check, checkErr := s.store.LatestProfitCheck(dto.Member.ID, group.ID)
+				switch {
+				case checkErr == nil:
+					dto.Member.LatestProfit = &AccountProfitDTO{
+						Status:               check.Status,
+						SaleMultiplierMicros: check.SaleMultiplierMicros,
+						CostMultiplierMicros: check.CostMultiplierMicros,
+						MarginBasisPoints:    check.MarginBasisPoints,
+						ObservedAt:           check.ObservedAt,
+					}
+				case !errors.Is(checkErr, gorm.ErrRecordNotFound):
+					return nil, checkErr
+				}
+			}
+			result = append(result, dto)
 		}
 	}
 	return result, nil
