@@ -175,7 +175,7 @@ function MultiplierChangeRow({
   const rechargeRule = item.recharge_multiplier_mode === "multiply" ? "乘以" : "除以"
 
   return (
-    <li className={cn("flex items-start gap-2.5 sm:gap-3", compact ? "px-4 py-3" : "px-4 py-3.5 sm:px-6")}>
+    <li className={cn("flex w-full min-w-0 items-start gap-2.5 sm:gap-3", compact ? "px-4 py-3" : "px-4 py-3.5 sm:px-6")}>
       <div className="flex flex-col items-center gap-0.5 pt-1">
         <span className={cn("size-2 rounded-full", isUp ? "bg-danger" : "bg-success")} />
       </div>
@@ -214,7 +214,7 @@ function MultiplierChangeRow({
               </span>
             </p>
             {item.recharge_adjusted ? (
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="mt-1 break-words text-[11px] text-muted-foreground">
                 {`上游原始 ${formatRatio(item.raw_old_ratio)} → ${formatRatio(item.raw_new_ratio)} · ${rechargeRule}充值倍率 ${formatRatio(item.recharge_multiplier)}`}
               </p>
             ) : null}

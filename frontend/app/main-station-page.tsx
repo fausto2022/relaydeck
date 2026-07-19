@@ -403,31 +403,33 @@ export default function MainStationPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold">主站账号</h1>
           <p className="truncate text-sm text-muted-foreground">
             {config?.configured ? `${config.name} · ${config.base_url}` : "尚未配置 Sub2API 主站"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
           {config?.configured ? (
-            <Button variant="outline" onClick={() => { setRiskOpen(true); void loadRisk(selectedGroupID) }}>
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => { setRiskOpen(true); void loadRisk(selectedGroupID) }}>
               <ShieldAlert className="size-4" />风险中心
               {riskCount > 0 ? <Badge variant="destructive" className="ml-1 min-w-5 justify-center px-1.5 tabular-nums">{riskCount}</Badge> : null}
             </Button>
           ) : null}
           {config?.configured ? (
-            <Button variant="outline" onClick={() => { setAuditOpen(true); void loadRisk(selectedGroupID) }}>
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => { setAuditOpen(true); void loadRisk(selectedGroupID) }}>
               <History className="size-4" />操作记录
             </Button>
           ) : null}
           {config?.configured ? (
-            <Button variant="outline" onClick={() => void handleSync()} disabled={syncing}>
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => void handleSync()} disabled={syncing}>
               <RefreshCw className={cn("size-4", syncing && "animate-spin")} />{syncing ? "同步中" : "同步主站"}
             </Button>
           ) : null}
-          <IconButton label="主站配置" onClick={() => setConfigOpen(true)}><ServerCog className="size-4" /></IconButton>
+          <Button variant="outline" className="w-full sm:w-auto" onClick={() => setConfigOpen(true)}>
+            <ServerCog className="size-4" />主站配置
+          </Button>
         </div>
       </header>
 
@@ -446,7 +448,7 @@ export default function MainStationPage() {
                   <p className="text-sm font-medium">主站分组</p>
                   <p className="text-xs text-muted-foreground">{workspaces.length} 个分组</p>
                 </div>
-                <nav className="max-h-[520px] overflow-y-auto p-2">
+                <nav className="max-h-64 overflow-y-auto p-2 md:max-h-[520px]">
                   <GroupButton active={selectedGroupID == null} name="全部账号" count={workspaces.reduce((sum, item) => sum + item.account_count, 0)} icon={<Users className="size-4" />} onClick={() => setSelectedGroupID(null)} />
                   {workspaces.map((workspace) => (
                     <GroupButton

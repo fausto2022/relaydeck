@@ -88,7 +88,7 @@ export function MonitorHeader() {
     <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-360 items-center justify-between gap-2 px-3 sm:gap-4 sm:px-5">
         {/* left: logo + title */}
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
           <div className="flex size-8 items-center justify-center rounded-lg bg-foreground text-background">
             <Activity className="size-4" strokeWidth={2.5} />
           </div>
@@ -121,7 +121,7 @@ export function MonitorHeader() {
         </div>
 
         {/* right: actions */}
-        <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-3">
           {/* last collected + refresh */}
           <div className="hidden items-center gap-2 sm:flex">
             <span className="text-xs text-muted-foreground">

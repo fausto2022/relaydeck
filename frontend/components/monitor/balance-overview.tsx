@@ -102,7 +102,7 @@ export function BalanceOverview() {
   const costMax = data.length > 0 ? niceCeil(Math.max(...costValues)) : 10
   const isLoading = trend.loading || costTrend.loading
   const chartMargin = isMobile
-    ? { top: 6, right: 4, left: -18, bottom: 0 }
+    ? { top: 6, right: 8, left: 0, bottom: 0 }
     : { top: 8, right: 12, left: 0, bottom: 0 }
   const dot = isMobile ? false : { r: 4, fill: "var(--background)", strokeWidth: 2 }
   const activeDot = isMobile ? { r: 4, strokeWidth: 0 } : { r: 5, strokeWidth: 0 }
@@ -143,13 +143,14 @@ export function BalanceOverview() {
                   axisLine={false}
                   interval={isMobile ? 1 : 0}
                   minTickGap={isMobile ? 8 : 5}
+                  padding={isMobile ? { left: 8, right: 8 } : { left: 0, right: 0 }}
                   tick={{ fill: "var(--muted-foreground)", fontSize: isMobile ? 10 : 11 }}
                   dy={isMobile ? 6 : 8}
                 />
                 <YAxis
                   tickLine={false}
                   axisLine={false}
-                  width={isMobile ? 40 : 48}
+                  width={isMobile ? 38 : 48}
                   tick={{ fill: "var(--muted-foreground)", fontSize: isMobile ? 10 : 11 }}
                   tickFormatter={formatY}
                   domain={[0, yMax]}
