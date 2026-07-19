@@ -146,20 +146,29 @@ func (f *fakeAdminClient) TestAccount(context.Context, sub2api.AdminTarget, int6
 
 type fakeChannelService struct {
 	secret       string
+	revealKeyErr error
 	groups       []connector.APIKeyGroup
 	keys         []connector.APIKey
 	createdKeys  []connector.APIKeyCreateRequest
+	createdKeyID int64
 	deletedKeys  []int64
 	deleteKeyErr error
 	concurrency  int
 }
 
 func (f *fakeChannelService) RevealAPIKey(context.Context, uint, int64) (string, error) {
+	if f.revealKeyErr != nil {
+		return "", f.revealKeyErr
+	}
 	return f.secret, nil
 }
 func (f *fakeChannelService) CreateAPIKey(_ context.Context, _ uint, req connector.APIKeyCreateRequest) (*connector.APIKey, error) {
 	f.createdKeys = append(f.createdKeys, req)
-	return &connector.APIKey{ID: 77, Key: f.secret, Name: req.Name}, nil
+	keyID := f.createdKeyID
+	if keyID == 0 {
+		keyID = 77
+	}
+	return &connector.APIKey{ID: keyID, Key: f.secret, Name: req.Name}, nil
 }
 func (f *fakeChannelService) DeleteAPIKey(_ context.Context, _ uint, id int64) error {
 	f.deletedKeys = append(f.deletedKeys, id)
@@ -543,6 +552,44 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	}
 	if len(admin.schedulableCalls) != 3 || admin.schedulableCalls[1] || !admin.schedulableCalls[2] {
 		t.Fatalf("delete schedulable calls = %#v", admin.schedulableCalls)
+	}
+}
+
+func TestEnsureManagedSourceAPIKeyRecreatesMissingRemoteKey(t *testing.T) {
+	service, db, _, channels := newTestService(t)
+	channel := createTestChannel(t, db)
+	pool := &storage.MainAccountPool{Name: "managed-pool", Platform: "openai"}
+	if err := service.store.CreatePool(pool, nil); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	oldKeyID := int64(41)
+	member := &storage.MainAccountPoolMember{
+		PoolID: pool.ID, AccountName: "OpenAI-01", OwnershipMode: "managed",
+		SourceChannelID: channel.ID, SourceGroupName: "source-group", SourceAPIKeyID: &oldKeyID,
+	}
+	if err := service.store.CreateMember(member); err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	channels.revealKeyErr = connector.HTTPStatusError(http.StatusUnauthorized, []byte("unauthorized"))
+	if _, err := service.ensureManagedSourceAPIKey(context.Background(), pool, member); err == nil || len(channels.createdKeys) != 0 {
+		t.Fatalf("non-missing key error should not create a replacement: err=%v keys=%#v", err, channels.createdKeys)
+	}
+	channels.revealKeyErr = connector.HTTPStatusError(http.StatusNotFound, []byte("api key not found"))
+	channels.createdKeyID = 88
+
+	secret, err := service.ensureManagedSourceAPIKey(context.Background(), pool, member)
+	if err != nil {
+		t.Fatalf("ensure managed source api key: %v", err)
+	}
+	if secret != channels.secret || member.SourceAPIKeyID == nil || *member.SourceAPIKeyID != 88 {
+		t.Fatalf("recreated key: secret=%q member=%#v", secret, member)
+	}
+	if len(channels.createdKeys) != 1 || channels.createdKeys[0].Name != "source-group" {
+		t.Fatalf("created keys = %#v", channels.createdKeys)
+	}
+	stored, err := service.store.FindMember(pool.ID, member.ID)
+	if err != nil || stored.SourceAPIKeyID == nil || *stored.SourceAPIKeyID != 88 {
+		t.Fatalf("stored member = %#v, err=%v", stored, err)
 	}
 }
 

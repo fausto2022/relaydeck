@@ -815,13 +815,16 @@ func (s *Service) managedAccountRequest(ctx context.Context, pool *storage.MainA
 func (s *Service) ensureManagedSourceAPIKey(ctx context.Context, pool *storage.MainAccountPool, member *storage.MainAccountPoolMember) (string, error) {
 	if member.SourceAPIKeyID != nil {
 		secret, err := s.channelSvc.RevealAPIKey(ctx, member.SourceChannelID, *member.SourceAPIKeyID)
-		if err != nil {
+		if err != nil && !missingRemoteResource(err) {
 			return "", fmt.Errorf("reveal managed source api key: %w", err)
 		}
-		if strings.TrimSpace(secret) == "" {
+		if err == nil && strings.TrimSpace(secret) == "" {
 			return "", errors.New("managed source api key is empty")
 		}
-		return secret, nil
+		if err == nil {
+			return secret, nil
+		}
+		member.SourceAPIKeyID = nil
 	}
 	name := managedSourceAPIKeyName(pool, member)
 	key, err := s.channelSvc.CreateAPIKey(ctx, member.SourceChannelID, connector.APIKeyCreateRequest{
