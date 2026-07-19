@@ -403,7 +403,7 @@ function TestingProgress() {
       <Loader2 className="mt-0.5 size-5 animate-spin text-primary" />
       <div>
         <p className="text-sm font-medium">正在测试上游分组</p>
-        <p className="mt-1 text-xs text-muted-foreground">创建临时 Key、发送最小请求并清理 Key，请勿关闭窗口。</p>
+        <p className="mt-1 text-xs text-muted-foreground">创建临时 Key、连续发送 3 次最小请求并清理 Key，请勿关闭窗口。</p>
       </div>
     </div>
   )
@@ -412,6 +412,8 @@ function TestingProgress() {
 function TestResult({ result }: { result: RateQuickTestResult }) {
   const status = result.usable
     ? { label: "可用", icon: CheckCircle2, cls: "text-emerald-700 dark:text-emerald-300" }
+    : result.success_count > 0
+      ? { label: "连接不稳定", icon: TriangleAlert, cls: "text-amber-700 dark:text-amber-300" }
     : result.reachable
       ? { label: "可连接但不可用", icon: TriangleAlert, cls: "text-amber-700 dark:text-amber-300" }
       : { label: "不可连接", icon: XCircle, cls: "text-destructive" }
@@ -426,10 +428,23 @@ function TestResult({ result }: { result: RateQuickTestResult }) {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
-        <Metric icon={Gauge} label="总延迟" value={`${result.latency_ms} ms`} />
-        <Metric icon={Clock3} label="首字节" value={`${result.ttfb_ms} ms`} />
-        <Metric icon={Server} label="HTTP 状态" value={result.http_status ? String(result.http_status) : "—"} />
+        <Metric icon={Gauge} label="平均延迟" value={`${result.latency_ms} ms`} />
+        <Metric icon={Clock3} label="平均首字节" value={`${result.ttfb_ms} ms`} />
+        <Metric icon={Server} label="成功次数" value={`${result.success_count}/${result.attempt_count}`} />
         <Metric icon={TestTubeDiagonal} label="测试模型" value={result.model} />
+      </div>
+      <div className="divide-y divide-border rounded-md border border-border">
+        {result.attempts.map((attempt) => (
+          <div key={attempt.attempt} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-3 py-2 text-xs sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+            <Badge variant="outline" className={attempt.usable ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}>
+              第 {attempt.attempt} 次
+            </Badge>
+            <span className="truncate text-muted-foreground" title={attempt.message}>{attempt.usable ? "成功" : attempt.message}</span>
+            <span className="col-span-2 whitespace-nowrap text-muted-foreground tabular-nums sm:col-span-1 sm:text-right">
+              延迟 {attempt.latency_ms} ms · TTFB {attempt.ttfb_ms} ms · HTTP {attempt.http_status || "—"}
+            </span>
+          </div>
+        ))}
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span>临时 Key：{result.temporary_key_name}</span>

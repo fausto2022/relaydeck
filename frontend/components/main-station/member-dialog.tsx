@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { apiFetch, type ApiError } from "@/lib/api"
+import { formatRatio } from "@/lib/format"
 import type {
   Channel,
   ChannelAccountLimits,
@@ -66,6 +67,8 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
   const [loadingSource, setLoadingSource] = useState(false)
   const [busy, setBusy] = useState(false)
   const sourceRequestRef = useRef(0)
+  const selectedChannel = channels.find((channel) => channel.id === channelID)
+  const defaultSourceRatio = applyChannelRechargeMultiplier(1, selectedChannel)
 
   useEffect(() => {
     if (!open) return
@@ -291,8 +294,8 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
                 <Select value={sourceGroupValue} onValueChange={setSourceGroupValue} disabled={loadingSource}>
                   <SelectTrigger><SelectValue placeholder={loadingSource ? "加载中" : "选择套餐"} /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">默认套餐</SelectItem>
-                    {sourceGroups.map((group) => <SelectItem key={groupValue(group)} value={groupValue(group)}>{group.name} · {group.ratio}</SelectItem>)}
+                    <SelectItem value="none">默认套餐 · {formatRatio(defaultSourceRatio)}</SelectItem>
+                    {sourceGroups.map((group) => <SelectItem key={groupValue(group)} value={groupValue(group)}>{group.name} · {formatRatio(group.ratio)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -367,6 +370,13 @@ function isManagedAccountNameConflict(error: unknown) {
 
 function groupValue(group: ChannelAPIKeyGroup) {
   return group.id != null ? `id:${group.id}` : `name:${group.name}`
+}
+
+function applyChannelRechargeMultiplier(value: number, channel?: Channel) {
+  const multiplier = channel?.recharge_multiplier
+  if (multiplier == null || !Number.isFinite(multiplier) || multiplier <= 0) return value
+  const adjusted = channel?.recharge_multiplier_mode === "multiply" ? value * multiplier : value / multiplier
+  return Math.round(adjusted * 10_000) / 10_000
 }
 
 function safeHost(value?: string) {

@@ -129,6 +129,9 @@ export interface RateQuickTestResult {
   status: "usable" | "reachable" | "unreachable"
   usable: boolean
   reachable: boolean
+  attempt_count: number
+  success_count: number
+  attempts: RateQuickTestAttempt[]
   protocol: string
   model: string
   endpoint: string
@@ -144,6 +147,18 @@ export interface RateQuickTestResult {
   temporary_key_status: "deleted" | "pending"
   cleanup_error?: string
   tested_at: string
+}
+
+export interface RateQuickTestAttempt {
+  attempt: number
+  status: string
+  usable: boolean
+  reachable: boolean
+  http_status?: number
+  latency_ms: number
+  ttfb_ms: number
+  error_class?: string
+  message: string
 }
 
 export interface RateChangeLog {

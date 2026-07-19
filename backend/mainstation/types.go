@@ -146,25 +146,40 @@ type RateQuickTestInput struct {
 	Model    string `json:"model"`
 }
 
+type RateQuickTestAttempt struct {
+	Attempt    int    `json:"attempt"`
+	Status     string `json:"status"`
+	Usable     bool   `json:"usable"`
+	Reachable  bool   `json:"reachable"`
+	HTTPStatus int    `json:"http_status,omitempty"`
+	LatencyMS  int64  `json:"latency_ms"`
+	TTFBMS     int64  `json:"ttfb_ms"`
+	ErrorClass string `json:"error_class,omitempty"`
+	Message    string `json:"message"`
+}
+
 type RateQuickTestResult struct {
-	Status             string    `json:"status"`
-	Usable             bool      `json:"usable"`
-	Reachable          bool      `json:"reachable"`
-	Protocol           string    `json:"protocol"`
-	Model              string    `json:"model"`
-	Endpoint           string    `json:"endpoint"`
-	HTTPStatus         int       `json:"http_status,omitempty"`
-	LatencyMS          int64     `json:"latency_ms"`
-	TTFBMS             int64     `json:"ttfb_ms"`
-	ErrorClass         string    `json:"error_class,omitempty"`
-	Message            string    `json:"message"`
-	InputTokens        *int64    `json:"input_tokens,omitempty"`
-	OutputTokens       *int64    `json:"output_tokens,omitempty"`
-	TotalTokens        *int64    `json:"total_tokens,omitempty"`
-	TemporaryKeyName   string    `json:"temporary_key_name"`
-	TemporaryKeyStatus string    `json:"temporary_key_status"`
-	CleanupError       string    `json:"cleanup_error,omitempty"`
-	TestedAt           time.Time `json:"tested_at"`
+	Status             string                 `json:"status"`
+	Usable             bool                   `json:"usable"`
+	Reachable          bool                   `json:"reachable"`
+	AttemptCount       int                    `json:"attempt_count"`
+	SuccessCount       int                    `json:"success_count"`
+	Attempts           []RateQuickTestAttempt `json:"attempts"`
+	Protocol           string                 `json:"protocol"`
+	Model              string                 `json:"model"`
+	Endpoint           string                 `json:"endpoint"`
+	HTTPStatus         int                    `json:"http_status,omitempty"`
+	LatencyMS          int64                  `json:"latency_ms"`
+	TTFBMS             int64                  `json:"ttfb_ms"`
+	ErrorClass         string                 `json:"error_class,omitempty"`
+	Message            string                 `json:"message"`
+	InputTokens        *int64                 `json:"input_tokens,omitempty"`
+	OutputTokens       *int64                 `json:"output_tokens,omitempty"`
+	TotalTokens        *int64                 `json:"total_tokens,omitempty"`
+	TemporaryKeyName   string                 `json:"temporary_key_name"`
+	TemporaryKeyStatus string                 `json:"temporary_key_status"`
+	CleanupError       string                 `json:"cleanup_error,omitempty"`
+	TestedAt           time.Time              `json:"tested_at"`
 }
 
 type GroupSettingsInput struct {

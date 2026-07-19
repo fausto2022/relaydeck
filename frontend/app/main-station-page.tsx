@@ -766,7 +766,7 @@ function SourceGroupRate({ account }: { account: MainStationAccount }) {
   const observedAt = member.source_group_rate_observed_at ? `倍率采集于 ${relativeTime(member.source_group_rate_observed_at)}` : "默认分组倍率"
   return (
     <div className="leading-tight" title={`来源分组：${groupName}；${observedAt}`}>
-      <div className="font-medium tabular-nums">{rate.toFixed(2)}</div>
+      <div className="font-medium tabular-nums">{rate.toFixed(3)}</div>
       <div className="max-w-24 truncate text-xs text-muted-foreground">{groupName}</div>
     </div>
   )
@@ -774,7 +774,7 @@ function SourceGroupRate({ account }: { account: MainStationAccount }) {
 
 function formatMainStationMultiplier(value: number) {
   if (!Number.isFinite(value)) return "-"
-  return (value / 1_000_000).toFixed(2)
+  return (value / 1_000_000).toFixed(3)
 }
 
 function schedulingBlockedMessage(decision: MainStationSchedulingDecision) {

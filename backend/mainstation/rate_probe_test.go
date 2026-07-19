@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,7 +16,9 @@ import (
 
 func TestQuickTestRateCreatesUsesAndDeletesTemporaryKey(t *testing.T) {
 	service, db, _, channels := newTestService(t)
+	var requestCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Fatalf("probe path = %q", r.URL.Path)
 		}
@@ -49,8 +52,11 @@ func TestQuickTestRateCreatesUsesAndDeletesTemporaryKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("quick test rate: %v", err)
 	}
-	if !result.Usable || !result.Reachable || result.Status != "usable" || result.HTTPStatus != http.StatusOK || result.TotalTokens == nil || *result.TotalTokens != 3 {
+	if !result.Usable || !result.Reachable || result.Status != "usable" || result.HTTPStatus != http.StatusOK || result.TotalTokens == nil || *result.TotalTokens != 9 {
 		t.Fatalf("quick test result = %#v", result)
+	}
+	if result.AttemptCount != rateQuickTestAttempts || result.SuccessCount != rateQuickTestAttempts || len(result.Attempts) != rateQuickTestAttempts || requestCount.Load() != rateQuickTestAttempts {
+		t.Fatalf("quick test attempts = %#v request_count=%d", result.Attempts, requestCount.Load())
 	}
 	if result.TemporaryKeyStatus != "deleted" || !strings.HasPrefix(result.TemporaryKeyName, "测试key-") {
 		t.Fatalf("temporary key result = %#v", result)
@@ -64,6 +70,20 @@ func TestQuickTestRateCreatesUsesAndDeletesTemporaryKey(t *testing.T) {
 	var count int64
 	if err := db.Model(&storage.MainStationTemporaryAPIKey{}).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("temporary key records = %d, err=%v", count, err)
+	}
+}
+
+func TestQuickTestResultRequiresEveryAttemptToSucceed(t *testing.T) {
+	result := quickTestResult([]probeExecution{
+		{Status: "success", HTTPStatus: http.StatusOK, Protocol: "openai_chat", Model: "gpt-test", LatencyMS: 100, TTFBMS: 80},
+		{Status: "success", HTTPStatus: http.StatusOK, Protocol: "openai_chat", Model: "gpt-test", LatencyMS: 200, TTFBMS: 160},
+		{Status: "failure", HTTPStatus: http.StatusTooManyRequests, Protocol: "openai_chat", Model: "gpt-test", LatencyMS: 300, TTFBMS: 240, ErrorClass: "rate_limited"},
+	}, "测试key-ABC123", nil, time.Now())
+	if result.Usable || !result.Reachable || result.Status != "reachable" || result.SuccessCount != 2 || result.AttemptCount != 3 {
+		t.Fatalf("partial quick test result = %#v", result)
+	}
+	if result.LatencyMS != 150 || result.TTFBMS != 120 || result.HTTPStatus != http.StatusTooManyRequests || !strings.Contains(result.Message, "连接不稳定") {
+		t.Fatalf("partial quick test summary = %#v", result)
 	}
 }
 

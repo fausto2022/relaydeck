@@ -78,13 +78,16 @@ func TestChannelAPIKeyEndpoints(t *testing.T) {
 
 	db := openTestDB(t)
 	channels := storage.NewChannels(db)
+	rechargeMultiplier := 2.0
 	if err := channels.Create(&storage.Channel{
-		Name:           "a",
-		Type:           storage.ChannelTypeNewAPI,
-		SiteURL:        "https://a.example.com",
-		Username:       "u1",
-		PasswordCipher: "x",
-		MonitorEnabled: true,
+		Name:                   "a",
+		Type:                   storage.ChannelTypeNewAPI,
+		SiteURL:                "https://a.example.com",
+		Username:               "u1",
+		PasswordCipher:         "x",
+		RechargeMultiplier:     &rechargeMultiplier,
+		RechargeMultiplierMode: connector.RechargeMultiplierModeDivide,
+		MonitorEnabled:         true,
 	}); err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
@@ -130,6 +133,15 @@ func TestChannelAPIKeyEndpoints(t *testing.T) {
 	r.ServeHTTP(groupsRec, groupsReq)
 	if groupsRec.Code != http.StatusOK {
 		t.Fatalf("groups status = %d body = %s", groupsRec.Code, groupsRec.Body.String())
+	}
+	var groupsResp struct {
+		Data []connector.APIKeyGroup `json:"data"`
+	}
+	if err := json.Unmarshal(groupsRec.Body.Bytes(), &groupsResp); err != nil {
+		t.Fatalf("decode groups: %v", err)
+	}
+	if len(groupsResp.Data) != 1 || groupsResp.Data[0].Ratio != 0.5 {
+		t.Fatalf("adjusted groups = %#v", groupsResp.Data)
 	}
 
 	limitsReq := httptest.NewRequest(http.MethodGet, "/api/channels/1/account-limits", nil)

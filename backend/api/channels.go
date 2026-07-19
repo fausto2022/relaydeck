@@ -561,6 +561,12 @@ func listChannelAPIKeyGroups(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	channelItem, err := d.Channels.FindByID(id)
+	if err != nil {
+		fail(c, http.StatusNotFound, err)
+		return
+	}
+	applyRechargeMultiplierToAPIKeyGroups(res, channelItem)
 	c.JSON(http.StatusOK, gin.H{"data": res})
 }
 
@@ -747,6 +753,15 @@ func applyRechargeMultiplierToRates(list []storage.RateSnapshot, channelItem *st
 	for i := range list {
 		list[i].Ratio = connector.ApplyRechargeMultiplier(list[i].Ratio, channelItem.RechargeMultiplier, channelItem.RechargeMultiplierMode)
 		list[i].CompletionRatio = connector.ApplyRechargeMultiplier(list[i].CompletionRatio, channelItem.RechargeMultiplier, channelItem.RechargeMultiplierMode)
+	}
+}
+
+func applyRechargeMultiplierToAPIKeyGroups(list []connector.APIKeyGroup, channelItem *storage.Channel) {
+	if channelItem == nil {
+		return
+	}
+	for i := range list {
+		list[i].Ratio = connector.ApplyRechargeMultiplier(list[i].Ratio, channelItem.RechargeMultiplier, channelItem.RechargeMultiplierMode)
 	}
 }
 

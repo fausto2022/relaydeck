@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	rateQuickTestAttempts        = 3
 	temporaryAPIKeyLifetime      = 10 * time.Minute
 	temporaryAPIKeyRetryInterval = time.Minute
 	temporaryAPIKeyCleanupLimit  = 50
@@ -90,9 +91,12 @@ func (s *Service) QuickTestRate(ctx context.Context, channelID, rateID uint, in 
 		return nil, errors.Join(errors.New("临时测试 Key 内容为空"), cleanupErr)
 	}
 
-	execution := s.performProbeRequest(ctx, channel, secret, request)
+	executions := make([]probeExecution, 0, rateQuickTestAttempts)
+	for range rateQuickTestAttempts {
+		executions = append(executions, s.performProbeRequest(ctx, channel, secret, request))
+	}
 	cleanupErr := s.cleanupTemporaryAPIKey(record)
-	result := quickTestResult(execution, keyName, cleanupErr, s.now())
+	result := quickTestResult(executions, keyName, cleanupErr, s.now())
 	_ = s.appendAudit(nil, nil, nil, "rate_quick_test", "manual", result.Usable, nil, result, map[string]any{
 		"channel_id": channelID,
 		"rate_id":    rateID,
@@ -217,9 +221,36 @@ func quickTestAPIMode(platform string) (string, error) {
 	}
 }
 
-func quickTestResult(execution probeExecution, keyName string, cleanupErr error, testedAt time.Time) *RateQuickTestResult {
-	usable := execution.Status == "success"
-	reachable := usable || execution.HTTPStatus > 0
+func quickTestResult(executions []probeExecution, keyName string, cleanupErr error, testedAt time.Time) *RateQuickTestResult {
+	attempts := make([]RateQuickTestAttempt, 0, len(executions))
+	successCount := 0
+	reachable := false
+	var representative probeExecution
+	var firstFailure *probeExecution
+	for i := range executions {
+		execution := executions[i]
+		if i == 0 {
+			representative = execution
+		}
+		usable := execution.Status == "success"
+		attemptReachable := usable || execution.HTTPStatus > 0
+		if usable {
+			successCount++
+		}
+		if attemptReachable {
+			reachable = true
+		}
+		if !usable && firstFailure == nil {
+			failure := execution
+			firstFailure = &failure
+		}
+		attempts = append(attempts, RateQuickTestAttempt{
+			Attempt: i + 1, Status: execution.Status, Usable: usable, Reachable: attemptReachable,
+			HTTPStatus: execution.HTTPStatus, LatencyMS: execution.LatencyMS, TTFBMS: execution.TTFBMS,
+			ErrorClass: execution.ErrorClass, Message: quickTestMessage(execution),
+		})
+	}
+	usable := len(executions) > 0 && successCount == len(executions)
 	status := "unreachable"
 	if usable {
 		status = "usable"
@@ -232,13 +263,76 @@ func quickTestResult(execution probeExecution, keyName string, cleanupErr error,
 		cleanupStatus = "pending"
 		cleanupMessage = sanitizeText(cleanupErr.Error())
 	}
+	if firstFailure != nil {
+		representative.ErrorClass = firstFailure.ErrorClass
+		representative.HTTPStatus = firstFailure.HTTPStatus
+	}
 	return &RateQuickTestResult{
-		Status: status, Usable: usable, Reachable: reachable, Protocol: execution.Protocol, Model: execution.Model,
-		Endpoint: execution.Endpoint, HTTPStatus: execution.HTTPStatus, LatencyMS: execution.LatencyMS, TTFBMS: execution.TTFBMS,
-		ErrorClass: execution.ErrorClass, Message: quickTestMessage(execution), InputTokens: execution.InputTokens,
-		OutputTokens: execution.OutputTokens, TotalTokens: execution.TotalTokens, TemporaryKeyName: keyName,
+		Status: status, Usable: usable, Reachable: reachable, AttemptCount: len(executions), SuccessCount: successCount, Attempts: attempts,
+		Protocol: representative.Protocol, Model: representative.Model, Endpoint: representative.Endpoint,
+		HTTPStatus: representative.HTTPStatus, LatencyMS: averageSuccessfulMetric(executions, func(item probeExecution) int64 { return item.LatencyMS }),
+		TTFBMS:     averageSuccessfulMetric(executions, func(item probeExecution) int64 { return item.TTFBMS }),
+		ErrorClass: representative.ErrorClass, Message: quickTestAggregateMessage(executions, successCount, firstFailure),
+		InputTokens:  sumProbeTokens(executions, func(item probeExecution) *int64 { return item.InputTokens }),
+		OutputTokens: sumProbeTokens(executions, func(item probeExecution) *int64 { return item.OutputTokens }),
+		TotalTokens:  sumProbeTokens(executions, func(item probeExecution) *int64 { return item.TotalTokens }), TemporaryKeyName: keyName,
 		TemporaryKeyStatus: cleanupStatus, CleanupError: cleanupMessage, TestedAt: testedAt,
 	}
+}
+
+func quickTestAggregateMessage(executions []probeExecution, successCount int, firstFailure *probeExecution) string {
+	if len(executions) == 0 {
+		return "快速测试没有执行"
+	}
+	if successCount == len(executions) {
+		return fmt.Sprintf("连续测试 %d 次全部成功，当前上游分组可以使用", len(executions))
+	}
+	if successCount > 0 {
+		return fmt.Sprintf("连续测试 %d 次，成功 %d 次，当前上游分组连接不稳定", len(executions), successCount)
+	}
+	if firstFailure != nil {
+		return fmt.Sprintf("连续测试 %d 次均失败：%s", len(executions), quickTestMessage(*firstFailure))
+	}
+	return fmt.Sprintf("连续测试 %d 次均失败", len(executions))
+}
+
+func averageSuccessfulMetric(executions []probeExecution, value func(probeExecution) int64) int64 {
+	var sum int64
+	count := int64(0)
+	for i := range executions {
+		if executions[i].Status != "success" {
+			continue
+		}
+		sum += value(executions[i])
+		count++
+	}
+	if count == 0 {
+		for i := range executions {
+			sum += value(executions[i])
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return sum / count
+}
+
+func sumProbeTokens(executions []probeExecution, value func(probeExecution) *int64) *int64 {
+	var total int64
+	found := false
+	for i := range executions {
+		current := value(executions[i])
+		if current == nil {
+			continue
+		}
+		total += *current
+		found = true
+	}
+	if !found {
+		return nil
+	}
+	return &total
 }
 
 func quickTestMessage(execution probeExecution) string {
