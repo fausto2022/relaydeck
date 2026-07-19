@@ -136,6 +136,11 @@ type GroupWorkspaceDTO struct {
 	ManagedAccountCount         int                             `json:"managed_account_count"`
 }
 
+type RateConnection struct {
+	GroupID   uint   `json:"group_id"`
+	GroupName string `json:"group_name"`
+}
+
 type GroupSettingsInput struct {
 	Enabled                     *bool  `json:"enabled,omitempty"`
 	MinimumHealthyAccounts      int    `json:"minimum_healthy_accounts"`

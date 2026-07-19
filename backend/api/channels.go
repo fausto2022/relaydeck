@@ -13,6 +13,7 @@ import (
 
 	"github.com/fausto2022/relaydeck/backend/channel"
 	"github.com/fausto2022/relaydeck/backend/connector"
+	"github.com/fausto2022/relaydeck/backend/mainstation"
 	"github.com/fausto2022/relaydeck/backend/progress"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"github.com/gin-gonic/gin"
@@ -677,7 +678,37 @@ func channelRates(c *gin.Context, d *Deps) {
 		return
 	}
 	applyRechargeMultiplierToRates(list, channelItem)
-	c.JSON(http.StatusOK, gin.H{"data": list})
+	connections := make(map[uint][]mainstation.RateConnection)
+	if d.MainStation != nil {
+		connections, err = d.MainStation.ListRateConnections(id, list)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": channelRateOutputs(list, connections)})
+}
+
+type channelRateOutput struct {
+	storage.RateSnapshot
+	MainStationConnected bool                         `json:"main_station_connected"`
+	MainStationGroups    []mainstation.RateConnection `json:"main_station_groups"`
+}
+
+func channelRateOutputs(list []storage.RateSnapshot, connections map[uint][]mainstation.RateConnection) []channelRateOutput {
+	result := make([]channelRateOutput, 0, len(list))
+	for i := range list {
+		groups := connections[list[i].ID]
+		if groups == nil {
+			groups = []mainstation.RateConnection{}
+		}
+		result = append(result, channelRateOutput{
+			RateSnapshot:         list[i],
+			MainStationConnected: len(groups) > 0,
+			MainStationGroups:    groups,
+		})
+	}
+	return result
 }
 
 func applyRechargeMultiplierToRates(list []storage.RateSnapshot, channelItem *storage.Channel) {

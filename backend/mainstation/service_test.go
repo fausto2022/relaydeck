@@ -1040,6 +1040,73 @@ func TestBindMembersBatchAllowsPartialSuccess(t *testing.T) {
 	}
 }
 
+func TestListRateConnectionsMatchesCurrentMainStationGroups(t *testing.T) {
+	service, db, admin, _ := newTestService(t)
+	configureTestStation(t, service)
+	admin.groups = []sub2api.AdminGroup{
+		{ID: 11, Name: "main-openai", Platform: "openai", RateMultiplier: 1, Status: "active"},
+		{ID: 12, Name: "main-backup", Platform: "openai", RateMultiplier: 1, Status: "active"},
+	}
+	admin.accounts = []sub2api.AdminAccount{
+		{ID: 21, Name: "account-a", Status: "active", GroupIDs: []int64{11}},
+		{ID: 22, Name: "account-b", Status: "active", GroupIDs: []int64{12}},
+	}
+	if _, err := service.Sync(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	groups, err := service.ListGroups(false)
+	if err != nil || len(groups) != 2 {
+		t.Fatalf("list groups: groups=%#v err=%v", groups, err)
+	}
+	channel := createTestChannel(t, db)
+	sourceGroupID := int64(301)
+	for i := range groups {
+		poolID, poolErr := service.GroupPoolID(groups[i].ID)
+		if poolErr != nil {
+			t.Fatalf("resolve pool: %v", poolErr)
+		}
+		remoteAccountID := int64(21 + i)
+		member := &storage.MainAccountPoolMember{
+			PoolID: poolID, SourceChannelID: channel.ID, SourceGroupID: &sourceGroupID,
+			SourceGroupName: "source-openai", RemoteAccountID: &remoteAccountID,
+			OwnershipMode: "bound", BindingStatus: "verified", Status: "active", Enabled: true,
+		}
+		if err := service.store.CreateMember(member); err != nil {
+			t.Fatalf("create member: %v", err)
+		}
+	}
+	rates := []storage.RateSnapshot{
+		{ID: 1, ChannelID: channel.ID, RemoteGroupID: &sourceGroupID, ModelName: "source-openai"},
+		{ID: 2, ChannelID: channel.ID, ModelName: "not-connected"},
+	}
+	connections, err := service.ListRateConnections(channel.ID, rates)
+	if err != nil {
+		t.Fatalf("list rate connections: %v", err)
+	}
+	if len(connections[1]) != 2 || connections[1][0].GroupName != "main-openai" || connections[1][1].GroupName != "main-backup" {
+		t.Fatalf("connected groups = %#v", connections[1])
+	}
+	if len(connections[2]) != 0 {
+		t.Fatalf("unconnected rate groups = %#v", connections[2])
+	}
+
+	poolID, err := service.GroupPoolID(groups[0].ID)
+	if err != nil {
+		t.Fatalf("resolve default pool: %v", err)
+	}
+	defaultRemoteAccountID := int64(23)
+	if err := service.store.CreateMember(&storage.MainAccountPoolMember{
+		PoolID: poolID, SourceChannelID: channel.ID, RemoteAccountID: &defaultRemoteAccountID,
+		OwnershipMode: "bound", BindingStatus: "verified", Status: "active", Enabled: true,
+	}); err != nil {
+		t.Fatalf("create default member: %v", err)
+	}
+	defaultConnections, err := service.ListRateConnections(channel.ID, []storage.RateSnapshot{{ID: 3, ChannelID: channel.ID, ModelName: "default"}})
+	if err != nil || len(defaultConnections[3]) != 1 || defaultConnections[3][0].GroupName != "main-openai" {
+		t.Fatalf("default group connections = %#v err=%v", defaultConnections[3], err)
+	}
+}
+
 func newTestService(t *testing.T) (*Service, *gorm.DB, *fakeAdminClient, *fakeChannelService) {
 	t.Helper()
 	db, err := storage.Open(storage.DBConfig{

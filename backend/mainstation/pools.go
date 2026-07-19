@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,6 +19,75 @@ const managedAccountPoolModeRetryCount = 10
 
 func managedAccountPoolModeRetryStatusCodes() []int {
 	return []int{400, 401, 403, 429, 502, 503, 524}
+}
+
+func (s *Service) ListRateConnections(channelID uint, rates []storage.RateSnapshot) (map[uint][]RateConnection, error) {
+	connections := make(map[uint][]RateConnection, len(rates))
+	if channelID == 0 || len(rates) == 0 {
+		return connections, nil
+	}
+	members, err := s.store.ListAllMembers()
+	if err != nil {
+		return nil, err
+	}
+	poolConnections := make(map[uint][]RateConnection)
+	seenByRate := make(map[uint]map[uint]struct{}, len(rates))
+	for i := range members {
+		member := &members[i]
+		if member.SourceChannelID != channelID || member.RemoteAccountID == nil || *member.RemoteAccountID <= 0 ||
+			member.BindingStatus == "invalid" || member.BindingStatus == "orphaned" || member.Status == "orphaned" {
+			continue
+		}
+		groups, ok := poolConnections[member.PoolID]
+		if !ok {
+			groupIDs, listErr := s.store.ListPoolGroupIDs(member.PoolID)
+			if listErr != nil {
+				return nil, listErr
+			}
+			groups = make([]RateConnection, 0, len(groupIDs))
+			for _, groupID := range groupIDs {
+				group, findErr := s.targetGroups.FindByID(groupID)
+				if findErr != nil {
+					return nil, findErr
+				}
+				if !group.Missing {
+					groups = append(groups, RateConnection{GroupID: group.ID, GroupName: group.Name})
+				}
+			}
+			poolConnections[member.PoolID] = groups
+		}
+		for j := range rates {
+			if !sourceMemberMatchesRate(member, &rates[j], len(rates)) {
+				continue
+			}
+			if seenByRate[rates[j].ID] == nil {
+				seenByRate[rates[j].ID] = make(map[uint]struct{})
+			}
+			for _, group := range groups {
+				if _, exists := seenByRate[rates[j].ID][group.GroupID]; exists {
+					continue
+				}
+				seenByRate[rates[j].ID][group.GroupID] = struct{}{}
+				connections[rates[j].ID] = append(connections[rates[j].ID], group)
+			}
+		}
+	}
+	for rateID := range connections {
+		sort.Slice(connections[rateID], func(i, j int) bool {
+			return connections[rateID][i].GroupID < connections[rateID][j].GroupID
+		})
+	}
+	return connections, nil
+}
+
+func sourceMemberMatchesRate(member *storage.MainAccountPoolMember, rate *storage.RateSnapshot, totalRates int) bool {
+	if member.SourceGroupID != nil && rate.RemoteGroupID != nil && *member.SourceGroupID == *rate.RemoteGroupID {
+		return true
+	}
+	if name := strings.TrimSpace(member.SourceGroupName); name != "" && strings.EqualFold(name, strings.TrimSpace(rate.ModelName)) {
+		return true
+	}
+	return member.SourceGroupID == nil && strings.TrimSpace(member.SourceGroupName) == "" && totalRates == 1
 }
 
 func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO, error) {

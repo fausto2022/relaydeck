@@ -389,6 +389,23 @@ func TestChannelsPageAll(t *testing.T) {
 	}
 }
 
+func TestChannelRateOutputsIncludeMainStationConnections(t *testing.T) {
+	list := []storage.RateSnapshot{
+		{ID: 1, ChannelID: 1, ModelName: "connected"},
+		{ID: 2, ChannelID: 1, ModelName: "unconnected"},
+	}
+	connections := map[uint][]mainstation.RateConnection{
+		1: {{GroupID: 9, GroupName: "OpenAI 主站组"}},
+	}
+	result := channelRateOutputs(list, connections)
+	if len(result) != 2 || !result[0].MainStationConnected || len(result[0].MainStationGroups) != 1 {
+		t.Fatalf("connected output = %#v", result)
+	}
+	if result[1].MainStationConnected || result[1].MainStationGroups == nil || len(result[1].MainStationGroups) != 0 {
+		t.Fatalf("unconnected output = %#v", result[1])
+	}
+}
+
 func TestChannelsListSortOrder(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

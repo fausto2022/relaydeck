@@ -116,6 +116,13 @@ export interface RateSnapshot {
   completion_ratio: number
   first_seen_at: string
   last_seen_at: string
+  main_station_connected: boolean
+  main_station_groups: MainStationRateGroup[]
+}
+
+export interface MainStationRateGroup {
+  group_id: number
+  group_name: string
 }
 
 export interface RateChangeLog {
