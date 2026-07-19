@@ -98,6 +98,36 @@ func TestProfitProtectionUsesFixedPointAndKeepsLocksIndependent(t *testing.T) {
 	}
 }
 
+func TestProfitEvaluationTreatsBreakEvenAsRisk(t *testing.T) {
+	service, db, admin, _ := newTestService(t)
+	current := time.Date(2026, 7, 17, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	service.now = func() time.Time { return current }
+	pool, _, _ := createProfitMember(t, service, db, admin, current, 1, `{"mode":"observe","minimum_margin_basis_points":0,"risk_confirmations":2,"cost_max_age_minutes":60}`)
+
+	result, err := service.EvaluatePool(context.Background(), pool.ID, "manual")
+	if err != nil {
+		t.Fatalf("evaluate break-even margin: %v", err)
+	}
+	if len(result.Checks) != 1 || result.Checks[0].Status != "risk" || result.Checks[0].MarginBasisPoints != 0 {
+		t.Fatalf("break-even evaluation = %#v", result)
+	}
+}
+
+func TestProfitEvaluationTreatsMinimumPositiveMarginAsHealthy(t *testing.T) {
+	service, db, admin, _ := newTestService(t)
+	current := time.Date(2026, 7, 17, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	service.now = func() time.Time { return current }
+	pool, _, _ := createProfitMember(t, service, db, admin, current, 0.95, `{"mode":"observe","minimum_margin_basis_points":500,"risk_confirmations":2,"cost_max_age_minutes":60}`)
+
+	result, err := service.EvaluatePool(context.Background(), pool.ID, "manual")
+	if err != nil {
+		t.Fatalf("evaluate minimum positive margin: %v", err)
+	}
+	if len(result.Checks) != 1 || result.Checks[0].Status != "healthy" || result.Checks[0].MarginBasisPoints != 500 {
+		t.Fatalf("minimum positive margin evaluation = %#v", result)
+	}
+}
+
 func TestProfitEvaluationDoesNotProtectExpiredOrUnsupportedPricing(t *testing.T) {
 	service, db, admin, _ := newTestService(t)
 	current := time.Date(2026, 7, 17, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))

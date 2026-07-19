@@ -108,7 +108,7 @@ func (s *Service) EvaluatePool(ctx context.Context, poolID uint, source string) 
 			}
 		}
 		if memberConfirmedRisk && member.RemoteAccountID != nil && config.AutoMarginProtection && config.MarginObservedAt != nil {
-			if _, err := s.ActivateGuardLock(ctx, *member.RemoteAccountID, "margin", "profit margin remained below threshold", map[string]any{
+			if _, err := s.ActivateGuardLock(ctx, *member.RemoteAccountID, "margin", "profit margin remained insufficient", map[string]any{
 				"pool_id": pool.ID, "member_id": member.ID, "minimum_margin_basis_points": policy.MinimumMarginBasisPoints,
 			}, "margin"); err != nil {
 				return nil, err
@@ -363,7 +363,10 @@ func (s *Service) buildProfitCheck(pool *storage.MainAccountPool, member *storag
 	check.CostMultiplierMicros = effectiveCost
 	check.MarginValueMicros = saleMicros - effectiveCost
 	check.MarginBasisPoints = fixedMul(check.MarginValueMicros, 10000, saleMicros)
-	if check.MarginBasisPoints < policy.MinimumMarginBasisPoints {
+	if check.MarginValueMicros <= 0 {
+		check.Status = "risk"
+		check.Reason = fmt.Sprintf("sale multiplier %d does not exceed cost multiplier %d", saleMicros, effectiveCost)
+	} else if check.MarginBasisPoints < policy.MinimumMarginBasisPoints {
 		check.Status = "risk"
 		check.Reason = fmt.Sprintf("margin %d bps is below threshold %d bps", check.MarginBasisPoints, policy.MinimumMarginBasisPoints)
 	} else {

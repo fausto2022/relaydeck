@@ -23,7 +23,7 @@ export const NOTIFICATION_EVENT_OPTIONS: NotificationEventOption[] = [
   { id: "subscription_expiring", label: "订阅即将到期", description: "Sub2API 订阅进入到期提醒窗口。", events: ["subscription_expiring"] },
   { id: "upstream_sync_group_changed", label: "同步分组变动", description: "同步规则关联的上游分组发生变化。", events: ["upstream_sync_group_changed"] },
   { id: "main_pool_risk", label: "主站分组风险", description: "主站分组进入降级或严重风险状态。", events: ["main_pool_degraded", "main_pool_critical"] },
-  { id: "main_margin_risk", label: "主站利润不足", description: "上游成本导致账号利润低于保护线。", events: ["main_member_margin_risk"] },
+  { id: "main_margin_risk", label: "主站利润不足", description: "销售倍率不高于上游成本，或利润率低于保护线。", events: ["main_member_margin_risk"] },
   { id: "main_margin_recovered", label: "主站利润恢复", description: "账号利润重新满足启用条件。", events: ["main_member_margin_recovered"] },
   { id: "main_member_disabled", label: "主站账号停用", description: "账号因人工设置、健康或利润保护被停用。", events: ["main_member_disabled"] },
   { id: "main_member_reenabled", label: "主站账号恢复", description: "停用账号满足恢复条件后重新启用。", events: ["main_member_reenabled"] },
