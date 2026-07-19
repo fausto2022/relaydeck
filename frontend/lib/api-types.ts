@@ -274,6 +274,7 @@ export interface SystemSchedulerRetentionConfig {
   balanceSnapshotsDays: number
   notificationLogsDays: number
   announcementsDays: number
+  mainStationLogsDays: number
 }
 
 export interface SystemSchedulerConfig {

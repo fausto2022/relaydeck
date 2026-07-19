@@ -32,6 +32,7 @@ type Policy struct {
 // 测试时可以注入一个内存 stub。
 type CooldownStore interface {
 	TryClaimCooldown(channelID uint, event storage.NotificationEvent, cooldown time.Duration) (bool, error)
+	ResetCooldown(channelID uint, event storage.NotificationEvent) error
 }
 
 // RateChange 是一条待发送的倍率相关记录（去抖 / 合并的基本单元）。

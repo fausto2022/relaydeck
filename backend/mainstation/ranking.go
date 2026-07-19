@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/fausto2022/relaydeck/backend/connector"
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
 	"github.com/fausto2022/relaydeck/backend/storage"
 )
@@ -447,7 +449,7 @@ func (s *Service) reconcilePoolRanking(ctx context.Context, poolID uint, source 
 	var reconcileErrors []error
 	for i := range members {
 		member := &members[i]
-		if member.RemoteAccountID == nil {
+		if member.RemoteAccountID == nil || member.BindingStatus == "invalid" || member.BindingStatus == "orphaned" {
 			continue
 		}
 		desiredPriority := priorities[member.ID]
@@ -473,6 +475,15 @@ func (s *Service) reconcilePoolRanking(ctx context.Context, poolID uint, source 
 			LoadFactor:  desiredLoadFactor,
 		})
 		if updateErr != nil {
+			if connector.HTTPStatusCode(updateErr) == http.StatusNotFound {
+				if _, orphanErr := s.store.MarkMembersOrphaned([]int64{*member.RemoteAccountID}); orphanErr != nil {
+					reconcileErrors = append(reconcileErrors, fmt.Errorf("mark member %d orphaned: %w", member.ID, orphanErr))
+					continue
+				}
+				_ = s.appendAudit(&pool.ID, &member.ID, member.RemoteAccountID, "member_orphaned", source, true, snapshot, nil, nil,
+					"remote account no longer exists; automatic ranking stopped", "")
+				continue
+			}
 			reconcileErrors = append(reconcileErrors, fmt.Errorf("update member %d scheduling: %w", member.ID, redactSecretError(updateErr, adminAPIKey)))
 			continue
 		}

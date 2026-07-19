@@ -93,6 +93,7 @@ type RetentionConfig struct {
 	BalanceSnapshotsDays int    `mapstructure:"balanceSnapshotsDays" yaml:"balanceSnapshotsDays" json:"balanceSnapshotsDays"`
 	NotificationLogsDays int    `mapstructure:"notificationLogsDays" yaml:"notificationLogsDays" json:"notificationLogsDays"`
 	AnnouncementsDays    int    `mapstructure:"announcementsDays" yaml:"announcementsDays" json:"announcementsDays"`
+	MainStationLogsDays  int    `mapstructure:"mainStationLogsDays" yaml:"mainStationLogsDays" json:"mainStationLogsDays"`
 }
 
 // NotificationsConfig 通知去抖策略。所有字段都是"少烦我"取向，默认不丢消息只合并。
@@ -305,6 +306,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.retention.balanceSnapshotsDays", 90)
 	v.SetDefault("scheduler.retention.notificationLogsDays", 90)
 	v.SetDefault("scheduler.retention.announcementsDays", 90)
+	v.SetDefault("scheduler.retention.mainStationLogsDays", 30)
 
 	v.SetDefault("auth.enabled", false)
 	v.SetDefault("auth.username", "admin")

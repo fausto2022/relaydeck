@@ -98,6 +98,10 @@ func (s *Service) SetDispatcher(dispatcher *notify.Dispatcher) {
 	s.dispatcher = dispatcher
 }
 
+func (s *Service) DeleteHistoryBefore(cutoff time.Time) (storage.MainStationRetentionResult, error) {
+	return s.store.DeleteHistoryBefore(cutoff)
+}
+
 func New(
 	store *storage.MainStationStore,
 	targets *storage.UpstreamSyncTargets,
@@ -193,6 +197,10 @@ func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto.HealthObservedAt = config.HealthObservedAt
 	dto.MarginObservedAt = config.MarginObservedAt
 	return dto, nil
+}
+
+func (s *Service) ListTargetCandidates() ([]storage.UpstreamSyncTarget, error) {
+	return s.targets.List()
 }
 
 func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO, error) {

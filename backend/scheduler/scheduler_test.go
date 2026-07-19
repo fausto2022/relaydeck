@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,13 +15,23 @@ import (
 	"gorm.io/gorm"
 )
 
-type fakeUpstreamSync struct {
-	called int
+type blockingMainStation struct {
+	started chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
 }
 
-func (f *fakeUpstreamSync) SyncAllOnRateScan(ctx context.Context) {
-	f.called++
+func (f *blockingMainStation) RunDueHealthChecks(context.Context) {
+	if f.calls.Add(1) == 1 {
+		close(f.started)
+	}
+	<-f.release
 }
+
+func (f *blockingMainStation) SyncForScheduler(context.Context)           {}
+func (f *blockingMainStation) RunDueSchedulingReconciles(context.Context) {}
+func (f *blockingMainStation) RunDueRankings(context.Context)             {}
+func (f *blockingMainStation) RunProfitEvaluation(context.Context)        {}
 
 func openTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -150,27 +161,22 @@ func TestRunRetentionDeletesUpstreamSyncLogsWithMonitorLogDays(t *testing.T) {
 	}
 }
 
-func TestRunRatesTriggersUpstreamSync(t *testing.T) {
-	syncSvc := &fakeUpstreamSync{}
+func TestRunMainStationHealthSkipsOverlappingTick(t *testing.T) {
+	mainStation := &blockingMainStation{started: make(chan struct{}), release: make(chan struct{})}
 	s := New(
-		config.SchedulerConfig{},
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		syncSvc,
-		nil,
-		config.ProxyConfig{},
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		config.SchedulerConfig{}, nil, nil, nil, nil, nil, nil, nil, nil,
+		mainStation, nil, config.ProxyConfig{}, slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
-
-	s.runRates()
-
-	if syncSvc.called != 1 {
-		t.Fatalf("sync calls = %d, want 1", syncSvc.called)
+	done := make(chan struct{})
+	go func() {
+		s.runMainStationHealth()
+		close(done)
+	}()
+	<-mainStation.started
+	s.runMainStationHealth()
+	close(mainStation.release)
+	<-done
+	if calls := mainStation.calls.Load(); calls != 1 {
+		t.Fatalf("overlapping main station calls = %d, want 1", calls)
 	}
 }

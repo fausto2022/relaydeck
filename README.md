@@ -67,18 +67,6 @@ RelayDeck focuses on these problems:
 - Supports clearing saved login information from channel cards.
 - Deleting a channel cleans related snapshots, rates, announcements, notification cooldowns, and notification logs.
 
-### Sub2API Upstream Synchronization
-
-- Adds an **Upstream Sync** tab to system settings for managing writable Sub2API target upstreams.
-- Stores target addresses and encrypted Admin API Keys, checks connectivity, synchronizes target groups, and queries proxy lists.
-- Manages local synchronization groups and accounts by source channel, source group, target group, proxy, concurrency, weight, rate conversion, model limits, pool mode, and custom error codes.
-- Supports upstream model synchronization and custom model lists. Source models can be queried before applying a synchronization group.
-- Supports account testing with a selected model; failed tests disable scheduling for that target account.
-- Supports name templates with `{同步分组ID}`, `{渠道ID}`, and `{源分组ID}` placeholders.
-- Supports manual apply, managed-object deletion, and paginated execution logs.
-- Enabled synchronization groups are reapplied after scheduled rate scans.
-- Synchronization group changes and apply results can trigger `upstream_sync_group_changed` notifications.
-
 ### Main-Station Account Pools, Health, and Cost Protection
 
 - A first-level **Main Station** workspace manages one Sub2API main station, group and Account snapshots, and logical account pools.
@@ -256,7 +244,7 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=replace-with-a-strong-password
 ```
 
-Docker pulls `ghcr.io/fausto2022/relaydeck:${IMAGE_TAG:-latest}` by default. Configuration and data are stored in the host `data/` directory.
+Docker pulls `ghcr.io/fausto2022/relaydeck:${IMAGE_TAG:-edge}` by default. Configuration and data are stored in the host `data/` directory.
 
 Start:
 
@@ -283,7 +271,7 @@ The host file is `data/relaydeck.db`. Runtime system settings are persisted to `
 The default image tag comes from `.env`:
 
 ```env
-IMAGE_TAG=latest
+IMAGE_TAG=edge
 ```
 
 For production, pin a specific version:
@@ -362,7 +350,7 @@ curl -fsS http://localhost:${HTTP_PORT:-8080}/healthz
 
 ```env
 HTTP_PORT=8080
-IMAGE_TAG=latest
+IMAGE_TAG=edge
 SERVER_MODE=release
 LOG_LEVEL=info
 ```
@@ -726,35 +714,7 @@ POST   /api/captcha-configs/:id/refresh-balance
 DELETE /api/captcha-configs/:id
 ```
 
-Sub2API upstream synchronization targets:
-
-```text
-GET    /api/upstream-sync/targets
-POST   /api/upstream-sync/targets
-PUT    /api/upstream-sync/targets/:id
-DELETE /api/upstream-sync/targets/:id
-POST   /api/upstream-sync/targets/:id/check
-POST   /api/upstream-sync/targets/:id/groups/sync
-GET    /api/upstream-sync/targets/:id/groups
-GET    /api/upstream-sync/targets/:id/proxies
-GET    /api/upstream-sync/source-models?channel_id=1&platform=openai
-```
-
-`channel_id` is required. `platform` defaults to OpenAI-compatible model discovery and also supports `gemini`. Optional filters include `source_group_id`, `source_group_name`, and `sync_account_id`.
-
-Synchronization groups:
-
-```text
-GET    /api/upstream-sync/sync-groups
-POST   /api/upstream-sync/sync-groups
-PUT    /api/upstream-sync/sync-groups/:id
-DELETE /api/upstream-sync/sync-groups/:id
-POST   /api/upstream-sync/sync-groups/:id/apply
-POST   /api/upstream-sync/sync-groups/:id/delete-managed
-GET    /api/upstream-sync/sync-groups/:id/logs?page=1&page_size=20
-```
-
-The target Admin API Key is encrypted at rest. The managed-object action requests deletion of the remote Sub2API account and source-channel API key, clears the local mapping, and leaves target groups unchanged. Deleting a target or synchronization group only removes local records, so run the managed-object action first when remote cleanup is required.
+The legacy `/api/upstream-sync/*` API is no longer registered. Main-station groups and accounts are managed through `/api/main-station/*`.
 
 SSE progress endpoints:
 
@@ -786,7 +746,6 @@ Default schedules:
 
 - Balance sync: every 15 minutes.
 - Rate sync: every 30 minutes.
-- Enabled Sub2API synchronization groups: reapplied after rate sync.
 - Subscription usage check: runs with balance sync.
 - Captcha balance refresh: scheduled and manual refresh are supported.
 - History cleanup: daily.
@@ -798,7 +757,9 @@ Default retention:
 - Balance snapshots: 90 days.
 - Notification logs: 90 days.
 - Upstream announcements: controlled by announcement retention days. `0` disables cleanup.
+- Main-station health, profit evaluation, and audit history: 30 days.
 - Rate change logs are not cleaned by default.
+- SQLite deployments create an online backup under `data/backups/` at startup and during the daily retention job, keeping the latest 7 copies.
 
 ## Data Security
 

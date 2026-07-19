@@ -19,9 +19,7 @@ RUN corepack enable && corepack prepare pnpm@10.4.0 --activate
 
 # 先拷依赖清单走缓存层
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
-# 不用 --frozen-lockfile：lockfile 不严格匹配时只警告不报错；
-# 在 CI 里如果发现 lockfile 已经稳定可信，可以改回 --frozen-lockfile 锁定可复现性。
-RUN pnpm install --no-frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 # 再拷源码，build 产物在 /web/dist
 COPY frontend/ ./

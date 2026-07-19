@@ -2,7 +2,7 @@ name: relaydeck
 
 services:
   app:
-    image: ghcr.io/fausto2022/relaydeck:${IMAGE_TAG:-latest}
+    image: ghcr.io/fausto2022/relaydeck:${IMAGE_TAG:-edge}
     restart: unless-stopped
     command: ["-config", "/app/data/config.yaml"]
     environment:

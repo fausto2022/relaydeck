@@ -37,7 +37,7 @@ func newDingTalk(raw string) (*dingTalk, error) {
 	if cfg.WebhookURL == "" {
 		return nil, errors.New("dingtalk webhook_url is required")
 	}
-	return &dingTalk{cfg: cfg, http: resty.New()}, nil
+	return &dingTalk{cfg: cfg, http: newNotificationHTTPClient()}, nil
 }
 
 func (d *dingTalk) Type() storage.NotificationChannelType { return storage.NotifyDingTalk }

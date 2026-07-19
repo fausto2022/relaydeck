@@ -4,6 +4,7 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/fausto2022/relaydeck/backend/captcha"
@@ -26,13 +27,13 @@ type Scheduler struct {
 	announcements *storage.UpstreamAnnouncements
 	captchas      *storage.Captchas
 	cipher        *crypto.Cipher
-	upstreamSync  upstreamSyncService
 	mainStation   mainStationHealthService
+	backup        databaseBackupService
 	proxy         config.ProxyConfig
-}
-
-type upstreamSyncService interface {
-	SyncAllOnRateScan(ctx context.Context)
+	balanceMu     sync.Mutex
+	ratesMu       sync.Mutex
+	retentionMu   sync.Mutex
+	mainStationMu sync.Mutex
 }
 
 type mainStationHealthService interface {
@@ -41,6 +42,14 @@ type mainStationHealthService interface {
 	RunDueSchedulingReconciles(ctx context.Context)
 	RunDueRankings(ctx context.Context)
 	RunProfitEvaluation(ctx context.Context)
+}
+
+type mainStationRetentionService interface {
+	DeleteHistoryBefore(cutoff time.Time) (storage.MainStationRetentionResult, error)
+}
+
+type databaseBackupService interface {
+	Backup() (string, error)
 }
 
 func New(
@@ -53,8 +62,8 @@ func New(
 	announcements *storage.UpstreamAnnouncements,
 	captchas *storage.Captchas,
 	cipher *crypto.Cipher,
-	upstreamSync upstreamSyncService,
 	mainStation mainStationHealthService,
+	backup databaseBackupService,
 	proxy config.ProxyConfig,
 	log *slog.Logger,
 ) *Scheduler {
@@ -70,8 +79,8 @@ func New(
 		announcements: announcements,
 		captchas:      captchas,
 		cipher:        cipher,
-		upstreamSync:  upstreamSync,
 		mainStation:   mainStation,
+		backup:        backup,
 		proxy:         proxy,
 	}
 }
@@ -108,6 +117,10 @@ func (s *Scheduler) Start() error {
 }
 
 func (s *Scheduler) runMainStationHealth() {
+	if !s.mainStationMu.TryLock() {
+		return
+	}
+	defer s.mainStationMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	s.mainStation.RunDueHealthChecks(ctx)
@@ -123,6 +136,10 @@ func (s *Scheduler) Stop() {
 }
 
 func (s *Scheduler) runBalance() {
+	if !s.balanceMu.TryLock() {
+		return
+	}
+	defer s.balanceMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	s.monitor.ScanAllBalances(ctx)
@@ -134,13 +151,14 @@ func (s *Scheduler) runBalance() {
 }
 
 func (s *Scheduler) runRates() {
+	if !s.ratesMu.TryLock() {
+		return
+	}
+	defer s.ratesMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	if s.monitor != nil {
 		s.monitor.ScanAllRates(ctx)
-	}
-	if s.upstreamSync != nil {
-		s.upstreamSync.SyncAllOnRateScan(ctx)
 	}
 	if s.mainStation != nil {
 		s.mainStation.SyncForScheduler(ctx)
@@ -153,11 +171,17 @@ func (s *Scheduler) hasRetention() bool {
 	return r.MonitorLogsDays > 0 ||
 		r.BalanceSnapshotsDays > 0 ||
 		r.NotificationLogsDays > 0 ||
-		r.AnnouncementsDays > 0
+		r.AnnouncementsDays > 0 ||
+		r.MainStationLogsDays > 0 ||
+		s.backup != nil
 }
 
 // runRetention 按配置删除过期历史。任一表失败不影响其它，全部错误写日志。
 func (s *Scheduler) runRetention() {
+	if !s.retentionMu.TryLock() {
+		return
+	}
+	defer s.retentionMu.Unlock()
 	r := s.cfg.Retention
 	now := time.Now()
 
@@ -213,6 +237,30 @@ func (s *Scheduler) runRetention() {
 			s.log.Warn("retention announcements failed", "err", err)
 		} else if n > 0 {
 			s.log.Info("retention announcements deleted", "rows", n, "before", cutoff)
+		}
+	}
+
+	if r.MainStationLogsDays > 0 && s.mainStation != nil {
+		if retention, ok := s.mainStation.(mainStationRetentionService); ok {
+			cutoff := now.AddDate(0, 0, -r.MainStationLogsDays)
+			result, err := retention.DeleteHistoryBefore(cutoff)
+			if err != nil {
+				s.log.Warn("retention main station history failed", "err", err)
+			} else {
+				deleted := result.HealthChecks + result.ProfitChecks + result.ProfitSnapshots + result.AuditLogs
+				if deleted > 0 {
+					s.log.Info("retention main station history deleted", "rows", deleted, "before", cutoff)
+				}
+			}
+		}
+	}
+
+	if s.backup != nil {
+		path, err := s.backup.Backup()
+		if err != nil {
+			s.log.Warn("sqlite backup failed", "err", err)
+		} else if path != "" {
+			s.log.Info("sqlite backup completed", "path", path)
 		}
 	}
 }

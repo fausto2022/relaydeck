@@ -511,7 +511,7 @@ export default function SettingsPage() {
                   }
                 />
               </div>
-              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <Field
                   label="运行与同步日志"
                   description="保留最近的监控和同步执行记录。"
@@ -600,6 +600,30 @@ export default function SettingsPage() {
                                 retention: {
                                   ...prev.scheduler.retention,
                                   announcementsDays: value,
+                                },
+                              },
+                            }
+                          : prev,
+                      )
+                    }
+                  />
+                </Field>
+                <Field
+                  label="主站历史"
+                  description="保留探活、利润评估和操作记录。"
+                >
+                  <RetentionDaysSelect
+                    value={form.scheduler.retention.mainStationLogsDays}
+                    onChange={(value) =>
+                      setForm((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              scheduler: {
+                                ...prev.scheduler,
+                                retention: {
+                                  ...prev.scheduler.retention,
+                                  mainStationLogsDays: value,
                                 },
                               },
                             }

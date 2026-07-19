@@ -10,6 +10,17 @@ const BACKEND_TARGET = process.env.VITE_BACKEND_URL ?? 'http://localhost:8418'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/recharts/') || id.includes('/node_modules/victory-vendor/') || id.includes('/node_modules/d3-')) {
+            return 'charts'
+          }
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),

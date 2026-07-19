@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -910,6 +911,45 @@ func TestDeleteChannelCleansScopedState(t *testing.T) {
 		if count != 0 {
 			t.Fatalf("%s count = %d, want 0", tt.name, count)
 		}
+	}
+}
+
+func TestDeleteChannelRejectsAccountReferences(t *testing.T) {
+	db := openTestDB(t)
+	channels := NewChannels(db)
+	channel := &Channel{Name: "in-use", Type: ChannelTypeSub2API, SiteURL: "https://example.com"}
+	if err := channels.Create(channel); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	if err := db.Create(&AuthSession{ChannelID: channel.ID}).Error; err != nil {
+		t.Fatalf("create auth session: %v", err)
+	}
+	if err := db.Create(&MainAccountPoolMember{
+		PoolID: 1, SourceChannelID: channel.ID, OwnershipMode: "managed", BindingStatus: "pending", Status: "pending",
+	}).Error; err != nil {
+		t.Fatalf("create main station member: %v", err)
+	}
+	if err := db.Create(&UpstreamSyncAccount{SyncGroupID: 1, SourceChannelID: channel.ID}).Error; err != nil {
+		t.Fatalf("create upstream sync account: %v", err)
+	}
+
+	err := channels.Delete(channel.ID)
+	var inUse *ChannelInUseError
+	if !errors.As(err, &inUse) {
+		t.Fatalf("delete error = %v, want ChannelInUseError", err)
+	}
+	if inUse.MainStationMembers != 1 || inUse.UpstreamSyncAccounts != 1 {
+		t.Fatalf("reference counts = %#v", inUse)
+	}
+	var channelCount, sessionCount int64
+	if err := db.Model(&Channel{}).Where("id = ?", channel.ID).Count(&channelCount).Error; err != nil {
+		t.Fatalf("count channel: %v", err)
+	}
+	if err := db.Model(&AuthSession{}).Where("channel_id = ?", channel.ID).Count(&sessionCount).Error; err != nil {
+		t.Fatalf("count auth session: %v", err)
+	}
+	if channelCount != 1 || sessionCount != 1 {
+		t.Fatalf("blocked delete changed data: channels=%d sessions=%d", channelCount, sessionCount)
 	}
 }
 

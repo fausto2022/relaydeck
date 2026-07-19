@@ -36,7 +36,7 @@ func newFeishu(raw string) (*feishu, error) {
 	if cfg.WebhookURL == "" {
 		return nil, errors.New("feishu webhook_url is required")
 	}
-	return &feishu{cfg: cfg, http: resty.New()}, nil
+	return &feishu{cfg: cfg, http: newNotificationHTTPClient()}, nil
 }
 
 func (f *feishu) Type() storage.NotificationChannelType { return storage.NotifyFeishu }

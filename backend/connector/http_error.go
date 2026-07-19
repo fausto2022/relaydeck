@@ -2,18 +2,35 @@ package connector
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
 
 const maxHTTPErrorSummaryRunes = 300
 
-func HTTPStatusError(statusCode int, body []byte) error {
-	summary := summarizeHTTPErrorBody(body)
-	if summary == "" {
-		return fmt.Errorf("status %d", statusCode)
+type HTTPError struct {
+	StatusCode int
+	Summary    string
+}
+
+func (e *HTTPError) Error() string {
+	if e.Summary == "" {
+		return fmt.Sprintf("status %d", e.StatusCode)
 	}
-	return fmt.Errorf("status %d: %s", statusCode, summary)
+	return fmt.Sprintf("status %d: %s", e.StatusCode, e.Summary)
+}
+
+func HTTPStatusError(statusCode int, body []byte) error {
+	return &HTTPError{StatusCode: statusCode, Summary: summarizeHTTPErrorBody(body)}
+}
+
+func HTTPStatusCode(err error) int {
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode
+	}
+	return 0
 }
 
 func summarizeHTTPErrorBody(body []byte) string {

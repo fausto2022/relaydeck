@@ -1900,7 +1900,8 @@ func TestApplySyncGroupDisablesManagedAccountWhenSourceChannelDeleted(t *testing
 	if _, err := svc.ApplySyncGroup(context.Background(), rule.ID); err != nil {
 		t.Fatalf("first apply: %v", err)
 	}
-	if err := storage.NewChannels(db).Delete(ch.ID); err != nil {
+	// 模拟数据库被外部工具直接改坏，正常业务删除会因同步账号引用而被阻止。
+	if err := db.Delete(&storage.Channel{}, ch.ID).Error; err != nil {
 		t.Fatalf("delete channel: %v", err)
 	}
 

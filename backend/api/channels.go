@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -287,6 +288,11 @@ func deleteChannel(c *gin.Context, d *Deps) {
 		return
 	}
 	if err := d.ChannelSvc.Delete(id); err != nil {
+		var inUse *storage.ChannelInUseError
+		if errors.As(err, &inUse) {
+			fail(c, http.StatusConflict, err)
+			return
+		}
 		fail(c, http.StatusInternalServerError, err)
 		return
 	}

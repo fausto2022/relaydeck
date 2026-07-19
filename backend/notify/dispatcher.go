@@ -105,10 +105,19 @@ func (d *Dispatcher) Send(ctx context.Context, ch *storage.NotificationChannel, 
 // 去抖：balance_low 同渠道在 BalanceLowCooldown 内不重复推送，状态在数据库里持久化。
 // 失败：按 SendMaxAttempts 进行指数退避重试。
 func (d *Dispatcher) Dispatch(ctx context.Context, msg Message) error {
-	if d.suppress(msg) {
+	claimed, suppressed := d.claimCooldown(msg)
+	if suppressed {
 		return nil
 	}
-	return d.fanout(ctx, msg, nil)
+	sent, err := d.fanout(ctx, msg, nil)
+	if claimed && sent == 0 {
+		resetErr := d.cooldown.ResetCooldown(msg.ChannelID, msg.Event)
+		if resetErr != nil && d.log != nil {
+			d.log.Warn("release notification cooldown failed", "err", resetErr, "channel_id", msg.ChannelID, "event", msg.Event)
+		}
+		err = errors.Join(err, resetErr)
+	}
+	return err
 }
 
 // DispatchRateBatch 把一次扫描收集到的多条 RateChange 按 Policy 合并 / 过滤后推送。
@@ -226,11 +235,11 @@ func subsetForSubscriptions(upstreamID uint, event storage.NotificationEvent, ch
 	return out
 }
 
-// suppress 判断是否要按 cooldown 跳过本次发送。
-func (d *Dispatcher) suppress(msg Message) bool {
+// claimCooldown 判断是否要按 cooldown 跳过本次发送，并返回是否已占用发送名额。
+func (d *Dispatcher) claimCooldown(msg Message) (bool, bool) {
 	policy := d.Policy()
 	if msg.ChannelID == 0 {
-		return false
+		return false, false
 	}
 
 	cooldown := time.Duration(0)
@@ -240,10 +249,10 @@ func (d *Dispatcher) suppress(msg Message) bool {
 	case storage.EventSubscriptionDailyLow, storage.EventSubscriptionWeeklyLow, storage.EventSubscriptionMonthlyLow, storage.EventSubscriptionExpiring:
 		cooldown = policy.SubscriptionAlertCooldown
 	default:
-		return false
+		return false, false
 	}
 	if cooldown <= 0 {
-		return false
+		return false, false
 	}
 	ok, err := d.cooldown.TryClaimCooldown(msg.ChannelID, msg.Event, cooldown)
 	if err != nil {
@@ -251,7 +260,7 @@ func (d *Dispatcher) suppress(msg Message) bool {
 			d.log.Warn("cooldown lookup failed, sending anyway",
 				"err", err, "channel_id", msg.ChannelID, "event", msg.Event)
 		}
-		return false
+		return false, false
 	}
 	if !ok && d.log != nil {
 		d.log.Debug("notification suppressed by cooldown",
@@ -260,22 +269,23 @@ func (d *Dispatcher) suppress(msg Message) bool {
 			"cooldown", cooldown,
 		)
 	}
-	return !ok
+	return ok, !ok
 }
 
 // fanout 广播给所有启用的通知渠道（仅给 Dispatch 用，DispatchRateBatch 自己控订阅切片）。
 //
 // extraFilter 可选：用于在 ParseSubscriptions / AnyMatch 之后做额外裁剪；
 // 当前没有调用方传入，保留参数位是为以后扩展。
-func (d *Dispatcher) fanout(ctx context.Context, msg Message, extraFilter func(*storage.NotificationChannel) bool) error {
+func (d *Dispatcher) fanout(ctx context.Context, msg Message, extraFilter func(*storage.NotificationChannel) bool) (int, error) {
 	channels, err := d.repo.ListEnabledChannels()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(channels) == 0 {
-		return nil
+		return 0, nil
 	}
 	var errs []error
+	sent := 0
 	for i := range channels {
 		ch := channels[i]
 		subs, _ := ParseSubscriptions(ch.Subscriptions)
@@ -287,9 +297,11 @@ func (d *Dispatcher) fanout(ctx context.Context, msg Message, extraFilter func(*
 		}
 		if err := d.sendOne(ctx, &ch, msg); err != nil {
 			errs = append(errs, err)
+		} else {
+			sent++
 		}
 	}
-	return errors.Join(errs...)
+	return sent, errors.Join(errs...)
 }
 
 // sendOne 给单个通知渠道发送一条消息，包含"解密配置 → 构造 Notifier → 重试发送 → 写日志"。

@@ -314,3 +314,49 @@ func TestMainAccountMemberRemoteAccountIsUnique(t *testing.T) {
 		t.Fatal("create second member succeeded, want unique constraint error")
 	}
 }
+
+func TestDeleteMainStationHistoryBefore(t *testing.T) {
+	db := openTestDB(t)
+	store := NewMainStationStore(db)
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	old := now.AddDate(0, 0, -40)
+	for _, createdAt := range []time.Time{old, now} {
+		if err := db.Create(&MainAccountHealthCheck{
+			PoolID: 1, MemberID: 1, RemoteAccountID: 1, Level: "L0", Status: "success",
+			StartedAt: createdAt, FinishedAt: createdAt, CreatedAt: createdAt,
+		}).Error; err != nil {
+			t.Fatalf("create health check: %v", err)
+		}
+		if err := db.Create(&MainAccountProfitCheck{
+			PoolID: 1, MemberID: 1, TargetGroupID: 1, Status: "healthy", ObservedAt: createdAt, CreatedAt: createdAt,
+		}).Error; err != nil {
+			t.Fatalf("create profit check: %v", err)
+		}
+		if err := db.Create(&MainStationProfitSnapshot{Day: createdAt.Format("2006-01-02")}).Error; err != nil {
+			t.Fatalf("create profit snapshot: %v", err)
+		}
+		if err := db.Create(&MainAccountAuditLog{Action: "test", Source: "test", Success: true, CreatedAt: createdAt}).Error; err != nil {
+			t.Fatalf("create audit log: %v", err)
+		}
+	}
+
+	result, err := store.DeleteHistoryBefore(now.AddDate(0, 0, -30))
+	if err != nil {
+		t.Fatalf("delete history: %v", err)
+	}
+	if result.HealthChecks != 1 || result.ProfitChecks != 1 || result.ProfitSnapshots != 1 || result.AuditLogs != 1 {
+		t.Fatalf("retention result = %#v", result)
+	}
+	for name, model := range map[string]any{
+		"health": &MainAccountHealthCheck{}, "profit": &MainAccountProfitCheck{},
+		"snapshot": &MainStationProfitSnapshot{}, "audit": &MainAccountAuditLog{},
+	} {
+		var count int64
+		if err := db.Model(model).Count(&count).Error; err != nil {
+			t.Fatalf("count %s: %v", name, err)
+		}
+		if count != 1 {
+			t.Fatalf("%s rows = %d, want 1", name, count)
+		}
+	}
+}

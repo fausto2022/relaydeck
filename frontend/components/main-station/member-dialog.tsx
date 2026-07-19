@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link2, Plus, Save } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -65,6 +65,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
   const [concurrencyError, setConcurrencyError] = useState("")
   const [loadingSource, setLoadingSource] = useState(false)
   const [busy, setBusy] = useState(false)
+  const sourceRequestRef = useRef(0)
 
   useEffect(() => {
     if (!open) return
@@ -89,7 +90,11 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
   }, [channels, initialAccount, open])
 
   useEffect(() => {
-    if (!open || channelID === 0) return
+    const requestID = ++sourceRequestRef.current
+    if (!open || channelID === 0) {
+      setLoadingSource(false)
+      return
+    }
     setLoadingSource(true)
     setConcurrency(0)
     setConcurrencyDetected(false)
@@ -105,6 +110,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
         })),
     ])
       .then(([groups, keys, limitsResult]) => {
+        if (requestID !== sourceRequestRef.current) return
         setSourceGroups(groups)
         setSourceKeys(keys.items)
         if (limitsResult.limits?.concurrency && limitsResult.limits.concurrency > 0) {
@@ -115,11 +121,14 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
         }
       })
       .catch((error: unknown) => {
+        if (requestID !== sourceRequestRef.current) return
         setSourceGroups([])
         setSourceKeys([])
         toast.error(error instanceof Error ? error.message : "加载账号来源失败")
       })
-      .finally(() => setLoadingSource(false))
+      .finally(() => {
+        if (requestID === sourceRequestRef.current) setLoadingSource(false)
+      })
   }, [channelID, open])
 
   useEffect(() => {

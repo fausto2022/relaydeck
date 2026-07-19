@@ -131,9 +131,17 @@ func main() {
 	mainStationSvc.SetDispatcher(dispatcher)
 	mainStationSvc.UpdateProbeConfig(cfg.Proxy, time.Duration(cfg.Upstream.TimeoutSeconds)*time.Second, cfg.Upstream.UserAgent)
 	syncSvc.SetSchedulingGuard(mainStationSvc)
+	sqliteBackups := storage.NewSQLiteBackups(db, cfg.Database.ToStorageConfig(), storage.DefaultSQLiteBackupKeep)
+	if sqliteBackups != nil {
+		if path, backupErr := sqliteBackups.Backup(); backupErr != nil {
+			log.Warn("startup sqlite backup failed", "err", backupErr)
+		} else {
+			log.Info("startup sqlite backup completed", "path", path)
+		}
+	}
 
 	schedulerFactory := func(scfg config.SchedulerConfig, pcfg config.ProxyConfig) *scheduler.Scheduler {
-		return scheduler.New(scfg, monitorSvc, monLogs, syncLogs, rates, notifies, announcements, captchas, cipher, syncSvc, mainStationSvc, pcfg, log)
+		return scheduler.New(scfg, monitorSvc, monLogs, syncLogs, rates, notifies, announcements, captchas, cipher, mainStationSvc, sqliteBackups, pcfg, log)
 	}
 	sch := schedulerFactory(cfg.Scheduler, cfg.Proxy)
 	if err := sch.Start(); err != nil {

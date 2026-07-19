@@ -490,6 +490,84 @@ func (r *MainStationStore) ListRecentMemberHealthChecks(memberID uint, limit int
 	return list, nil
 }
 
+type MainAccountHealthAggregate struct {
+	MemberID              uint  `gorm:"column:member_id"`
+	OneHourSuccess        int64 `gorm:"column:one_hour_success"`
+	OneHourTotal          int64 `gorm:"column:one_hour_total"`
+	TwentyFourHourSuccess int64 `gorm:"column:twenty_four_hour_success"`
+	TwentyFourHourTotal   int64 `gorm:"column:twenty_four_hour_total"`
+	SevenDaySuccess       int64 `gorm:"column:seven_day_success"`
+	SevenDayTotal         int64 `gorm:"column:seven_day_total"`
+	DailyChecks           int64 `gorm:"column:daily_checks"`
+	DailyTokens           int64 `gorm:"column:daily_tokens"`
+	DailyL1Checks         int64 `gorm:"column:daily_l1_checks"`
+	DailyL2Checks         int64 `gorm:"column:daily_l2_checks"`
+}
+
+func (r *MainStationStore) ListRecentHealthChecksByMember(memberIDs []uint, limit int) (map[uint][]MainAccountHealthCheck, error) {
+	result := make(map[uint][]MainAccountHealthCheck, len(memberIDs))
+	if len(memberIDs) == 0 {
+		return result, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	var list []MainAccountHealthCheck
+	err := r.db.Raw(`
+		SELECT * FROM (
+			SELECT main_account_health_checks.*,
+				ROW_NUMBER() OVER (PARTITION BY member_id ORDER BY created_at DESC, id DESC) AS recent_rank
+			FROM main_account_health_checks
+			WHERE member_id IN ? AND status IN ?
+		) AS ranked
+		WHERE recent_rank <= ?
+		ORDER BY member_id ASC, created_at DESC, id DESC`, memberIDs, []string{"success", "failure"}, limit).
+		Scan(&list).Error
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		check := list[i]
+		result[check.MemberID] = append(result[check.MemberID], check)
+	}
+	return result, nil
+}
+
+func (r *MainStationStore) HealthAggregates(memberIDs []uint, now time.Time) (map[uint]MainAccountHealthAggregate, error) {
+	result := make(map[uint]MainAccountHealthAggregate, len(memberIDs))
+	if len(memberIDs) == 0 {
+		return result, nil
+	}
+	oneHourAgo := now.Add(-time.Hour)
+	twentyFourHoursAgo := now.Add(-24 * time.Hour)
+	sevenDaysAgo := now.Add(-7 * 24 * time.Hour)
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	var list []MainAccountHealthAggregate
+	err := r.db.Model(&MainAccountHealthCheck{}).
+		Select(`member_id,
+			SUM(CASE WHEN created_at >= ? AND status = 'success' THEN 1 ELSE 0 END) AS one_hour_success,
+			SUM(CASE WHEN created_at >= ? AND status IN ('success', 'failure') THEN 1 ELSE 0 END) AS one_hour_total,
+			SUM(CASE WHEN created_at >= ? AND status = 'success' THEN 1 ELSE 0 END) AS twenty_four_hour_success,
+			SUM(CASE WHEN created_at >= ? AND status IN ('success', 'failure') THEN 1 ELSE 0 END) AS twenty_four_hour_total,
+			SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS seven_day_success,
+			SUM(CASE WHEN status IN ('success', 'failure') THEN 1 ELSE 0 END) AS seven_day_total,
+			SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS daily_checks,
+			SUM(CASE WHEN created_at >= ? THEN COALESCE(total_tokens, 0) ELSE 0 END) AS daily_tokens,
+			SUM(CASE WHEN created_at >= ? AND level = 'L1' AND status <> 'skipped_budget' THEN 1 ELSE 0 END) AS daily_l1_checks,
+			SUM(CASE WHEN created_at >= ? AND level = 'L2' AND status <> 'skipped_budget' THEN 1 ELSE 0 END) AS daily_l2_checks`,
+			oneHourAgo, oneHourAgo, twentyFourHoursAgo, twentyFourHoursAgo, dayStart, dayStart, dayStart, dayStart).
+		Where("member_id IN ? AND created_at >= ?", memberIDs, sevenDaysAgo).
+		Group("member_id").
+		Scan(&list).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range list {
+		result[item.MemberID] = item
+	}
+	return result, nil
+}
+
 func (r *MainStationStore) CountDailyHealthChecks(memberID uint, level string, since time.Time) (int64, error) {
 	var count int64
 	err := r.db.Model(&MainAccountHealthCheck{}).
@@ -666,6 +744,44 @@ func (r *MainStationStore) ListAuditLogs(poolID, memberID uint, page, pageSize i
 		return nil, 0, err
 	}
 	return list, total, nil
+}
+
+type MainStationRetentionResult struct {
+	HealthChecks    int64
+	ProfitChecks    int64
+	ProfitSnapshots int64
+	AuditLogs       int64
+}
+
+func (r *MainStationStore) DeleteHistoryBefore(cutoff time.Time) (MainStationRetentionResult, error) {
+	result := MainStationRetentionResult{}
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("created_at < ?", cutoff).Delete(&MainAccountHealthCheck{})
+		if res.Error != nil {
+			return res.Error
+		}
+		result.HealthChecks = res.RowsAffected
+
+		res = tx.Where("observed_at < ?", cutoff).Delete(&MainAccountProfitCheck{})
+		if res.Error != nil {
+			return res.Error
+		}
+		result.ProfitChecks = res.RowsAffected
+
+		res = tx.Where("day < ?", cutoff.Format("2006-01-02")).Delete(&MainStationProfitSnapshot{})
+		if res.Error != nil {
+			return res.Error
+		}
+		result.ProfitSnapshots = res.RowsAffected
+
+		res = tx.Where("created_at < ?", cutoff).Delete(&MainAccountAuditLog{})
+		if res.Error != nil {
+			return res.Error
+		}
+		result.AuditLogs = res.RowsAffected
+		return nil
+	})
+	return result, err
 }
 
 func (r *MainStationStore) MarkMembersOrphaned(remoteAccountIDs []int64) ([]MainAccountPoolMember, error) {

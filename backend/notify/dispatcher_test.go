@@ -1,0 +1,71 @@
+package notify
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/fausto2022/relaydeck/backend/crypto"
+	"github.com/fausto2022/relaydeck/backend/storage"
+)
+
+func TestDispatchReleasesCooldownWhenAllChannelsFail(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "failed", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	db, err := storage.Open(storage.DBConfig{Driver: storage.DBDriverSQLite, Path: filepath.Join(t.TempDir(), "notify.db")})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := storage.AutoMigrate(db); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+	sqlDB, _ := db.DB()
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	cipher, err := crypto.NewCipher("test-secret")
+	if err != nil {
+		t.Fatalf("new cipher: %v", err)
+	}
+	raw, _ := json.Marshal(map[string]any{"url": server.URL, "method": http.MethodPost})
+	encrypted, err := cipher.Encrypt(string(raw))
+	if err != nil {
+		t.Fatalf("encrypt config: %v", err)
+	}
+	repo := storage.NewNotifications(db)
+	if err := repo.CreateChannel(&storage.NotificationChannel{
+		Name: "webhook", Type: storage.NotifyWebhook, ConfigCipher: encrypted, Enabled: true,
+	}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	dispatcher := NewDispatcher(repo, cipher, slog.New(slog.NewTextHandler(io.Discard, nil)), Policy{
+		BalanceLowCooldown: time.Hour,
+		SendMaxAttempts:    1,
+	})
+	message := Message{Event: storage.EventBalanceLow, ChannelID: 1, Subject: "余额不足"}
+	for i := 0; i < 2; i++ {
+		if err := dispatcher.Dispatch(context.Background(), message); err == nil {
+			t.Fatalf("dispatch %d succeeded, want failure", i+1)
+		}
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("webhook calls = %d, want 2", got)
+	}
+}
+
+func TestNotificationHTTPClientsHaveTimeout(t *testing.T) {
+	client := newNotificationHTTPClient()
+	if client.GetClient().Timeout != notificationHTTPTimeout {
+		t.Fatalf("notification timeout = %s, want %s", client.GetClient().Timeout, notificationHTTPTimeout)
+	}
+}

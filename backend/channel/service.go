@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,8 @@ const SessionRefreshThreshold = 5 * time.Minute
 // 真正失效检测靠 connector.CheckAuth；若凭据里有 refresh_token，会优先尝试刷新并回写。
 const tokenSessionTTL = 365 * 24 * time.Hour
 
+const loginRateLimitBackoff = 30 * time.Second
+
 // Service 渠道领域服务。
 type Service struct {
 	Channels     *storage.Channels
@@ -35,9 +38,12 @@ type Service struct {
 	MonitorLogs  *storage.MonitorLogs
 	Cipher       *crypto.Cipher
 
-	mu          sync.RWMutex
-	proxyConfig config.ProxyConfig
-	upstream    config.UpstreamConfig
+	mu           sync.RWMutex
+	proxyConfig  config.ProxyConfig
+	upstream     config.UpstreamConfig
+	sessionLocks sync.Map
+	backoffMu    sync.Mutex
+	backoffUntil map[uint]time.Time
 }
 
 func NewService(
@@ -55,6 +61,7 @@ func NewService(
 		Rates:        rates,
 		MonitorLogs:  monitorLogs,
 		Cipher:       cipher,
+		backoffUntil: make(map[uint]time.Time),
 	}
 }
 
@@ -449,7 +456,6 @@ func validateCredential(channelType storage.ChannelType, mode storage.Credential
 }
 
 func (s *Service) Delete(id uint) error {
-	_ = s.AuthSessions.Delete(id)
 	return s.Channels.Delete(id)
 }
 
@@ -631,6 +637,10 @@ func (s *Service) EnsureSession(
 	resolved *connector.Channel,
 	conn connector.Connector,
 ) (*connector.AuthSession, error) {
+	mutex := s.sessionMutex(c.ID)
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	if c.CredentialMode == storage.CredentialModeToken {
 		progress.Start(ctx, progress.StageSession, "使用用户提供的 token…")
 		session, err := s.buildSessionFromToken(c)
@@ -682,7 +692,39 @@ func (s *Service) EnsureSession(
 			return refreshed, nil
 		}
 	}
-	return s.login(ctx, c, resolved, conn)
+	return s.loginLocked(ctx, c, resolved, conn)
+}
+
+func (s *Service) sessionMutex(channelID uint) *sync.Mutex {
+	value, _ := s.sessionLocks.LoadOrStore(channelID, &sync.Mutex{})
+	return value.(*sync.Mutex)
+}
+
+func (s *Service) loginBackoffError(channelID uint) error {
+	s.backoffMu.Lock()
+	defer s.backoffMu.Unlock()
+	until, ok := s.backoffUntil[channelID]
+	if !ok {
+		return nil
+	}
+	remaining := time.Until(until)
+	if remaining <= 0 {
+		delete(s.backoffUntil, channelID)
+		return nil
+	}
+	return fmt.Errorf("上游登录触发限流，请等待 %s 后重试", remaining.Round(time.Second))
+}
+
+func (s *Service) updateLoginBackoff(channelID uint, err error) {
+	s.backoffMu.Lock()
+	defer s.backoffMu.Unlock()
+	if connector.HTTPStatusCode(err) == http.StatusTooManyRequests {
+		s.backoffUntil[channelID] = time.Now().Add(loginRateLimitBackoff)
+		return
+	}
+	if err == nil {
+		delete(s.backoffUntil, channelID)
+	}
 }
 
 func (s *Service) refreshStoredSession(
@@ -790,6 +832,21 @@ func (s *Service) login(
 	resolved *connector.Channel,
 	conn connector.Connector,
 ) (*connector.AuthSession, error) {
+	mutex := s.sessionMutex(c.ID)
+	mutex.Lock()
+	defer mutex.Unlock()
+	return s.loginLocked(ctx, c, resolved, conn)
+}
+
+func (s *Service) loginLocked(
+	ctx context.Context,
+	c *storage.Channel,
+	resolved *connector.Channel,
+	conn connector.Connector,
+) (*connector.AuthSession, error) {
+	if err := s.loginBackoffError(c.ID); err != nil {
+		return nil, err
+	}
 	if err := s.prepareTurnstile(ctx, c, resolved, conn); err != nil {
 		return nil, err
 	}
@@ -815,11 +872,13 @@ func (s *Service) login(
 		FinishedAt:   finished,
 	})
 	if err != nil {
+		s.updateLoginBackoff(c.ID, err)
 		progress.Fail(ctx, progress.StageLogin, err.Error())
 		_ = s.AuthSessions.Delete(c.ID)
 		_ = s.Channels.SetLastError(c.ID, err.Error())
 		return nil, err
 	}
+	s.updateLoginBackoff(c.ID, nil)
 	if err := s.persistSession(c.ID, session); err != nil {
 		progress.Fail(ctx, progress.StageLogin, err.Error())
 		return nil, err

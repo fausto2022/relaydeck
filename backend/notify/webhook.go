@@ -35,7 +35,7 @@ func newWebhook(raw string) (*webhook, error) {
 	if cfg.Method == "" {
 		cfg.Method = "POST"
 	}
-	return &webhook{cfg: cfg, http: resty.New()}, nil
+	return &webhook{cfg: cfg, http: newNotificationHTTPClient()}, nil
 }
 
 func (w *webhook) Type() storage.NotificationChannelType { return storage.NotifyWebhook }

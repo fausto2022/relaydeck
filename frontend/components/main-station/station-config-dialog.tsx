@@ -78,7 +78,7 @@ export function StationConfigDialog({
     setModelCatalogs([])
     if (config?.configured) void loadHealthModels()
     if (!config?.configured && config?.migration?.status === "requires_confirmation") {
-      void apiFetch<UpstreamSyncTarget[]>("/upstream-sync/targets")
+      void apiFetch<UpstreamSyncTarget[]>("/main-station/target-candidates")
         .then(setTargets)
         .catch((error: unknown) => {
           toast.error(error instanceof Error ? error.message : "加载候选目标失败")

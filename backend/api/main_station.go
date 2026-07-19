@@ -27,6 +27,14 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		}
 		c.JSON(http.StatusOK, item)
 	})
+	group.GET("/target-candidates", func(c *gin.Context) {
+		items, err := d.MainStation.ListTargetCandidates()
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, items)
+	})
 	group.POST("", func(c *gin.Context) {
 		var in mainstation.ConfigInput
 		if err := c.ShouldBindJSON(&in); err != nil {

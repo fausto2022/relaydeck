@@ -2,6 +2,7 @@ package storage
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"gorm.io/gorm"
@@ -9,6 +10,15 @@ import (
 
 // Channels 渠道仓库。
 type Channels struct{ db *gorm.DB }
+
+type ChannelInUseError struct {
+	MainStationMembers   int64
+	UpstreamSyncAccounts int64
+}
+
+func (e *ChannelInUseError) Error() string {
+	return fmt.Sprintf("渠道仍被账号配置引用：主站账号 %d 条，旧同步账号 %d 条，请先解除关联", e.MainStationMembers, e.UpstreamSyncAccounts)
+}
 
 func NewChannels(db *gorm.DB) *Channels { return &Channels{db: db} }
 
@@ -19,6 +29,17 @@ func (r *Channels) Delete(id uint) error {
 		var channel Channel
 		if err := tx.Select("id", "name").First(&channel, id).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
+		}
+		var mainStationMembers int64
+		if err := tx.Model(&MainAccountPoolMember{}).Where("source_channel_id = ?", id).Count(&mainStationMembers).Error; err != nil {
+			return err
+		}
+		var upstreamSyncAccounts int64
+		if err := tx.Model(&UpstreamSyncAccount{}).Where("source_channel_id = ?", id).Count(&upstreamSyncAccounts).Error; err != nil {
+			return err
+		}
+		if mainStationMembers > 0 || upstreamSyncAccounts > 0 {
+			return &ChannelInUseError{MainStationMembers: mainStationMembers, UpstreamSyncAccounts: upstreamSyncAccounts}
 		}
 		if err := tx.Where("channel_id = ?", id).Delete(&AuthSession{}).Error; err != nil {
 			return err

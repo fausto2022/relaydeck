@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   Activity,
   ArrowUpDown,
@@ -109,6 +109,7 @@ export default function MainStationPage() {
   const [auditOpen, setAuditOpen] = useState(false)
   const [auditSearch, setAuditSearch] = useState("")
   const [auditResult, setAuditResult] = useState("all")
+  const accountsRequestRef = useRef(0)
 
   const selectedWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.group.id === selectedGroupID) ?? null,
@@ -144,19 +145,20 @@ export default function MainStationPage() {
   }, [])
 
   const loadAccounts = useCallback(async (groupID: number | null, silent = false) => {
+    const requestID = ++accountsRequestRef.current
     if (!silent) setAccountsLoading(true)
     try {
       const result = groupID == null
         ? await apiFetch<MainStationPage<MainStationAccount>>("/main-station/accounts?page=1&page_size=100")
         : await apiFetch<{ items: MainStationAccount[] }>(`/main-station/groups/${groupID}/accounts`)
-      setAccounts(result.items)
+      if (requestID === accountsRequestRef.current) setAccounts(result.items)
     } catch (loadError) {
-      if (!silent) {
+      if (!silent && requestID === accountsRequestRef.current) {
         toast.error(loadError instanceof Error ? loadError.message : "加载账号失败")
         setAccounts([])
       }
     } finally {
-      if (!silent) setAccountsLoading(false)
+      if (!silent && requestID === accountsRequestRef.current) setAccountsLoading(false)
     }
   }, [])
 

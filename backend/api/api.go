@@ -102,7 +102,6 @@ func Register(r *gin.Engine, d *Deps) {
 		registerMonitorLogs(api, d)
 		registerDashboard(api, d)
 		registerSettings(api, d)
-		registerUpstreamSync(api, d)
 		registerMainStation(api, d)
 	}
 

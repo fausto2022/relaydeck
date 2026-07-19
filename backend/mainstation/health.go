@@ -629,15 +629,27 @@ func (s *Service) MemberHealthStats(memberID uint) (HealthStats, error) {
 		return HealthStats{}, err
 	}
 	now := s.now()
-	checks, err := s.store.ListMemberHealthChecksSince(memberID, now.Add(-7*24*time.Hour), 10000)
+	recentByMember, err := s.store.ListRecentHealthChecksByMember([]uint{memberID}, 100)
 	if err != nil {
 		return HealthStats{}, err
 	}
-	stats := HealthStats{
-		MemberID: memberID, LastStatus: member.LastHealthStatus,
-		ConsecutiveSuccess: member.ConsecutiveHealthSuccess, ConsecutiveFailure: member.ConsecutiveHealthFailure,
+	aggregates, err := s.store.HealthAggregates([]uint{memberID}, now)
+	if err != nil {
+		return HealthStats{}, err
 	}
-	effective := make([]storage.MainAccountHealthCheck, 0, len(checks))
+	return buildMemberHealthStats(member, recentByMember[memberID], aggregates[memberID]), nil
+}
+
+func buildMemberHealthStats(member *storage.MainAccountPoolMember, checks []storage.MainAccountHealthCheck, aggregate storage.MainAccountHealthAggregate) HealthStats {
+	stats := HealthStats{
+		MemberID: member.ID, LastStatus: member.LastHealthStatus,
+		ConsecutiveSuccess: member.ConsecutiveHealthSuccess, ConsecutiveFailure: member.ConsecutiveHealthFailure,
+		OneHourSuccessRate:        successRateCounts(aggregate.OneHourSuccess, aggregate.OneHourTotal),
+		TwentyFourHourSuccessRate: successRateCounts(aggregate.TwentyFourHourSuccess, aggregate.TwentyFourHourTotal),
+		SevenDaySuccessRate:       successRateCounts(aggregate.SevenDaySuccess, aggregate.SevenDayTotal),
+		DailyChecks:               aggregate.DailyChecks,
+		DailyTokens:               aggregate.DailyTokens,
+	}
 	latencies := make([]int64, 0, len(checks))
 	for _, check := range checks {
 		if check.Status == "success" {
@@ -656,14 +668,8 @@ func (s *Service) MemberHealthStats(memberID uint) (HealthStats, error) {
 				stats.LastErrorMessage = check.Message
 			}
 		}
-		if check.Status == "success" || check.Status == "failure" {
-			effective = append(effective, check)
-		}
 	}
-	stats.Recent20SuccessRate = successRate(limitChecks(effective, 100), time.Time{})
-	stats.OneHourSuccessRate = successRate(effective, now.Add(-time.Hour))
-	stats.TwentyFourHourSuccessRate = successRate(effective, now.Add(-24*time.Hour))
-	stats.SevenDaySuccessRate = successRate(effective, now.Add(-7*24*time.Hour))
+	stats.Recent20SuccessRate = successRate(checks, time.Time{})
 	if len(latencies) > 0 {
 		sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 		var total int64
@@ -677,14 +683,15 @@ func (s *Service) MemberHealthStats(memberID uint) (HealthStats, error) {
 		stats.P50LatencyMS = &p50
 		stats.P95LatencyMS = &p95
 	}
-	dayStart := healthDayStart(now)
-	for _, check := range checks {
-		if !check.CreatedAt.Before(dayStart) {
-			stats.DailyChecks++
-			stats.DailyTokens += valueOrZero(check.TotalTokens)
-		}
+	return stats
+}
+
+func successRateCounts(success, total int64) *float64 {
+	if total <= 0 {
+		return nil
 	}
-	return stats, nil
+	value := float64(success) / float64(total) * 100
+	return &value
 }
 
 func (s *Service) recent20SuccessRate(memberID uint) *float64 {
@@ -717,40 +724,43 @@ func (s *Service) PoolHealthSummary(poolID uint) ([]MemberHealthSummary, error) 
 	if err != nil {
 		return nil, err
 	}
+	memberIDs := make([]uint, 0, len(members))
+	for i := range members {
+		memberIDs = append(memberIDs, members[i].ID)
+	}
+	now := s.now()
+	recentByMember, err := s.store.ListRecentHealthChecksByMember(memberIDs, 100)
+	if err != nil {
+		return nil, err
+	}
+	aggregates, err := s.store.HealthAggregates(memberIDs, now)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]MemberHealthSummary, 0, len(members))
 	for i := range members {
-		stats, err := s.MemberHealthStats(members[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		budget, err := s.healthBudget(members[i].ID, policy, s.now())
-		if err != nil {
-			return nil, err
-		}
+		aggregate := aggregates[members[i].ID]
+		stats := buildMemberHealthStats(&members[i], recentByMember[members[i].ID], aggregate)
+		budget := healthBudgetFromAggregate(aggregate, policy)
 		out = append(out, MemberHealthSummary{Member: members[i], Stats: stats, Budget: budget})
 	}
 	return out, nil
 }
 
 func (s *Service) healthBudget(memberID uint, policy healthPolicy, now time.Time) (HealthBudget, error) {
-	since := healthDayStart(now)
-	l1, err := s.store.CountDailyHealthChecks(memberID, "L1", since)
+	aggregates, err := s.store.HealthAggregates([]uint{memberID}, now)
 	if err != nil {
 		return HealthBudget{}, err
 	}
-	l2, err := s.store.CountDailyHealthChecks(memberID, "L2", since)
-	if err != nil {
-		return HealthBudget{}, err
-	}
-	tokens, err := s.store.SumDailyHealthTokens(memberID, since)
-	if err != nil {
-		return HealthBudget{}, err
-	}
+	return healthBudgetFromAggregate(aggregates[memberID], policy), nil
+}
+
+func healthBudgetFromAggregate(aggregate storage.MainAccountHealthAggregate, policy healthPolicy) HealthBudget {
 	return HealthBudget{
-		DailyL1Used: l1, DailyL1Limit: policy.DailyL1Limit,
-		DailyL2Used: l2, DailyL2Limit: policy.DailyL2Limit,
-		DailyTokens: tokens, TokenLimit: policy.DailyTokenLimit,
-	}, nil
+		DailyL1Used: aggregate.DailyL1Checks, DailyL1Limit: policy.DailyL1Limit,
+		DailyL2Used: aggregate.DailyL2Checks, DailyL2Limit: policy.DailyL2Limit,
+		DailyTokens: aggregate.DailyTokens, TokenLimit: policy.DailyTokenLimit,
+	}
 }
 
 func healthBudgetExceeded(level string, budget HealthBudget) bool {
@@ -791,7 +801,8 @@ func (s *Service) RunDueHealthChecks(ctx context.Context) {
 		if len(tasks) >= healthSchedulerBatchLimit {
 			break
 		}
-		if !member.HealthEnabled || member.BindingStatus == "orphaned" || member.BindingStatus == "invalid" {
+		if !member.HealthEnabled || member.RemoteAccountID == nil ||
+			(member.BindingStatus != "verified" && member.BindingStatus != "manual_confirmed") {
 			continue
 		}
 		pool := poolCache[member.PoolID]

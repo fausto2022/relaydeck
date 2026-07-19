@@ -30,7 +30,7 @@ func newWecom(raw string) (*wecom, error) {
 	if cfg.WebhookURL == "" {
 		return nil, errors.New("wecom webhook_url is required")
 	}
-	return &wecom{cfg: cfg, http: resty.New()}, nil
+	return &wecom{cfg: cfg, http: newNotificationHTTPClient()}, nil
 }
 
 func (w *wecom) Type() storage.NotificationChannelType { return storage.NotifyWecom }

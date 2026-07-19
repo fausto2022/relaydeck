@@ -32,7 +32,7 @@ func newTelegram(raw string) (*telegram, error) {
 	if cfg.BotToken == "" || cfg.ChatID == "" {
 		return nil, errors.New("telegram bot_token and chat_id are required")
 	}
-	return &telegram{cfg: cfg, http: resty.New()}, nil
+	return &telegram{cfg: cfg, http: newNotificationHTTPClient()}, nil
 }
 
 func (t *telegram) Type() storage.NotificationChannelType { return storage.NotifyTelegram }

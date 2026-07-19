@@ -28,7 +28,46 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Verify backend
+        run: |
+          go test ./...
+          go vet ./...
+
+      - name: Verify frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+          pnpm build
+
   build-and-push:
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

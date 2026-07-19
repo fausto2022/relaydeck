@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import '@fontsource-variable/geist'
@@ -11,12 +11,14 @@ import { AuthGate } from '@/components/auth/auth-gate'
 import { AppShell } from '@/components/app-shell'
 import { AppErrorBoundary } from '@/components/app-error-boundary'
 import { Toaster } from '@/components/ui/sonner'
-import DashboardPage from '@/app/page'
-import CaptchaPage from '@/app/captcha-page'
-import NotificationsPage from '@/app/notifications-page'
-import SettingsPage from '@/app/settings-page'
-import MainStationPage from '@/app/main-station-page'
+import { Spinner } from '@/components/ui/spinner'
 import '@/app/globals.css'
+
+const DashboardPage = lazy(() => import('@/app/page'))
+const CaptchaPage = lazy(() => import('@/app/captcha-page'))
+const NotificationsPage = lazy(() => import('@/app/notifications-page'))
+const SettingsPage = lazy(() => import('@/app/settings-page'))
+const MainStationPage = lazy(() => import('@/app/main-station-page'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -27,15 +29,17 @@ createRoot(document.getElementById('root')!).render(
             <RefreshProvider>
               <BrowserRouter>
                 <AddChannelProvider>
-                  <Routes>
-                    <Route element={<AppShell />}>
-                      <Route index element={<DashboardPage />} />
-                      <Route path="captcha" element={<CaptchaPage />} />
-                      <Route path="notifications" element={<NotificationsPage />} />
-                      <Route path="main-station" element={<MainStationPage />} />
-                      <Route path="settings" element={<SettingsPage />} />
-                    </Route>
-                  </Routes>
+                  <Suspense fallback={<div className="flex min-h-72 items-center justify-center"><Spinner /></div>}>
+                    <Routes>
+                      <Route element={<AppShell />}>
+                        <Route index element={<DashboardPage />} />
+                        <Route path="captcha" element={<CaptchaPage />} />
+                        <Route path="notifications" element={<NotificationsPage />} />
+                        <Route path="main-station" element={<MainStationPage />} />
+                        <Route path="settings" element={<SettingsPage />} />
+                      </Route>
+                    </Routes>
+                  </Suspense>
                 </AddChannelProvider>
               </BrowserRouter>
             </RefreshProvider>

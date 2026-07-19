@@ -29,6 +29,7 @@ type fakeAdminClient struct {
 	createRequests      []sub2api.AdminAccount
 	updateRequests      []sub2api.AdminAccount
 	schedulingUpdates   []sub2api.AdminAccountSchedulingUpdate
+	schedulingUpdateErr error
 	schedulableCalls    []bool
 	setSchedulableErr   error
 	applyBeforeSetError bool
@@ -94,6 +95,9 @@ func (f *fakeAdminClient) UpdateAccount(_ context.Context, _ sub2api.AdminTarget
 }
 func (f *fakeAdminClient) UpdateAccountScheduling(_ context.Context, _ sub2api.AdminTarget, id int64, req sub2api.AdminAccountSchedulingUpdate) (*sub2api.AdminAccount, error) {
 	f.schedulingUpdates = append(f.schedulingUpdates, req)
+	if f.schedulingUpdateErr != nil {
+		return nil, f.schedulingUpdateErr
+	}
 	for i := range f.accounts {
 		if f.accounts[i].ID == id {
 			f.accounts[i].Concurrency = req.Concurrency

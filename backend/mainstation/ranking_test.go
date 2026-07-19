@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fausto2022/relaydeck/backend/connector"
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
+	"github.com/fausto2022/relaydeck/backend/storage"
 )
 
 func TestRankSchedulingSignalsUsesHealthPriorityCostAndStability(t *testing.T) {
@@ -151,5 +153,34 @@ func TestPoolSchedulingPrioritiesMovesLockedAccountBehindSchedulableAccount(t *t
 	}
 	if priorities[first.ID] <= priorities[second.ID] {
 		t.Fatalf("locked member should rank last: %#v", priorities)
+	}
+}
+
+func TestReconcilePoolRankingMarksMissingRemoteAccountOrphaned(t *testing.T) {
+	service, db, admin, pool, member := createBoundSchedulingMember(t)
+	if err := db.Where("remote_account_id = ?", *member.RemoteAccountID).Delete(&storage.MainStationAccountSnapshot{}).Error; err != nil {
+		t.Fatalf("delete account snapshot: %v", err)
+	}
+	admin.schedulingUpdateErr = connector.HTTPStatusError(404, []byte(`{"message":"account not found"}`))
+
+	if err := service.ReconcilePoolRanking(context.Background(), pool.ID, "test"); err != nil {
+		t.Fatalf("reconcile missing account: %v", err)
+	}
+	updated, err := service.store.FindMember(pool.ID, member.ID)
+	if err != nil {
+		t.Fatalf("reload member: %v", err)
+	}
+	if updated.BindingStatus != "orphaned" || updated.Status != "orphaned" {
+		t.Fatalf("orphaned member = %#v", updated)
+	}
+	if len(admin.schedulingUpdates) != 1 {
+		t.Fatalf("scheduling updates = %d, want 1", len(admin.schedulingUpdates))
+	}
+
+	if err := service.ReconcilePoolRanking(context.Background(), pool.ID, "test"); err != nil {
+		t.Fatalf("reconcile orphaned account: %v", err)
+	}
+	if len(admin.schedulingUpdates) != 1 {
+		t.Fatalf("orphaned account was retried: updates = %d", len(admin.schedulingUpdates))
 	}
 }

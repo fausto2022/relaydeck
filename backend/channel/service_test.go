@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -395,5 +397,96 @@ func TestTestLoginFailsWhenSessionAuthFails(t *testing.T) {
 	}
 	if saved != nil {
 		t.Fatalf("saved session = %#v, want nil", saved)
+	}
+}
+
+func TestEnsureSessionSerializesConcurrentLoginPerChannel(t *testing.T) {
+	var loginCalls atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user/login", func(w http.ResponseWriter, r *http.Request) {
+		loginCalls.Add(1)
+		time.Sleep(100 * time.Millisecond)
+		http.SetCookie(w, &http.Cookie{Name: "session", Value: "valid"})
+		_, _ = w.Write([]byte(`{"success":true,"message":"","data":{"id":7}}`))
+	})
+	mux.HandleFunc("/api/user/self", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"message":"","data":{"id":7}}`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc, cipher := testService(t)
+	encrypted, err := cipher.Encrypt("password")
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	channel := &storage.Channel{
+		Name: "concurrent", Type: storage.ChannelTypeNewAPI, SiteURL: server.URL, Username: "user",
+		PasswordCipher: encrypted, CredentialMode: storage.CredentialModePassword,
+	}
+	if err := svc.Channels.Create(channel); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+
+	errorsCh := make(chan error, 2)
+	var wait sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			resolved, resolveErr := svc.Resolve(context.Background(), channel)
+			if resolveErr != nil {
+				errorsCh <- resolveErr
+				return
+			}
+			conn, connectorErr := connector.For(connector.ChannelType(channel.Type))
+			if connectorErr != nil {
+				errorsCh <- connectorErr
+				return
+			}
+			_, ensureErr := svc.EnsureSession(context.Background(), channel, resolved, conn)
+			errorsCh <- ensureErr
+		}()
+	}
+	wait.Wait()
+	close(errorsCh)
+	for ensureErr := range errorsCh {
+		if ensureErr != nil {
+			t.Fatalf("ensure session: %v", ensureErr)
+		}
+	}
+	if calls := loginCalls.Load(); calls != 1 {
+		t.Fatalf("login calls = %d, want 1", calls)
+	}
+}
+
+func TestLogin429UsesShortBackoff(t *testing.T) {
+	var loginCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		loginCalls.Add(1)
+		http.Error(w, `{"message":"too many requests"}`, http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	svc, cipher := testService(t)
+	encrypted, err := cipher.Encrypt("password")
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	channel := &storage.Channel{
+		Name: "rate-limited", Type: storage.ChannelTypeNewAPI, SiteURL: server.URL, Username: "user",
+		PasswordCipher: encrypted, CredentialMode: storage.CredentialModePassword,
+	}
+	if err := svc.Channels.Create(channel); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	if err := svc.TestLogin(context.Background(), channel.ID); connector.HTTPStatusCode(err) != http.StatusTooManyRequests {
+		t.Fatalf("first login error = %v", err)
+	}
+	if err := svc.TestLogin(context.Background(), channel.ID); err == nil || !strings.Contains(err.Error(), "触发限流") {
+		t.Fatalf("backoff login error = %v", err)
+	}
+	if calls := loginCalls.Load(); calls != 1 {
+		t.Fatalf("rate-limited login calls = %d, want 1", calls)
 	}
 }

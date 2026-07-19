@@ -423,6 +423,56 @@ func TestScheduledHealthUsesMemberIntervalAndRunsOneEffectiveProbe(t *testing.T)
 	}
 }
 
+func TestScheduledHealthSkipsUnconfirmedMemberWithoutRemoteAccount(t *testing.T) {
+	service, db, _, _ := newTestService(t)
+	member := storage.MainAccountPoolMember{
+		PoolID: 1, SourceChannelID: 1, OwnershipMode: "managed", BindingStatus: "pending", Status: "error",
+		HealthEnabled: true, LastHealthStatus: "unknown", CreatedAt: time.Now().Add(-time.Hour),
+	}
+	if err := db.Create(&member).Error; err != nil {
+		t.Fatalf("create pending member: %v", err)
+	}
+	service.RunDueHealthChecks(context.Background())
+	var count int64
+	if err := db.Model(&storage.MainAccountHealthCheck{}).Where("member_id = ?", member.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count health checks: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("pending member health checks = %d, want 0", count)
+	}
+}
+
+func TestMemberHealthStatsUsesFullSevenDayAggregateAndRecentWindow(t *testing.T) {
+	service, db, admin, _ := newTestService(t)
+	member := createHealthMember(t, service, db, admin, "https://upstream.example.com", "")
+	now := time.Now()
+	service.now = func() time.Time { return now }
+	for i := 0; i < 150; i++ {
+		status := "success"
+		createdAt := now.Add(-time.Duration(i) * time.Minute)
+		if i >= 100 {
+			status = "failure"
+		}
+		check := storage.MainAccountHealthCheck{
+			PoolID: member.PoolID, MemberID: member.ID, RemoteAccountID: *member.RemoteAccountID,
+			Level: "L0", Status: status, LatencyMS: 100, FinishedAt: createdAt, CreatedAt: createdAt,
+		}
+		if err := db.Create(&check).Error; err != nil {
+			t.Fatalf("create health check %d: %v", i, err)
+		}
+	}
+	stats, err := service.MemberHealthStats(member.ID)
+	if err != nil {
+		t.Fatalf("member health stats: %v", err)
+	}
+	if stats.Recent20SuccessRate == nil || *stats.Recent20SuccessRate != 100 {
+		t.Fatalf("recent success rate = %#v", stats.Recent20SuccessRate)
+	}
+	if stats.SevenDaySuccessRate == nil || *stats.SevenDaySuccessRate < 66.6 || *stats.SevenDaySuccessRate > 66.7 {
+		t.Fatalf("seven day success rate = %#v", stats.SevenDaySuccessRate)
+	}
+}
+
 func TestAccountDTOIncludesRecentConnectivityRate(t *testing.T) {
 	service, db, admin, _ := newTestService(t)
 	member := createHealthMember(t, service, db, admin, "https://upstream.example.com", "")

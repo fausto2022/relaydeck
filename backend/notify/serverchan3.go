@@ -39,7 +39,7 @@ func newServerChan3(raw string) (*serverChan3, error) {
 	if cfg.SendKey == "" {
 		return nil, errors.New("serverchan3 sendkey is required")
 	}
-	return &serverChan3{cfg: cfg, http: resty.New()}, nil
+	return &serverChan3{cfg: cfg, http: newNotificationHTTPClient()}, nil
 }
 
 func (s *serverChan3) Type() storage.NotificationChannelType { return storage.NotifyServerChan3 }
