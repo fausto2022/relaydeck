@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -490,6 +491,13 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	}
 	if request.Credentials["api_key"] != channels.secret || request.Credentials["base_url"] != channel.SiteURL {
 		t.Fatalf("managed account credentials = %#v", request.Credentials)
+	}
+	if request.Credentials["pool_mode"] != true || request.Credentials["pool_mode_retry_count"] != managedAccountPoolModeRetryCount {
+		t.Fatalf("managed account pool mode = %#v", request.Credentials)
+	}
+	retryStatusCodes, ok := request.Credentials["pool_mode_retry_status_codes"].([]int)
+	if !ok || !slices.Equal(retryStatusCodes, managedAccountPoolModeRetryStatusCodes()) {
+		t.Fatalf("managed account pool mode retry status codes = %#v", request.Credentials["pool_mode_retry_status_codes"])
 	}
 	if len(request.GroupIDs) != 1 || request.GroupIDs[0] != 31 || request.RateMultiplier != 0.4 {
 		t.Fatalf("managed account request = %#v", request)

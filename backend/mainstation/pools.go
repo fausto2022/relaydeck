@@ -14,6 +14,12 @@ import (
 	"gorm.io/gorm"
 )
 
+const managedAccountPoolModeRetryCount = 10
+
+func managedAccountPoolModeRetryStatusCodes() []int {
+	return []int{400, 401, 403, 429, 502, 503, 524}
+}
+
 func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO, error) {
 	groups, err := s.ListGroups(includeMissing)
 	if err != nil {
@@ -797,8 +803,11 @@ func (s *Service) managedAccountRequest(ctx context.Context, pool *storage.MainA
 		RateMultiplier: rateMultiplier,
 		GroupIDs:       groupIDs,
 		Credentials: map[string]any{
-			"api_key":  secret,
-			"base_url": strings.TrimRight(channel.SiteURL, "/"),
+			"api_key":                      secret,
+			"base_url":                     strings.TrimRight(channel.SiteURL, "/"),
+			"pool_mode":                    true,
+			"pool_mode_retry_count":        managedAccountPoolModeRetryCount,
+			"pool_mode_retry_status_codes": managedAccountPoolModeRetryStatusCodes(),
 		},
 	}, secret, nil
 }
