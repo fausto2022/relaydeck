@@ -188,8 +188,8 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 	if err != nil {
 		return nil, err
 	}
-	if rankingErr := s.ReconcilePoolRanking(ctx, pool.ID, "health"); rankingErr != nil && s.log != nil {
-		s.log.Warn("reconcile main station scheduling rank", "err", rankingErr, "pool_id", pool.ID)
+	if rankingErr := s.markPoolRankingDirty(pool.ID); rankingErr != nil && s.log != nil {
+		s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", pool.ID)
 	}
 	if (newHealth == "unhealthy" && oldHealth != "unhealthy" && oldHealth != "quarantined") ||
 		(newHealth == "healthy" && (oldHealth == "unhealthy" || oldHealth == "quarantined" || oldHealth == "degraded")) {
@@ -649,7 +649,9 @@ func (s *Service) MemberHealthStats(memberID uint) (HealthStats, error) {
 				value := check.FinishedAt
 				stats.LastSuccessAt = &value
 			}
-			latencies = append(latencies, check.LatencyMS)
+			if len(latencies) < 100 {
+				latencies = append(latencies, check.LatencyMS)
+			}
 		} else if check.Status == "failure" {
 			if stats.LastFailureAt == nil {
 				value := check.FinishedAt
@@ -690,7 +692,7 @@ func (s *Service) MemberHealthStats(memberID uint) (HealthStats, error) {
 }
 
 func (s *Service) recent20SuccessRate(memberID uint) *float64 {
-	checks, err := s.store.ListRecentMemberHealthChecks(memberID, 20)
+	checks, err := s.store.ListRecentMemberHealthChecks(memberID, 100)
 	if err != nil {
 		return nil
 	}

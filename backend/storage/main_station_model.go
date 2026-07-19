@@ -22,6 +22,7 @@ type MainStationConfig struct {
 	HealthIntervalSeconds   int        `gorm:"not null;default:30" json:"health_interval_seconds"`
 	HealthFailureThreshold  int        `gorm:"not null;default:10" json:"health_failure_threshold"`
 	HealthRecoveryThreshold int        `gorm:"not null;default:3" json:"health_recovery_threshold"`
+	RankingIntervalSeconds  int        `gorm:"not null;default:30" json:"ranking_interval_seconds"`
 	SyncIntervalSeconds     int        `gorm:"not null;default:300" json:"sync_interval_seconds"`
 	ObservationEvaluatedAt  *time.Time `json:"observation_evaluated_at,omitempty"`
 	HealthObservedAt        *time.Time `json:"health_observed_at,omitempty"`
@@ -98,6 +99,10 @@ type MainAccountPool struct {
 	RateSortDirection           string     `gorm:"size:16;not null;default:'asc'" json:"rate_sort_direction"`
 	HealthPolicyJSON            string     `gorm:"type:text;not null" json:"health_policy"`
 	MarginPolicyJSON            string     `gorm:"type:text;not null" json:"margin_policy"`
+	RankingIntervalSeconds      int        `gorm:"not null;default:0" json:"ranking_interval_seconds"`
+	RankingDirtyAt              *time.Time `json:"ranking_dirty_at,omitempty"`
+	LastRankingAt               *time.Time `json:"last_ranking_at,omitempty"`
+	LastRankingError            string     `gorm:"type:text" json:"last_ranking_error,omitempty"`
 	LastStatus                  string     `gorm:"size:32;not null;default:'unknown';index" json:"last_status"`
 	LastEvaluatedAt             *time.Time `json:"last_evaluated_at,omitempty"`
 	CreatedAt                   time.Time  `json:"created_at"`
@@ -153,6 +158,9 @@ type MainAccountPoolMember struct {
 	LastCostSource           string     `gorm:"size:64" json:"last_cost_source,omitempty"`
 	LastCostAt               *time.Time `json:"last_cost_at,omitempty"`
 	LastCostExpiresAt        *time.Time `json:"last_cost_expires_at,omitempty"`
+	SchedulingDirtyAt        *time.Time `json:"scheduling_dirty_at,omitempty"`
+	LastSchedulingAt         *time.Time `json:"last_scheduling_at,omitempty"`
+	LastSchedulingError      string     `gorm:"type:text" json:"last_scheduling_error,omitempty"`
 	CreatedAt                time.Time  `json:"created_at"`
 	UpdatedAt                time.Time  `json:"updated_at"`
 }

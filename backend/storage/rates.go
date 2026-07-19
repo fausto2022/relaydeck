@@ -216,10 +216,15 @@ func (r *Rates) AggregateBalanceTrend(days int) ([]DailyAggregate, error) {
 
 // AggregateCostTrend 取最近 N 天的"日内最后一次今日消费"按渠道之和，作为总消费趋势。
 func (r *Rates) AggregateCostTrend(days int) ([]DailyCostAggregate, error) {
+	return r.AggregateCostTrendAt(days, trendNow())
+}
+
+// AggregateCostTrendAt 使用调用方提供的当前时间计算最近 N 天消费趋势，便于业务层保持统一时钟。
+func (r *Rates) AggregateCostTrendAt(days int, now time.Time) ([]DailyCostAggregate, error) {
 	if days <= 0 {
 		days = 7
 	}
-	today := dayStart(trendNow())
+	today := dayStart(now)
 	since := today.AddDate(0, 0, -(days - 1))
 
 	var snapshots []CostSnapshot

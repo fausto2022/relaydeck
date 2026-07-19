@@ -28,6 +28,8 @@ const (
 	maximumHealthIntervalSeconds       = 86400
 	defaultHealthFailureThreshold      = 10
 	defaultHealthRecoveryThreshold     = 3
+	defaultRankingIntervalSeconds      = 30
+	minimumRankingIntervalSeconds      = 5
 	defaultMainStationSyncInterval     = 300
 	maximumHealthThreshold             = 100
 )
@@ -89,6 +91,7 @@ type Service struct {
 	probeUserAgent   string
 	now              func() time.Time
 	scheduleLocks    sync.Map
+	rankingLocks     sync.Map
 }
 
 func (s *Service) SetDispatcher(dispatcher *notify.Dispatcher) {
@@ -143,7 +146,14 @@ func (s *Service) UpdateProbeConfig(proxy config.ProxyConfig, timeout time.Durat
 }
 
 func (s *Service) GetConfig() (*ConfigDTO, error) {
-	dto := &ConfigDTO{}
+	dto := &ConfigDTO{
+		HealthModels:            map[string]string{},
+		HealthIntervalSeconds:   defaultHealthIntervalSeconds,
+		HealthFailureThreshold:  defaultHealthFailureThreshold,
+		HealthRecoveryThreshold: defaultHealthRecoveryThreshold,
+		RankingIntervalSeconds:  defaultRankingIntervalSeconds,
+		SyncIntervalSeconds:     defaultMainStationSyncInterval,
+	}
 	if state, err := s.store.GetMigrationState(); err == nil {
 		dto.Migration = &MigrationStateDTO{Status: state.Status, Detail: state.Detail}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -177,6 +187,7 @@ func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto.HealthIntervalSeconds = normalizedGlobalHealthInterval(config.HealthIntervalSeconds)
 	dto.HealthFailureThreshold = normalizedHealthThreshold(config.HealthFailureThreshold, defaultHealthFailureThreshold)
 	dto.HealthRecoveryThreshold = normalizedHealthThreshold(config.HealthRecoveryThreshold, defaultHealthRecoveryThreshold)
+	dto.RankingIntervalSeconds = normalizedRankingInterval(config.RankingIntervalSeconds)
 	dto.SyncIntervalSeconds = normalizedSyncInterval(config.SyncIntervalSeconds)
 	dto.ObservationEvaluatedAt = config.ObservationEvaluatedAt
 	dto.HealthObservedAt = config.HealthObservedAt
@@ -245,6 +256,13 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 			return nil, err
 		}
 	}
+	rankingIntervalSeconds := defaultRankingIntervalSeconds
+	if in.RankingIntervalSeconds != nil {
+		rankingIntervalSeconds = *in.RankingIntervalSeconds
+		if err := validateRankingInterval(rankingIntervalSeconds); err != nil {
+			return nil, err
+		}
+	}
 	config := &storage.MainStationConfig{
 		ID:                      storage.MainStationSingletonID,
 		Enabled:                 enabled,
@@ -252,6 +270,7 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		HealthIntervalSeconds:   healthIntervalSeconds,
 		HealthFailureThreshold:  healthFailureThreshold,
 		HealthRecoveryThreshold: healthRecoveryThreshold,
+		RankingIntervalSeconds:  rankingIntervalSeconds,
 		SyncIntervalSeconds:     syncIntervalSeconds,
 	}
 	target := &storage.UpstreamSyncTarget{
@@ -278,7 +297,22 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 	if err := s.store.MigrateLegacyData(); err != nil {
 		return nil, fmt.Errorf("migrate legacy main station data: %w", err)
 	}
-	_ = s.appendAudit(nil, nil, nil, "main_station_create", "manual", true, nil, target, nil, "", "")
+	if err := s.store.MarkAllPoolRankingsDirty(s.now()); err != nil && s.log != nil {
+		s.log.Warn("mark main station rankings dirty after create", "err", err)
+	}
+	schedulingErr := s.reconcileAllScheduling(ctx, "manual")
+	if schedulingErr != nil {
+		if s.log != nil {
+			s.log.Warn("main station created; scheduling reconcile queued for retry", "err", schedulingErr)
+		}
+	}
+	detail := ""
+	errText := ""
+	if schedulingErr != nil {
+		detail = "main station created; scheduling reconcile queued for retry"
+		errText = sanitizeText(schedulingErr.Error())
+	}
+	_ = s.appendAudit(nil, nil, nil, "main_station_create", "manual", schedulingErr == nil, nil, target, nil, detail, errText)
 	return s.GetConfig()
 }
 
@@ -320,7 +354,9 @@ func (s *Service) UpdateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 			return nil, fmt.Errorf("encrypt main station admin api key: %w", err)
 		}
 	}
+	enabledChanged := false
 	if in.Enabled != nil {
+		enabledChanged = config.Enabled != *in.Enabled
 		config.Enabled = *in.Enabled
 		target.Enabled = *in.Enabled
 	}
@@ -369,14 +405,56 @@ func (s *Service) UpdateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		}
 		config.SyncIntervalSeconds = *in.SyncIntervalSeconds
 	}
+	rankingChanged := false
+	if in.RankingIntervalSeconds != nil {
+		if err := validateRankingInterval(*in.RankingIntervalSeconds); err != nil {
+			return nil, err
+		}
+		rankingChanged = config.RankingIntervalSeconds != *in.RankingIntervalSeconds
+		config.RankingIntervalSeconds = *in.RankingIntervalSeconds
+	}
 	if err := s.store.UpdateConfigWithTarget(target, config); err != nil {
 		return nil, err
 	}
 	if err := s.reconcileHealthProtectionPolicy(ctx, &beforeConfig, config, "manual"); err != nil {
 		return nil, fmt.Errorf("reconcile health protection policy: %w", err)
 	}
-	_ = s.appendAudit(nil, nil, nil, "main_station_update", "manual", true, before, target, nil, "", "")
+	if rankingChanged || enabledChanged {
+		if err := s.store.MarkAllPoolRankingsDirty(s.now()); err != nil && s.log != nil {
+			s.log.Warn("mark main station rankings dirty after config change", "err", err)
+		}
+	}
+	var schedulingErr error
+	if enabledChanged {
+		schedulingErr = s.reconcileAllScheduling(ctx, "manual")
+		if schedulingErr != nil {
+			if s.log != nil {
+				s.log.Warn("main station saved; scheduling reconcile queued for retry", "err", schedulingErr)
+			}
+		}
+	}
+	detail := ""
+	errText := ""
+	if schedulingErr != nil {
+		detail = "main station saved; scheduling reconcile queued for retry"
+		errText = sanitizeText(schedulingErr.Error())
+	}
+	_ = s.appendAudit(nil, nil, nil, "main_station_update", "manual", schedulingErr == nil, before, target, nil, detail, errText)
 	return s.GetConfig()
+}
+
+func normalizedRankingInterval(value int) int {
+	if value < minimumRankingIntervalSeconds || value > maximumHealthIntervalSeconds {
+		return defaultRankingIntervalSeconds
+	}
+	return value
+}
+
+func validateRankingInterval(value int) error {
+	if value < minimumRankingIntervalSeconds || value > maximumHealthIntervalSeconds {
+		return fmt.Errorf("ranking interval must be between %d and %d seconds", minimumRankingIntervalSeconds, maximumHealthIntervalSeconds)
+	}
+	return nil
 }
 
 func normalizedSyncInterval(value int) int {

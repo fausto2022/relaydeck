@@ -116,6 +116,57 @@ func (r *MainStationStore) UpdateSyncStatus(status string, at *time.Time, errTex
 	}).Error
 }
 
+func (r *MainStationStore) MarkPoolRankingDirty(poolID uint, at time.Time) error {
+	return r.db.Model(&MainAccountPool{}).Where("id = ?", poolID).Updates(map[string]any{
+		"ranking_dirty_at": at,
+	}).Error
+}
+
+func (r *MainStationStore) MarkAllPoolRankingsDirty(at time.Time) error {
+	return r.db.Model(&MainAccountPool{}).Where("1 = 1").Updates(map[string]any{
+		"ranking_dirty_at": at,
+	}).Error
+}
+
+func (r *MainStationStore) CompletePoolRanking(poolID uint, startedAt, finishedAt time.Time, errText string) error {
+	updates := map[string]any{
+		"last_ranking_at":    finishedAt,
+		"last_ranking_error": strings.TrimSpace(errText),
+	}
+	if strings.TrimSpace(errText) == "" {
+		updates["ranking_dirty_at"] = gorm.Expr("CASE WHEN ranking_dirty_at IS NULL OR ranking_dirty_at <= ? THEN NULL ELSE ranking_dirty_at END", startedAt)
+	}
+	return r.db.Model(&MainAccountPool{}).Where("id = ?", poolID).Updates(updates).Error
+}
+
+func (r *MainStationStore) MarkMemberSchedulingDirty(memberID uint, at time.Time) error {
+	return r.db.Model(&MainAccountPoolMember{}).Where("id = ?", memberID).Updates(map[string]any{
+		"scheduling_dirty_at": at,
+	}).Error
+}
+
+func (r *MainStationStore) CompleteMemberScheduling(memberID uint, startedAt, finishedAt time.Time, errText string) error {
+	updates := map[string]any{
+		"last_scheduling_at":    finishedAt,
+		"last_scheduling_error": strings.TrimSpace(errText),
+	}
+	if strings.TrimSpace(errText) == "" {
+		updates["scheduling_dirty_at"] = gorm.Expr("CASE WHEN scheduling_dirty_at IS NULL OR scheduling_dirty_at <= ? THEN NULL ELSE scheduling_dirty_at END", startedAt)
+	}
+	return r.db.Model(&MainAccountPoolMember{}).Where("id = ?", memberID).Updates(updates).Error
+}
+
+func (r *MainStationStore) ListSchedulingDirtyMembers() ([]MainAccountPoolMember, error) {
+	var list []MainAccountPoolMember
+	err := r.db.Where("scheduling_dirty_at IS NOT NULL AND remote_account_id IS NOT NULL").
+		Where("binding_status NOT IN ?", []string{"invalid", "orphaned"}).
+		Order("scheduling_dirty_at ASC, id ASC").Find(&list).Error
+	if err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *MainStationStore) GetMigrationState() (*MainStationMigrationState, error) {
 	var item MainStationMigrationState
 	if err := r.db.First(&item, MainStationSingletonID).Error; err != nil {
@@ -253,6 +304,14 @@ func (r *MainStationStore) ListPools(page, pageSize int) ([]MainAccountPool, int
 		return nil, 0, err
 	}
 	return list, total, nil
+}
+
+func (r *MainStationStore) ListAllPools() ([]MainAccountPool, error) {
+	var list []MainAccountPool
+	if err := r.db.Order("id ASC").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 func (r *MainStationStore) FindPool(id uint) (*MainAccountPool, error) {
@@ -674,6 +733,9 @@ func applyPoolDefaults(item *MainAccountPool) {
 	}
 	if item.MinimumEffectiveConcurrency < 0 {
 		item.MinimumEffectiveConcurrency = 0
+	}
+	if item.RankingIntervalSeconds < 0 {
+		item.RankingIntervalSeconds = 0
 	}
 	if item.RateSortDirection != "desc" && item.RateSortDirection != "stability" {
 		item.RateSortDirection = "asc"

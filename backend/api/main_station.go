@@ -197,12 +197,23 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
-		item, err := d.MainStation.UpdateGroupSettings(groupID, in)
+		item, err := d.MainStation.UpdateGroupSettings(c.Request.Context(), groupID, in)
 		if err != nil {
 			failMainStation(c, err)
 			return
 		}
 		c.JSON(http.StatusOK, item)
+	})
+	group.POST("/groups/:id/recalculate-ranking", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		if err := d.MainStation.RecalculateGroupRanking(c.Request.Context(), groupID); err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.Status(http.StatusNoContent)
 	})
 	group.POST("/groups/:id/accounts", func(c *gin.Context) {
 		groupID, ok := mainStationUintParam(c, "id")

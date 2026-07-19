@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   Activity,
+  ArrowUpDown,
   CircleDollarSign,
   History,
   Link2,
@@ -89,6 +90,7 @@ export default function MainStationPage() {
   const [accountsLoading, setAccountsLoading] = useState(false)
   const [error, setError] = useState("")
   const [syncing, setSyncing] = useState(false)
+  const [ranking, setRanking] = useState(false)
   const [busyAccountID, setBusyAccountID] = useState<number | null>(null)
   const [configOpen, setConfigOpen] = useState(false)
   const [memberOpen, setMemberOpen] = useState(false)
@@ -211,6 +213,21 @@ export default function MainStationPage() {
     }
   }
 
+  async function handleRanking() {
+    if (!selectedWorkspace) return
+    setRanking(true)
+    try {
+      await apiFetch(`/main-station/groups/${selectedWorkspace.group.id}/recalculate-ranking`, { method: "POST" })
+      toast.success("账号优先级已重新计算")
+      await loadBase()
+      await loadAccounts(selectedWorkspace.group.id)
+    } catch (rankingError) {
+      toast.error(rankingError instanceof Error ? rankingError.message : "账号优先级重排失败")
+    } finally {
+      setRanking(false)
+    }
+  }
+
   async function handleCheck(account: MainStationAccount) {
     if (!selectedWorkspace || !account.member) {
       toast.error("请先接管该账号，再执行检测")
@@ -265,11 +282,11 @@ export default function MainStationPage() {
         if (decision.remote_schedulable) toast.success("账号已恢复调度")
         else toast.warning(schedulingBlockedMessage(decision))
       }
-      await loadAccounts(selectedGroupID)
-      await loadRisk(selectedGroupID)
     } catch (scheduleError) {
       toast.error(scheduleError instanceof Error ? scheduleError.message : "更新账号状态失败")
     } finally {
+      await loadAccounts(selectedGroupID)
+      await loadRisk(selectedGroupID)
       setBusyAccountID(null)
     }
   }
@@ -400,7 +417,8 @@ export default function MainStationPage() {
                     </div>
                     <p className="text-xs text-muted-foreground">{accounts.length} 个 Account</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {selectedWorkspace ? <Button variant="outline" onClick={() => void handleRanking()} disabled={ranking}><ArrowUpDown className="size-4" />{ranking ? "重排中" : "立即重排"}</Button> : null}
                     {selectedWorkspace ? <IconButton label="分组设置" onClick={() => setSettingsOpen(true)}><Settings2 className="size-4" /></IconButton> : null}
                     {selectedWorkspace ? <Button variant="outline" onClick={() => setBindingRecommendationsOpen(true)}><Sparkles className="size-4" />推荐绑定</Button> : null}
                     <Button onClick={() => { setBindingAccount(null); setMemberOpen(true) }} disabled={!selectedWorkspace}>
@@ -522,7 +540,7 @@ export default function MainStationPage() {
         </Tabs>
       )}
 
-      <StationConfigDialog open={configOpen} onOpenChange={setConfigOpen} config={config} onSaved={() => void loadBase()} />
+      <StationConfigDialog open={configOpen} onOpenChange={setConfigOpen} config={config} onSaved={() => { void loadBase(); void loadAccounts(selectedGroupID); void loadRisk(selectedGroupID) }} />
       <MemberDialog
         open={memberOpen}
         onOpenChange={(open) => { setMemberOpen(open); if (!open) setBindingAccount(null) }}
@@ -552,7 +570,7 @@ export default function MainStationPage() {
         groupID={selectedWorkspace?.group.id ?? null}
         account={healthHistoryAccount}
       />
-      <GroupSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} workspace={selectedWorkspace} onSaved={(saved) => setWorkspaces((items) => items.map((item) => item.group.id === saved.group.id ? saved : item))} />
+      <GroupSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} workspace={selectedWorkspace} onSaved={(saved) => { setWorkspaces((items) => items.map((item) => item.group.id === saved.group.id ? saved : item)); void loadAccounts(selectedGroupID); void loadRisk(selectedGroupID) }} />
       {confirmDialog}
     </div>
   )
@@ -593,6 +611,7 @@ function AccountMenu({ account, canManage, onCheck, onSync, onDelete }: { accoun
 function ScheduleBadge({ account }: { account: MainStationAccount }) {
   if (account.missing) return <Badge variant="destructive">已丢失</Badge>
   if (!account.member) return <Badge variant="outline">未接管</Badge>
+  if (account.member.scheduling_dirty_at) return <Badge variant="outline" className="border-amber-300 text-amber-700" title={account.member.last_scheduling_error || "后台正在同步账号启停状态"}>状态同步中</Badge>
   return account.schedulable ? <Badge className="bg-emerald-600 text-white">调度中</Badge> : <Badge variant="secondary">已停用</Badge>
 }
 

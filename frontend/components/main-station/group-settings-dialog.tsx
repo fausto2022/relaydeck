@@ -39,6 +39,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
   const [rateSortDirection, setRateSortDirection] = useState<"asc" | "desc" | "stability">("asc")
   const [healthPolicy, setHealthPolicy] = useState("")
   const [marginPolicy, setMarginPolicy] = useState("")
+  const [rankingIntervalSeconds, setRankingIntervalSeconds] = useState(0)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -50,11 +51,16 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
     setRateSortDirection(workspace.rate_sort_direction)
     setHealthPolicy(workspace.health_policy)
     setMarginPolicy(workspace.margin_policy)
+    setRankingIntervalSeconds(workspace.ranking_interval_seconds ?? 0)
     setAdvancedOpen(false)
   }, [open, workspace])
 
   async function handleSave() {
     if (!workspace) return
+    if (rankingIntervalSeconds !== 0 && (rankingIntervalSeconds < 5 || rankingIntervalSeconds > 86400)) {
+      toast.error("分组重排间隔必须为 0，或在 5 到 86400 秒之间")
+      return
+    }
     setBusy(true)
     try {
       const saved = await apiFetch<MainStationGroupWorkspace>(`/main-station/groups/${workspace.group.id}/settings`, {
@@ -66,6 +72,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
           rate_sort_direction: rateSortDirection,
           health_policy: healthPolicy,
           margin_policy: marginPolicy,
+          ranking_interval_seconds: rankingIntervalSeconds,
         }),
       })
       onSaved(saved)
@@ -109,6 +116,18 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
           <div className="flex items-center justify-between border-t pt-4 sm:col-span-2">
             <Label htmlFor="group-enabled">启用分组调度</Label>
             <Switch id="group-enabled" checked={enabled} onCheckedChange={setEnabled} />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="group-ranking-interval">本分组重排间隔（秒）</Label>
+            <Input
+              id="group-ranking-interval"
+              type="number"
+              min={0}
+              max={86400}
+              value={rankingIntervalSeconds}
+              onChange={(event) => setRankingIntervalSeconds(Number(event.target.value))}
+            />
+            <p className="text-xs text-muted-foreground">填 0 继承主站全局设置；最小自定义间隔为 5 秒。</p>
           </div>
         </div>
 

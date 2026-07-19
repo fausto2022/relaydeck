@@ -17,6 +17,8 @@ var validGuardLockTypes = map[string]struct{}{
 	"manual": {}, "margin": {}, "health": {}, "sync": {}, "credential": {}, "binding": {},
 }
 
+const schedulingRetryInterval = 10 * time.Second
+
 func (s *Service) IsManagedAccount(remoteAccountID int64) bool {
 	if remoteAccountID <= 0 {
 		return false
@@ -105,7 +107,7 @@ func (s *Service) ListGuardLocks(remoteAccountID int64) ([]storage.MainAccountGu
 	return s.store.ListActiveGuardLocks(remoteAccountID)
 }
 
-func (s *Service) ReconcileAccount(ctx context.Context, remoteAccountID int64, source string) (*SchedulingDecision, error) {
+func (s *Service) ReconcileAccount(ctx context.Context, remoteAccountID int64, source string) (decision *SchedulingDecision, reconcileErr error) {
 	value, _ := s.scheduleLocks.LoadOrStore(remoteAccountID, &sync.Mutex{})
 	mutex := value.(*sync.Mutex)
 	mutex.Lock()
@@ -115,10 +117,29 @@ func (s *Service) ReconcileAccount(ctx context.Context, remoteAccountID int64, s
 	if err != nil {
 		return nil, err
 	}
+	startedAt := s.now()
+	if err := s.store.MarkMemberSchedulingDirty(member.ID, startedAt); err != nil {
+		return nil, err
+	}
+	defer func() {
+		finishedAt := s.now()
+		errText := ""
+		if reconcileErr != nil {
+			errText = sanitizeText(reconcileErr.Error())
+		}
+		if completeErr := s.store.CompleteMemberScheduling(member.ID, startedAt, finishedAt, errText); completeErr != nil {
+			reconcileErr = errors.Join(reconcileErr, completeErr)
+		}
+	}()
 	pool, err := s.store.FindPool(member.PoolID)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if dirtyErr := s.markPoolRankingDirty(pool.ID); dirtyErr != nil && s.log != nil {
+			s.log.Warn("mark main station scheduling rank dirty", "err", dirtyErr, "pool_id", pool.ID)
+		}
+	}()
 	config, target, apiKey, err := s.loadAdminTarget()
 	if err != nil {
 		return nil, err
@@ -147,7 +168,7 @@ func (s *Service) ReconcileAccount(ctx context.Context, remoteAccountID int64, s
 	bindingValid := member.BindingStatus == "verified" || member.BindingStatus == "manual_confirmed"
 	desired := config.Enabled && pool.Enabled && member.Enabled && strings.EqualFold(remote.Status, "active") && bindingValid && len(locks) == 0
 	reason := schedulingReason(config.Enabled, pool.Enabled, member.Enabled, remote.Status, bindingValid, locks)
-	decision := &SchedulingDecision{
+	decision = &SchedulingDecision{
 		RemoteAccountID: remoteAccountID, DesiredSchedulable: desired, RemoteSchedulable: remote.Schedulable,
 		Reason: reason, Locks: locks,
 	}
@@ -175,6 +196,61 @@ func (s *Service) ReconcileAccount(ctx context.Context, remoteAccountID int64, s
 	s.saveRemoteSchedulingSnapshot(updated, remoteAccountID)
 	_ = s.appendAudit(&pool.ID, &member.ID, &remoteAccountID, "schedulable_reconcile", source, true, before, updated, decision, "remote schedulable updated", "")
 	return decision, nil
+}
+
+func (s *Service) RunDueSchedulingReconciles(ctx context.Context) {
+	members, err := s.store.ListSchedulingDirtyMembers()
+	if err != nil {
+		if s.log != nil {
+			s.log.Warn("list due main station scheduling reconciles", "err", err)
+		}
+		return
+	}
+	now := s.now()
+	for i := range members {
+		member := &members[i]
+		if member.LastSchedulingAt != nil && now.Before(member.LastSchedulingAt.Add(schedulingRetryInterval)) {
+			continue
+		}
+		if member.RemoteAccountID == nil {
+			continue
+		}
+		if _, err := s.ReconcileAccount(ctx, *member.RemoteAccountID, "scheduler"); err != nil && s.log != nil {
+			s.log.Warn("scheduled main station scheduling reconcile", "err", err, "member_id", member.ID)
+		}
+	}
+}
+
+func (s *Service) reconcilePoolScheduling(ctx context.Context, poolID uint, source string) error {
+	members, err := s.store.ListMembers(poolID)
+	if err != nil {
+		return err
+	}
+	var reconcileErrors []error
+	for i := range members {
+		member := &members[i]
+		if member.RemoteAccountID == nil || member.BindingStatus == "invalid" || member.BindingStatus == "orphaned" {
+			continue
+		}
+		if _, reconcileErr := s.ReconcileAccount(ctx, *member.RemoteAccountID, source); reconcileErr != nil {
+			reconcileErrors = append(reconcileErrors, fmt.Errorf("member %d: %w", member.ID, reconcileErr))
+		}
+	}
+	return errors.Join(reconcileErrors...)
+}
+
+func (s *Service) reconcileAllScheduling(ctx context.Context, source string) error {
+	pools, err := s.store.ListAllPools()
+	if err != nil {
+		return err
+	}
+	var reconcileErrors []error
+	for i := range pools {
+		if reconcileErr := s.reconcilePoolScheduling(ctx, pools[i].ID, source); reconcileErr != nil {
+			reconcileErrors = append(reconcileErrors, fmt.Errorf("pool %d: %w", pools[i].ID, reconcileErr))
+		}
+	}
+	return errors.Join(reconcileErrors...)
 }
 
 func (s *Service) saveRemoteSchedulingSnapshot(remote *sub2api.AdminAccount, remoteAccountID int64) {

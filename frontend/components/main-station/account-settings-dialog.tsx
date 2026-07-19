@@ -117,7 +117,8 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
       })
       onSaved(saved)
       onOpenChange(false)
-      toast.success("账号设置已保存并应用")
+      if (saved.scheduling_dirty_at) toast.warning("账号设置已保存，启停状态将在后台自动重试同步")
+      else toast.success("账号设置已保存并应用")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "保存账号设置失败")
     } finally {

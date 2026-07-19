@@ -36,6 +36,7 @@ type ConfigDTO struct {
 	HealthIntervalSeconds   int                `json:"health_interval_seconds"`
 	HealthFailureThreshold  int                `json:"health_failure_threshold"`
 	HealthRecoveryThreshold int                `json:"health_recovery_threshold"`
+	RankingIntervalSeconds  int                `json:"ranking_interval_seconds"`
 	SyncIntervalSeconds     int                `json:"sync_interval_seconds"`
 	ObservationEvaluatedAt  *time.Time         `json:"observation_evaluated_at,omitempty"`
 	HealthObservedAt        *time.Time         `json:"health_observed_at,omitempty"`
@@ -56,6 +57,7 @@ type ConfigInput struct {
 	HealthIntervalSeconds   *int              `json:"health_interval_seconds,omitempty"`
 	HealthFailureThreshold  *int              `json:"health_failure_threshold,omitempty"`
 	HealthRecoveryThreshold *int              `json:"health_recovery_threshold,omitempty"`
+	RankingIntervalSeconds  *int              `json:"ranking_interval_seconds,omitempty"`
 	SyncIntervalSeconds     *int              `json:"sync_interval_seconds,omitempty"`
 }
 
@@ -110,6 +112,9 @@ type AccountMemberDTO struct {
 	LastHealthAt              *time.Time `json:"last_health_at,omitempty"`
 	ConsecutiveHealthSuccess  int        `json:"consecutive_health_success"`
 	ConsecutiveHealthFailure  int        `json:"consecutive_health_failure"`
+	SchedulingDirtyAt         *time.Time `json:"scheduling_dirty_at,omitempty"`
+	LastSchedulingAt          *time.Time `json:"last_scheduling_at,omitempty"`
+	LastSchedulingError       string     `json:"last_scheduling_error,omitempty"`
 }
 
 type GroupWorkspaceDTO struct {
@@ -122,6 +127,10 @@ type GroupWorkspaceDTO struct {
 	MarginPolicy                string                          `json:"margin_policy"`
 	LastStatus                  string                          `json:"last_status"`
 	LastEvaluatedAt             *time.Time                      `json:"last_evaluated_at,omitempty"`
+	RankingIntervalSeconds      int                             `json:"ranking_interval_seconds"`
+	RankingDirtyAt              *time.Time                      `json:"ranking_dirty_at,omitempty"`
+	LastRankingAt               *time.Time                      `json:"last_ranking_at,omitempty"`
+	LastRankingError            string                          `json:"last_ranking_error,omitempty"`
 	AccountCount                int                             `json:"account_count"`
 	ManagedAccountCount         int                             `json:"managed_account_count"`
 }
@@ -133,6 +142,7 @@ type GroupSettingsInput struct {
 	RateSortDirection           string `json:"rate_sort_direction"`
 	HealthPolicy                string `json:"health_policy"`
 	MarginPolicy                string `json:"margin_policy"`
+	RankingIntervalSeconds      int    `json:"ranking_interval_seconds"`
 }
 
 type Page[T any] struct {
@@ -153,6 +163,7 @@ type PoolInput struct {
 	RateSortDirection           string `json:"rate_sort_direction"`
 	HealthPolicy                string `json:"health_policy"`
 	MarginPolicy                string `json:"margin_policy"`
+	RankingIntervalSeconds      int    `json:"ranking_interval_seconds"`
 	TargetGroupIDs              []uint `json:"target_group_ids"`
 }
 

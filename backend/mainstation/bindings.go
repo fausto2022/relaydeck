@@ -132,10 +132,10 @@ func (s *Service) BindMembersBatch(ctx context.Context, groupID uint, in Binding
 	}
 
 	if result.Succeeded > 0 {
-		if rankingErr := s.ReconcilePoolRanking(ctx, poolID, "member_bind_batch"); rankingErr != nil {
+		if rankingErr := s.markPoolRankingDirty(poolID); rankingErr != nil {
 			result.RankingError = rankingErr.Error()
 			if s.log != nil {
-				s.log.Warn("reconcile main station scheduling rank", "err", rankingErr, "pool_id", poolID)
+				s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", poolID)
 			}
 		}
 		_ = s.appendAudit(&poolID, nil, nil, "member_bind_batch", "manual", true, nil, nil, map[string]any{

@@ -261,7 +261,7 @@ func TestMainStationGroupsAreDirectAccountWorkspaces(t *testing.T) {
 		t.Fatalf("group accounts = %#v", accounts)
 	}
 	enabled := false
-	updated, err := service.UpdateGroupSettings(workspaces[0].Group.ID, GroupSettingsInput{
+	updated, err := service.UpdateGroupSettings(context.Background(), workspaces[0].Group.ID, GroupSettingsInput{
 		Enabled: &enabled, MinimumHealthyAccounts: 2, MinimumEffectiveConcurrency: 20, RateSortDirection: "desc",
 	})
 	if err != nil {
@@ -388,8 +388,8 @@ func TestBoundMemberIsUniqueAndBecomesOrphaned(t *testing.T) {
 	if member.BindingStatus != "manual_confirmed" || member.Status != "active" {
 		t.Fatalf("bound member = %#v", member)
 	}
-	if len(admin.schedulingUpdates) != 1 || admin.schedulingUpdates[0].Concurrency != 12 || admin.schedulingUpdates[0].LoadFactor != 12 || admin.schedulingUpdates[0].Priority != 1 {
-		t.Fatalf("bound scheduling updates = %#v", admin.schedulingUpdates)
+	if len(admin.schedulingUpdates) != 0 {
+		t.Fatalf("bound creation should defer ranking until the configured ranking tick: %#v", admin.schedulingUpdates)
 	}
 	if _, err := service.CreateMember(context.Background(), pool.ID, MemberInput{
 		OwnershipMode: "bound", SourceChannelID: channel.ID, RemoteAccountID: &remoteID,
@@ -491,7 +491,7 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	if request.Concurrency != channels.concurrency {
 		t.Fatalf("managed account concurrency = %d, want %d", request.Concurrency, channels.concurrency)
 	}
-	if request.Weight != channels.concurrency || request.LoadFactor != float64(channels.concurrency) || request.Priority != 1 {
+	if request.Weight != channels.concurrency || request.LoadFactor != float64(channels.concurrency) || request.Priority != 10 {
 		t.Fatalf("managed account automatic scheduling = %#v", request)
 	}
 	if len(admin.schedulableCalls) != 1 || !admin.schedulableCalls[0] {
@@ -513,8 +513,12 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		updated.HealthFailureThreshold != 20 || updated.HealthRecoveryThreshold != 4 {
 		t.Fatalf("updated managed member = %#v", updated)
 	}
-	if len(admin.updateRequests) != 1 || admin.updateRequests[0].Concurrency != 37 || admin.updateRequests[0].Priority != 9 || admin.updateRequests[0].LoadFactor != 37 {
-		t.Fatalf("update requests = %#v", admin.updateRequests)
+	if len(admin.updateRequests) != 0 {
+		t.Fatalf("scheduling-only edit should not run a full managed sync: %#v", admin.updateRequests)
+	}
+	service.RunDueRankings(context.Background())
+	if len(admin.schedulingUpdates) != 1 || admin.schedulingUpdates[0].Concurrency != 37 || admin.schedulingUpdates[0].Priority != 10 || admin.schedulingUpdates[0].LoadFactor != 37 {
+		t.Fatalf("deferred scheduling updates = %#v", admin.schedulingUpdates)
 	}
 
 	if err := service.DeleteMember(context.Background(), pool.ID, member.ID, DeleteMemberInput{Confirm: true}); err != nil {
@@ -523,9 +527,141 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	if len(admin.deletedAccounts) != 0 || len(channels.deletedKeys) != 0 {
 		t.Fatalf("default delete removed remote resources: accounts=%v keys=%v", admin.deletedAccounts, channels.deletedKeys)
 	}
-	if len(admin.schedulableCalls) != 3 || admin.schedulableCalls[2] {
+	if len(admin.schedulableCalls) != 2 || admin.schedulableCalls[1] {
 		t.Fatalf("delete schedulable calls = %#v", admin.schedulableCalls)
 	}
+}
+
+func TestUpdateBoundMemberEnabledReconcilesRemoteScheduling(t *testing.T) {
+	service, _, admin, pool, member := createBoundSchedulingMember(t)
+	admin.schedulableCalls = nil
+
+	disabled, err := service.UpdateMember(context.Background(), pool.ID, member.ID, MemberInput{
+		AccountName: member.AccountName, SourceChannelID: member.SourceChannelID,
+		Enabled: boolPtr(false), Priority: member.Priority, Concurrency: member.Concurrency,
+	})
+	if err != nil {
+		t.Fatalf("disable bound member: %v", err)
+	}
+	if disabled.Enabled || len(admin.schedulableCalls) != 1 || admin.schedulableCalls[0] {
+		t.Fatalf("disabled member=%#v calls=%#v", disabled, admin.schedulableCalls)
+	}
+	if disabled.SchedulingDirtyAt != nil || disabled.LastSchedulingAt == nil || disabled.LastSchedulingError != "" {
+		t.Fatalf("disabled scheduling state = %#v", disabled)
+	}
+
+	enabled, err := service.UpdateMember(context.Background(), pool.ID, member.ID, MemberInput{
+		AccountName: member.AccountName, SourceChannelID: member.SourceChannelID,
+		Enabled: boolPtr(true), Priority: member.Priority, Concurrency: member.Concurrency,
+	})
+	if err != nil {
+		t.Fatalf("enable bound member: %v", err)
+	}
+	if !enabled.Enabled || len(admin.schedulableCalls) != 2 || !admin.schedulableCalls[1] {
+		t.Fatalf("enabled member=%#v calls=%#v", enabled, admin.schedulableCalls)
+	}
+}
+
+func TestUpdateGroupEnabledReconcilesAllMembers(t *testing.T) {
+	service, _, admin, pool, _ := createBoundSchedulingMember(t)
+	admin.schedulableCalls = nil
+	groupIDs, err := service.store.ListPoolGroupIDs(pool.ID)
+	if err != nil || len(groupIDs) != 1 {
+		t.Fatalf("pool groups=%v err=%v", groupIDs, err)
+	}
+	workspaces, err := service.ListGroupWorkspaces(false)
+	if err != nil || len(workspaces) != 1 {
+		t.Fatalf("workspaces=%#v err=%v", workspaces, err)
+	}
+	workspace := workspaces[0]
+
+	disabled := false
+	if _, err := service.UpdateGroupSettings(context.Background(), groupIDs[0], GroupSettingsInput{
+		Enabled: &disabled, MinimumHealthyAccounts: workspace.MinimumHealthyAccounts,
+		MinimumEffectiveConcurrency: workspace.MinimumEffectiveConcurrency, RateSortDirection: workspace.RateSortDirection,
+		HealthPolicy: workspace.HealthPolicy, MarginPolicy: workspace.MarginPolicy,
+	}); err != nil {
+		t.Fatalf("disable group: %v", err)
+	}
+	if len(admin.schedulableCalls) != 1 || admin.schedulableCalls[0] {
+		t.Fatalf("disable group calls=%#v", admin.schedulableCalls)
+	}
+
+	enabled := true
+	if _, err := service.UpdateGroupSettings(context.Background(), groupIDs[0], GroupSettingsInput{
+		Enabled: &enabled, MinimumHealthyAccounts: workspace.MinimumHealthyAccounts,
+		MinimumEffectiveConcurrency: workspace.MinimumEffectiveConcurrency, RateSortDirection: workspace.RateSortDirection,
+		HealthPolicy: workspace.HealthPolicy, MarginPolicy: workspace.MarginPolicy,
+	}); err != nil {
+		t.Fatalf("enable group: %v", err)
+	}
+	if len(admin.schedulableCalls) != 2 || !admin.schedulableCalls[1] {
+		t.Fatalf("enable group calls=%#v", admin.schedulableCalls)
+	}
+}
+
+func TestSchedulingReconcileFailureIsRetried(t *testing.T) {
+	service, _, admin, pool, member := createBoundSchedulingMember(t)
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	admin.schedulableCalls = nil
+	admin.setSchedulableErr = errors.New("temporary scheduling failure")
+
+	updated, err := service.UpdateMember(context.Background(), pool.ID, member.ID, MemberInput{
+		AccountName: member.AccountName, SourceChannelID: member.SourceChannelID,
+		Enabled: boolPtr(false), Priority: member.Priority, Concurrency: member.Concurrency,
+	})
+	if err != nil {
+		t.Fatalf("save disabled member: %v", err)
+	}
+	if updated.SchedulingDirtyAt == nil || updated.LastSchedulingAt == nil || updated.LastSchedulingError == "" {
+		t.Fatalf("failed scheduling state = %#v", updated)
+	}
+
+	admin.setSchedulableErr = nil
+	now = now.Add(schedulingRetryInterval)
+	service.RunDueSchedulingReconciles(context.Background())
+	retried, err := service.store.FindMember(pool.ID, member.ID)
+	if err != nil {
+		t.Fatalf("reload retried member: %v", err)
+	}
+	if retried.SchedulingDirtyAt != nil || retried.LastSchedulingError != "" {
+		t.Fatalf("retried scheduling state = %#v", retried)
+	}
+	if len(admin.schedulableCalls) != 2 || admin.schedulableCalls[0] || admin.schedulableCalls[1] {
+		t.Fatalf("retry calls=%#v", admin.schedulableCalls)
+	}
+}
+
+func createBoundSchedulingMember(t *testing.T) (*Service, *gorm.DB, *fakeAdminClient, *PoolDTO, *storage.MainAccountPoolMember) {
+	t.Helper()
+	service, db, admin, _ := newTestService(t)
+	configureTestStation(t, service)
+	admin.groups = []sub2api.AdminGroup{{ID: 11, Name: "default", Platform: "openai", RateMultiplier: 1, Status: "active"}}
+	admin.accounts = []sub2api.AdminAccount{{
+		ID: 21, Name: "existing", Platform: "openai", Status: "active", Schedulable: true, Priority: 10, GroupIDs: []int64{11},
+	}}
+	if _, err := service.Sync(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	channel := createTestChannel(t, db)
+	groups, err := service.ListGroups(false)
+	if err != nil || len(groups) != 1 {
+		t.Fatalf("groups=%#v err=%v", groups, err)
+	}
+	pool, err := service.CreatePool(PoolInput{Name: "pool", Platform: "openai", TargetGroupIDs: []uint{groups[0].ID}})
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	remoteID := int64(21)
+	member, err := service.CreateMember(context.Background(), pool.ID, MemberInput{
+		OwnershipMode: "bound", SourceChannelID: channel.ID, RemoteAccountID: &remoteID,
+		ManualBindingConfirmed: true, Enabled: boolPtr(true), Priority: 1,
+	})
+	if err != nil {
+		t.Fatalf("create bound member: %v", err)
+	}
+	return service, db, admin, pool, member
 }
 
 func TestRecommendBindingsUsesEndpointNameAndSourceGroup(t *testing.T) {

@@ -49,6 +49,10 @@ func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO,
 			MarginPolicy:                pool.MarginPolicyJSON,
 			LastStatus:                  pool.LastStatus,
 			LastEvaluatedAt:             pool.LastEvaluatedAt,
+			RankingIntervalSeconds:      pool.RankingIntervalSeconds,
+			RankingDirtyAt:              pool.RankingDirtyAt,
+			LastRankingAt:               pool.LastRankingAt,
+			LastRankingError:            pool.LastRankingError,
 			AccountCount:                accountCount,
 			ManagedAccountCount:         len(members),
 		})
@@ -86,7 +90,7 @@ func (s *Service) GroupPoolID(groupID uint) (uint, error) {
 	return pool.ID, nil
 }
 
-func (s *Service) UpdateGroupSettings(groupID uint, in GroupSettingsInput) (*GroupWorkspaceDTO, error) {
+func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in GroupSettingsInput) (*GroupWorkspaceDTO, error) {
 	group, err := s.mainStationGroup(groupID)
 	if err != nil {
 		return nil, err
@@ -102,7 +106,9 @@ func (s *Service) UpdateGroupSettings(groupID uint, in GroupSettingsInput) (*Gro
 		return nil, err
 	}
 	before := *pool
+	enabledChanged := false
 	if in.Enabled != nil {
+		enabledChanged = pool.Enabled != *in.Enabled
 		pool.Enabled = *in.Enabled
 	}
 	pool.MinimumHealthyMembers = in.MinimumHealthyAccounts
@@ -110,12 +116,34 @@ func (s *Service) UpdateGroupSettings(groupID uint, in GroupSettingsInput) (*Gro
 	if strings.TrimSpace(in.RateSortDirection) != "" {
 		pool.RateSortDirection = strings.TrimSpace(in.RateSortDirection)
 	}
+	if err := validatePoolRankingInterval(in.RankingIntervalSeconds); err != nil {
+		return nil, err
+	}
+	pool.RankingIntervalSeconds = in.RankingIntervalSeconds
 	pool.HealthPolicyJSON = strings.TrimSpace(in.HealthPolicy)
 	pool.MarginPolicyJSON = strings.TrimSpace(in.MarginPolicy)
 	if err := s.store.UpdatePool(pool, []uint{group.ID}); err != nil {
 		return nil, err
 	}
-	_ = s.appendAudit(&pool.ID, nil, nil, "group_settings_update", "manual", true, before, pool, map[string]any{"group_id": group.ID}, "", "")
+	if err := s.markPoolRankingDirty(pool.ID); err != nil {
+		return nil, err
+	}
+	var schedulingErr error
+	if enabledChanged {
+		schedulingErr = s.reconcilePoolScheduling(ctx, pool.ID, "manual")
+		if schedulingErr != nil {
+			if s.log != nil {
+				s.log.Warn("group settings saved; scheduling reconcile queued for retry", "err", schedulingErr, "pool_id", pool.ID)
+			}
+		}
+	}
+	detail := ""
+	errText := ""
+	if schedulingErr != nil {
+		detail = "group settings saved; scheduling reconcile queued for retry"
+		errText = sanitizeText(schedulingErr.Error())
+	}
+	_ = s.appendAudit(&pool.ID, nil, nil, "group_settings_update", "manual", schedulingErr == nil, before, pool, map[string]any{"group_id": group.ID}, detail, errText)
 	items, err := s.ListGroupWorkspaces(false)
 	if err != nil {
 		return nil, err
@@ -226,6 +254,9 @@ func (s *Service) CreatePool(in PoolInput) (*PoolDTO, error) {
 	if err := s.store.CreatePool(item, groupIDs); err != nil {
 		return nil, err
 	}
+	if err := s.markPoolRankingDirty(item.ID); err != nil {
+		return nil, err
+	}
 	poolID := item.ID
 	_ = s.appendAudit(&poolID, nil, nil, "pool_create", "manual", true, nil, item, nil, "", "")
 	return s.GetPool(item.ID)
@@ -242,6 +273,9 @@ func (s *Service) UpdatePool(id uint, in PoolInput) (*PoolDTO, error) {
 		return nil, err
 	}
 	if err := s.store.UpdatePool(item, groupIDs); err != nil {
+		return nil, err
+	}
+	if err := s.markPoolRankingDirty(item.ID); err != nil {
 		return nil, err
 	}
 	poolID := item.ID
@@ -290,6 +324,10 @@ func (s *Service) poolFromInput(existing *storage.MainAccountPool, in PoolInput)
 	item.RateSortDirection = strings.TrimSpace(in.RateSortDirection)
 	item.HealthPolicyJSON = strings.TrimSpace(in.HealthPolicy)
 	item.MarginPolicyJSON = strings.TrimSpace(in.MarginPolicy)
+	if err := validatePoolRankingInterval(in.RankingIntervalSeconds); err != nil {
+		return nil, nil, err
+	}
+	item.RankingIntervalSeconds = in.RankingIntervalSeconds
 	if existing == nil {
 		item.Enabled = true
 	}
@@ -377,8 +415,8 @@ func (s *Service) CreateMember(ctx context.Context, poolID uint, in MemberInput)
 		if err != nil {
 			return nil, err
 		}
-		if rankingErr := s.ReconcilePoolRanking(ctx, poolID, "member_bind"); rankingErr != nil && s.log != nil {
-			s.log.Warn("reconcile main station scheduling rank", "err", rankingErr, "pool_id", poolID)
+		if rankingErr := s.markPoolRankingDirty(poolID); rankingErr != nil && s.log != nil {
+			s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", poolID)
 		}
 		return s.store.FindMember(poolID, member.ID)
 	default:
@@ -496,13 +534,47 @@ func (s *Service) UpdateMember(ctx context.Context, poolID, memberID uint, in Me
 		return nil, err
 	}
 	_ = s.appendAudit(&poolID, &memberID, member.RemoteAccountID, "member_update", "manual", true, before, member, nil, "", "")
-	if member.OwnershipMode == "managed" {
+	remoteConfigChanged := member.OwnershipMode == "managed" && managedRemoteConfigChanged(&before, member)
+	if remoteConfigChanged {
+		if before.Enabled != member.Enabled && member.RemoteAccountID != nil {
+			if member.Enabled {
+				if dirtyErr := s.store.MarkMemberSchedulingDirty(member.ID, s.now()); dirtyErr != nil {
+					return nil, dirtyErr
+				}
+			} else if _, reconcileErr := s.ReconcileAccount(ctx, *member.RemoteAccountID, "manual"); reconcileErr != nil && s.log != nil {
+				s.log.Warn("disable managed member before full sync", "err", reconcileErr, "member_id", member.ID)
+			}
+		}
 		return s.SyncMember(ctx, poolID, memberID)
 	}
-	if rankingErr := s.ReconcilePoolRanking(ctx, poolID, "member_update"); rankingErr != nil && s.log != nil {
-		s.log.Warn("reconcile main station scheduling rank", "err", rankingErr, "pool_id", poolID)
+	if before.Enabled != member.Enabled && member.RemoteAccountID != nil {
+		if _, reconcileErr := s.ReconcileAccount(ctx, *member.RemoteAccountID, "manual"); reconcileErr != nil {
+			if s.log != nil {
+				s.log.Warn("member settings saved; scheduling reconcile queued for retry", "err", reconcileErr, "member_id", member.ID)
+			}
+		}
+	}
+	if rankingErr := s.markPoolRankingDirty(poolID); rankingErr != nil && s.log != nil {
+		s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", poolID)
 	}
 	return s.store.FindMember(poolID, memberID)
+}
+
+func managedRemoteConfigChanged(before, after *storage.MainAccountPoolMember) bool {
+	if before == nil || after == nil {
+		return false
+	}
+	return before.AccountName != after.AccountName || before.SourceChannelID != after.SourceChannelID ||
+		!sameOptionalInt64(before.SourceGroupID, after.SourceGroupID) || before.SourceGroupName != after.SourceGroupName ||
+		!sameOptionalInt64(before.SourceAPIKeyID, after.SourceAPIKeyID) || !sameOptionalInt64(before.ProxyID, after.ProxyID) ||
+		before.RateConvertMode != after.RateConvertMode || before.RateConvertValueMicros != after.RateConvertValueMicros
+}
+
+func sameOptionalInt64(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func (s *Service) createBoundMember(poolID uint, in MemberInput) (*storage.MainAccountPoolMember, error) {
@@ -583,19 +655,28 @@ func (s *Service) SyncMember(ctx context.Context, poolID, memberID uint) (*stora
 	if member.OwnershipMode != "managed" {
 		return nil, errors.New("bound member configuration is not managed")
 	}
+	if member.RemoteAccountID != nil {
+		dirtyAt := s.now()
+		if err := s.store.MarkMemberSchedulingDirty(member.ID, dirtyAt); err != nil {
+			return nil, err
+		}
+		member.SchedulingDirtyAt = &dirtyAt
+	}
 	_, target, adminAPIKey, err := s.loadAdminTarget()
 	if err != nil {
 		return nil, s.failManagedMember(member, err)
 	}
 	client := s.adminFactory()
 	adminTarget := sub2api.AdminTarget{BaseURL: target.BaseURL, APIKey: adminAPIKey}
-	priorities, err := s.poolSchedulingPriorities(poolID)
-	if err != nil {
-		return nil, s.failManagedMember(member, err)
-	}
-	priority := priorities[member.ID]
-	if priority <= 0 {
-		priority = 1
+	priority := normalizeSchedulingPriority(member.Priority)
+	if member.RemoteAccountID == nil {
+		priorities, priorityErr := s.poolSchedulingPriorities(poolID)
+		if priorityErr != nil {
+			return nil, s.failManagedMember(member, priorityErr)
+		}
+		priority = priorities[member.ID]
+	} else if snapshot, snapshotErr := s.store.FindAccountSnapshot(*member.RemoteAccountID); snapshotErr == nil && snapshot.Priority > 0 {
+		priority = snapshot.Priority
 	}
 	request, secret, err := s.managedAccountRequest(ctx, pool, member, priority)
 	if err != nil {
@@ -679,8 +760,8 @@ func (s *Service) SyncMember(ctx context.Context, poolID, memberID uint) (*stora
 		return nil, err
 	}
 	_ = s.appendAudit(&poolID, &member.ID, &remoteID, "member_managed_sync", "manual", true, nil, member, nil, "initial health checks passed and scheduling was reconciled", "")
-	if rankingErr := s.ReconcilePoolRanking(ctx, poolID, "member_sync"); rankingErr != nil && s.log != nil {
-		s.log.Warn("reconcile main station scheduling rank", "err", rankingErr, "pool_id", poolID)
+	if rankingErr := s.markPoolRankingDirty(poolID); rankingErr != nil && s.log != nil {
+		s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", poolID)
 	}
 	return member, nil
 }
@@ -840,6 +921,9 @@ func (s *Service) DeleteMember(ctx context.Context, poolID, memberID uint, in De
 		if err := s.store.DeleteMember(poolID, memberID); err != nil {
 			return err
 		}
+		if err := s.markPoolRankingDirty(poolID); err != nil {
+			return err
+		}
 		_ = s.appendAudit(&poolID, &memberID, member.RemoteAccountID, "member_unbind", "manual", true, member, nil, nil, "bound remote resources were preserved", "")
 		return nil
 	}
@@ -870,6 +954,9 @@ func (s *Service) DeleteMember(ctx context.Context, poolID, memberID uint, in De
 		}
 	}
 	if err := s.store.DeleteMember(poolID, memberID); err != nil {
+		return err
+	}
+	if err := s.markPoolRankingDirty(poolID); err != nil {
 		return err
 	}
 	_ = s.appendAudit(&poolID, &memberID, member.RemoteAccountID, "member_delete", "manual", true, member, nil, map[string]any{

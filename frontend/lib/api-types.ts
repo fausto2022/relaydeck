@@ -629,6 +629,7 @@ export interface MainStationConfig {
   health_interval_seconds: number
   health_failure_threshold: number
   health_recovery_threshold: number
+  ranking_interval_seconds: number
   sync_interval_seconds: number
   observation_evaluated_at?: string | null
   health_observed_at?: string | null
@@ -710,6 +711,9 @@ export interface MainStationAccountMember {
   last_health_at?: string | null
   consecutive_health_success: number
   consecutive_health_failure: number
+  scheduling_dirty_at?: string | null
+  last_scheduling_at?: string | null
+  last_scheduling_error?: string
 }
 
 export interface MainStationGroupWorkspace {
@@ -720,6 +724,10 @@ export interface MainStationGroupWorkspace {
   rate_sort_direction: "asc" | "desc" | "stability"
   health_policy: string
   margin_policy: string
+  ranking_interval_seconds: number
+  ranking_dirty_at?: string | null
+  last_ranking_at?: string | null
+  last_ranking_error?: string
   last_status: "healthy" | "degraded" | "critical" | "unknown" | string
   last_evaluated_at?: string | null
   account_count: number
@@ -765,6 +773,9 @@ export interface MainStationMember {
   last_cost_source?: string
   last_cost_at?: string | null
   last_cost_expires_at?: string | null
+  scheduling_dirty_at?: string | null
+  last_scheduling_at?: string | null
+  last_scheduling_error?: string
   created_at: string
   updated_at: string
 }

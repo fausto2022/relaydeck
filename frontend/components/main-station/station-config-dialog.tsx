@@ -53,6 +53,7 @@ export function StationConfigDialog({
   const [healthIntervalSeconds, setHealthIntervalSeconds] = useState(30)
   const [healthFailureThreshold, setHealthFailureThreshold] = useState(10)
   const [healthRecoveryThreshold, setHealthRecoveryThreshold] = useState(3)
+  const [rankingIntervalSeconds, setRankingIntervalSeconds] = useState(30)
   const [syncIntervalSeconds, setSyncIntervalSeconds] = useState(300)
   const [modelCatalogs, setModelCatalogs] = useState<MainStationHealthModelCatalog[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
@@ -72,6 +73,7 @@ export function StationConfigDialog({
     setHealthIntervalSeconds(config?.health_interval_seconds ?? 30)
     setHealthFailureThreshold(config?.health_failure_threshold ?? 10)
     setHealthRecoveryThreshold(config?.health_recovery_threshold ?? 3)
+    setRankingIntervalSeconds(config?.ranking_interval_seconds ?? 30)
     setSyncIntervalSeconds(config?.sync_interval_seconds ?? 300)
     setModelCatalogs([])
     if (config?.configured) void loadHealthModels()
@@ -153,6 +155,10 @@ export function StationConfigDialog({
       toast.error("主站同步间隔必须在 30 到 86400 秒之间")
       return
     }
+    if (rankingIntervalSeconds < 5 || rankingIntervalSeconds > 86400) {
+      toast.error("全局重排间隔必须在 5 到 86400 秒之间")
+      return
+    }
     if (healthFailureThreshold < 1 || healthFailureThreshold > 100 || healthRecoveryThreshold < 1 || healthRecoveryThreshold > 100) {
       toast.error("失败和恢复次数必须在 1 到 100 之间")
       return
@@ -174,6 +180,7 @@ export function StationConfigDialog({
           health_interval_seconds: healthIntervalSeconds,
           health_failure_threshold: healthFailureThreshold,
           health_recovery_threshold: healthRecoveryThreshold,
+          ranking_interval_seconds: rankingIntervalSeconds,
           sync_interval_seconds: syncIntervalSeconds,
         }),
       })
@@ -254,9 +261,15 @@ export function StationConfigDialog({
               autoComplete="new-password"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="main-station-sync-interval">主站信息同步间隔（秒）</Label>
-            <Input id="main-station-sync-interval" type="number" min={30} max={86400} value={syncIntervalSeconds} onChange={(event) => setSyncIntervalSeconds(Number(event.target.value))} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="main-station-sync-interval">主站信息同步间隔（秒）</Label>
+              <Input id="main-station-sync-interval" type="number" min={30} max={86400} value={syncIntervalSeconds} onChange={(event) => setSyncIntervalSeconds(Number(event.target.value))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="main-station-ranking-interval">账号优先级重排间隔（秒）</Label>
+              <Input id="main-station-ranking-interval" type="number" min={5} max={86400} value={rankingIntervalSeconds} onChange={(event) => setRankingIntervalSeconds(Number(event.target.value))} />
+            </div>
           </div>
           {config?.configured ? (
             <div className="space-y-3 border-t pt-4">

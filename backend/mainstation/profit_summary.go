@@ -111,7 +111,7 @@ func (s *Service) ProfitSummary(days int) (*ProfitSummary, error) {
 func (s *Service) applyUpstreamCosts(summary *ProfitSummary, days int, todayKey string) error {
 	var trendTodayCost float64
 	if s.rates != nil {
-		trend, err := s.rates.AggregateCostTrend(days)
+		trend, err := s.rates.AggregateCostTrendAt(days, s.now())
 		if err != nil {
 			return err
 		}

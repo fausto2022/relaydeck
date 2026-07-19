@@ -144,8 +144,8 @@ func (s *Service) EvaluatePool(ctx context.Context, poolID uint, source string) 
 	if _, err := s.EvaluatePoolCapacity(ctx, pool.ID); err != nil {
 		return nil, err
 	}
-	if rankingErr := s.ReconcilePoolRanking(ctx, pool.ID, source); rankingErr != nil && s.log != nil {
-		s.log.Warn("reconcile main station scheduling rank", "err", rankingErr, "pool_id", pool.ID)
+	if rankingErr := s.markPoolRankingDirty(pool.ID); rankingErr != nil && s.log != nil {
+		s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", pool.ID)
 	}
 	_ = s.appendAudit(&pool.ID, nil, nil, "pool_profit_evaluate", source, true, nil, result, nil, "", "")
 	return result, nil

@@ -130,6 +130,9 @@ func (s *Service) sync(ctx context.Context, source string) (*SyncResult, error) 
 		result.OrphanedMembers = len(orphanedMembers)
 		s.notifyOrphanedMembers(ctx, orphanedMembers)
 	}
+	if err := s.store.MarkAllPoolRankingsDirty(syncedAt); err != nil && s.log != nil {
+		s.log.Warn("mark main station rankings dirty after sync", "err", err)
+	}
 	_ = s.appendAudit(nil, nil, nil, "main_station_sync", source, true, nil, result, nil, "", "")
 	return result, nil
 }
@@ -245,6 +248,9 @@ func (s *Service) accountDTO(item storage.MainStationAccountSnapshot) AccountDTO
 			LastHealthAt:              member.LastHealthAt,
 			ConsecutiveHealthSuccess:  member.ConsecutiveHealthSuccess,
 			ConsecutiveHealthFailure:  member.ConsecutiveHealthFailure,
+			SchedulingDirtyAt:         member.SchedulingDirtyAt,
+			LastSchedulingAt:          member.LastSchedulingAt,
+			LastSchedulingError:       member.LastSchedulingError,
 		}
 	}
 	return dto

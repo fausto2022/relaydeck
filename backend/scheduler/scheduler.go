@@ -38,6 +38,8 @@ type upstreamSyncService interface {
 type mainStationHealthService interface {
 	RunDueHealthChecks(ctx context.Context)
 	SyncForScheduler(ctx context.Context)
+	RunDueSchedulingReconciles(ctx context.Context)
+	RunDueRankings(ctx context.Context)
 	RunProfitEvaluation(ctx context.Context)
 }
 
@@ -110,6 +112,8 @@ func (s *Scheduler) runMainStationHealth() {
 	defer cancel()
 	s.mainStation.RunDueHealthChecks(ctx)
 	s.mainStation.SyncForScheduler(ctx)
+	s.mainStation.RunDueSchedulingReconciles(ctx)
+	s.mainStation.RunDueRankings(ctx)
 }
 
 func (s *Scheduler) Stop() {
