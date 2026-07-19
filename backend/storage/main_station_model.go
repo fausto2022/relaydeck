@@ -170,7 +170,7 @@ func (MainAccountPoolMember) TableName() string { return "main_account_pool_memb
 type MainAccountHealthCheck struct {
 	ID                  uint      `gorm:"primaryKey" json:"id"`
 	PoolID              uint      `gorm:"not null;index" json:"pool_id"`
-	MemberID            uint      `gorm:"not null;index" json:"member_id"`
+	MemberID            uint      `gorm:"not null;index;index:idx_health_member_created,priority:1" json:"member_id"`
 	RemoteAccountID     int64     `gorm:"not null;index" json:"remote_account_id"`
 	Level               string    `gorm:"size:8;not null;index" json:"level"`
 	Protocol            string    `gorm:"size:32" json:"protocol,omitempty"`
@@ -188,7 +188,7 @@ type MainAccountHealthCheck struct {
 	TriggeredAction     string    `gorm:"size:64" json:"triggered_action,omitempty"`
 	StartedAt           time.Time `gorm:"not null;index" json:"started_at"`
 	FinishedAt          time.Time `gorm:"not null" json:"finished_at"`
-	CreatedAt           time.Time `gorm:"not null;index" json:"created_at"`
+	CreatedAt           time.Time `gorm:"not null;index;index:idx_health_member_created,priority:2" json:"created_at"`
 }
 
 func (MainAccountHealthCheck) TableName() string { return "main_account_health_checks" }

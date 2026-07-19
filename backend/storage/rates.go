@@ -128,6 +128,25 @@ func (r *Rates) AppendCost(s *CostSnapshot) error {
 	return r.db.Create(s).Error
 }
 
+// CostHistorySince 返回指定渠道从 since 开始的最近消费采样，结果按时间升序排列。
+func (r *Rates) CostHistorySince(channelID uint, since time.Time, limit int) ([]CostSnapshot, error) {
+	if limit <= 0 {
+		limit = 12000
+	}
+	var list []CostSnapshot
+	if err := r.db.
+		Where("channel_id = ? AND sampled_at >= ?", channelID, since).
+		Order("sampled_at DESC, id DESC").
+		Limit(limit).
+		Find(&list).Error; err != nil {
+		return nil, err
+	}
+	for left, right := 0, len(list)-1; left < right; left, right = left+1, right-1 {
+		list[left], list[right] = list[right], list[left]
+	}
+	return list, nil
+}
+
 // DeleteBalanceSnapshotsBefore 删除 sampled_at < cutoff 的余额快照，返回删除行数。
 func (r *Rates) DeleteBalanceSnapshotsBefore(cutoff time.Time) (int64, error) {
 	res := r.db.Where("sampled_at < ?", cutoff).Delete(&BalanceSnapshot{})

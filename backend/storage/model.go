@@ -164,9 +164,9 @@ func (UpstreamAnnouncement) TableName() string { return "upstream_announcements"
 // BalanceSnapshot 周期性余额采样，用于图表展示。
 type BalanceSnapshot struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	ChannelID uint      `gorm:"not null;index" json:"channel_id"`
+	ChannelID uint      `gorm:"not null;index;index:idx_balance_channel_sampled,priority:1" json:"channel_id"`
 	Balance   float64   `gorm:"not null" json:"balance"`
-	SampledAt time.Time `gorm:"not null;index" json:"sampled_at"`
+	SampledAt time.Time `gorm:"not null;index;index:idx_balance_channel_sampled,priority:2" json:"sampled_at"`
 }
 
 func (BalanceSnapshot) TableName() string { return "balance_snapshots" }
@@ -174,9 +174,9 @@ func (BalanceSnapshot) TableName() string { return "balance_snapshots" }
 // CostSnapshot 周期性消费采样，用于图表展示。
 type CostSnapshot struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	ChannelID uint      `gorm:"not null;index" json:"channel_id"`
+	ChannelID uint      `gorm:"not null;index;index:idx_cost_channel_sampled,priority:1" json:"channel_id"`
 	TodayCost float64   `gorm:"not null" json:"today_cost"`
-	SampledAt time.Time `gorm:"not null;index" json:"sampled_at"`
+	SampledAt time.Time `gorm:"not null;index;index:idx_cost_channel_sampled,priority:2" json:"sampled_at"`
 }
 
 func (CostSnapshot) TableName() string { return "cost_snapshots" }

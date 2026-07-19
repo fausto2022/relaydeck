@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -14,6 +15,23 @@ import (
 	"github.com/fausto2022/relaydeck/backend/progress"
 	"github.com/fausto2022/relaydeck/backend/storage"
 )
+
+const (
+	rechargeHistoryDays   = 7
+	rechargeRecentWindow  = 6 * time.Hour
+	rechargeMinimumSpan   = 2 * time.Hour
+	rechargeSafetyFactor  = 1.2
+	rechargeMinimumAmount = 10.0
+	rechargeRoundingUnit  = 10.0
+)
+
+type rechargeSuggestion struct {
+	RecommendedAmount     float64
+	Forecast24Hours       float64
+	HourlyUsage           float64
+	EstimatedBalanceHours float64
+	Basis                 string
+}
 
 // Service 监控扫描服务。
 type Service struct {
@@ -113,11 +131,13 @@ func (s *Service) RefreshBalance(ctx context.Context, c *storage.Channel) error 
 	if err := s.channels.UpdateBalance(c.ID, res.Balance, &sampledAt, ""); err != nil {
 		return err
 	}
-	_ = s.rates.AppendBalance(&storage.BalanceSnapshot{
+	if err := s.rates.AppendBalance(&storage.BalanceSnapshot{
 		ChannelID: c.ID,
 		Balance:   res.Balance,
 		SampledAt: sampledAt,
-	})
+	}); err != nil {
+		s.log.Warn("append balance snapshot failed", "channel", c.Name, "err", err)
+	}
 	progress.OK(ctx, progress.StageBalance, fmt.Sprintf("当前余额 %.4f", res.Balance),
 		map[string]any{"balance": res.Balance})
 
@@ -125,37 +145,174 @@ func (s *Service) RefreshBalance(ctx context.Context, c *storage.Channel) error 
 	costRes, err := conn.GetCosts(ctx, resolved, session)
 	if err != nil {
 		progress.Fail(ctx, progress.StageCost, err.Error())
+		s.notifyLowBalance(ctx, c, res.Balance, sampledAt, nil)
 		s.notifyError(ctx, c, storage.EventMonitorFailed, "消费采集失败", err)
 		return err
 	}
 	if err := s.channels.UpdateCosts(c.ID, costRes.TodayCost, costRes.TotalCost); err != nil {
 		progress.Fail(ctx, progress.StageCost, err.Error())
+		s.notifyLowBalance(ctx, c, res.Balance, sampledAt, &costRes.TodayCost)
 		return err
 	}
-	_ = s.rates.AppendCost(&storage.CostSnapshot{
+	if err := s.rates.AppendCost(&storage.CostSnapshot{
 		ChannelID: c.ID,
 		TodayCost: costRes.TodayCost,
 		SampledAt: sampledAt,
-	})
+	}); err != nil {
+		s.log.Warn("append cost snapshot failed", "channel", c.Name, "err", err)
+	}
 	progress.OK(ctx, progress.StageCost, fmt.Sprintf("今日 %0.4f / 累计 %0.4f", costRes.TodayCost, costRes.TotalCost),
 		map[string]any{"today_cost": costRes.TodayCost, "total_cost": costRes.TotalCost})
 
-	if c.BalanceThreshold > 0 && res.Balance < c.BalanceThreshold {
-		body := notify.MarkdownDetails(
-			"渠道余额已低于预警阈值。",
-			notify.Detail("渠道", c.Name),
-			notify.Detail("当前余额", fmt.Sprintf("%.4f", res.Balance)),
-			notify.Detail("预警阈值", fmt.Sprintf("%.4f", c.BalanceThreshold)),
-			notify.Detail("检测时间", sampledAt.Format("2006-01-02 15:04:05")),
-		) + notify.MarkdownNote("处理建议", "请及时检查上游余额并安排充值，避免渠道因余额不足中断服务。")
-		_ = s.dispatcher.Dispatch(ctx, notify.Message{
-			Event:     storage.EventBalanceLow,
-			ChannelID: c.ID,
-			Subject:   fmt.Sprintf("余额不足 · %s", c.Name),
-			Body:      body,
-		})
-	}
+	s.notifyLowBalance(ctx, c, res.Balance, sampledAt, &costRes.TodayCost)
 	return nil
+}
+
+func (s *Service) notifyLowBalance(ctx context.Context, c *storage.Channel, balance float64, sampledAt time.Time, todayCost *float64) {
+	if c.BalanceThreshold <= 0 || balance >= c.BalanceThreshold {
+		return
+	}
+	fields := []notify.MarkdownField{
+		notify.Detail("渠道", c.Name),
+		notify.Detail("当前余额", fmt.Sprintf("%.2f 元", balance)),
+		notify.Detail("预警阈值", fmt.Sprintf("%.2f 元", c.BalanceThreshold)),
+	}
+	if todayCost != nil {
+		fields = append(fields, notify.Detail("今日已消费", fmt.Sprintf("%.2f 元", *todayCost)))
+	}
+
+	snapshots, err := s.rates.CostHistorySince(c.ID, sampledAt.AddDate(0, 0, -rechargeHistoryDays), 0)
+	note := "请及时检查上游余额并安排充值，避免渠道因余额不足中断服务。"
+	if err != nil {
+		s.log.Warn("load cost history for recharge suggestion failed", "channel", c.Name, "err", err)
+	} else {
+		suggestion := calculateRechargeSuggestion(snapshots, balance, c.BalanceThreshold, todayCost, sampledAt)
+		fields = append(fields,
+			notify.Detail("预计未来 24 小时消耗", fmt.Sprintf("%.2f 元", suggestion.Forecast24Hours)),
+			notify.Detail("建议充值金额", fmt.Sprintf("%.0f 元", suggestion.RecommendedAmount)),
+			notify.Detail("估算依据", suggestion.Basis),
+		)
+		if suggestion.EstimatedBalanceHours > 0 {
+			fields = append(fields, notify.Detail("当前余额预计可用", formatBalanceHours(suggestion.EstimatedBalanceHours)))
+		}
+		note = "建议金额按未来 24 小时预计消耗增加 20% 余量，并保留预警阈值；最低 10 元，按 10 元向上取整。"
+	}
+	fields = append(fields, notify.Detail("检测时间", sampledAt.Format("2006-01-02 15:04:05")))
+	body := notify.MarkdownDetails("渠道余额已低于预警阈值。", fields...) + notify.MarkdownNote("处理建议", note)
+	if err := s.dispatcher.Dispatch(ctx, notify.Message{
+		Event:     storage.EventBalanceLow,
+		ChannelID: c.ID,
+		Subject:   fmt.Sprintf("余额不足 · %s", c.Name),
+		Body:      body,
+	}); err != nil {
+		s.log.Warn("dispatch low balance notification failed", "channel", c.Name, "err", err)
+	}
+}
+
+func calculateRechargeSuggestion(snapshots []storage.CostSnapshot, balance, threshold float64, todayCost *float64, now time.Time) rechargeSuggestion {
+	location := now.Location()
+	today := dayKey(now.In(location))
+	recentSince := now.Add(-rechargeRecentWindow)
+	var recentFirst, recentLast *storage.CostSnapshot
+	dailyCosts := make(map[string]float64)
+	latestTodayCost := 0.0
+	for i := range snapshots {
+		snapshot := snapshots[i]
+		if snapshot.SampledAt.After(now) {
+			continue
+		}
+		key := dayKey(snapshot.SampledAt.In(location))
+		if key != today {
+			dailyCosts[key] = snapshot.TodayCost
+			continue
+		}
+		latestTodayCost = snapshot.TodayCost
+		if snapshot.SampledAt.Before(recentSince) {
+			continue
+		}
+		if recentFirst == nil {
+			item := snapshot
+			recentFirst = &item
+		}
+		item := snapshot
+		recentLast = &item
+	}
+	if todayCost != nil {
+		latestTodayCost = *todayCost
+	}
+
+	recentHourly := 0.0
+	if recentFirst != nil && recentLast != nil {
+		span := recentLast.SampledAt.Sub(recentFirst.SampledAt)
+		delta := recentLast.TodayCost - recentFirst.TodayCost
+		if span >= rechargeMinimumSpan && delta > 0 {
+			recentHourly = delta / span.Hours()
+		}
+	}
+
+	historicalDaily := 0.0
+	for _, value := range dailyCosts {
+		if value > 0 {
+			historicalDaily += value
+		}
+	}
+	if len(dailyCosts) > 0 {
+		historicalDaily /= float64(len(dailyCosts))
+	}
+
+	todayStart := time.Date(now.In(location).Year(), now.In(location).Month(), now.In(location).Day(), 0, 0, 0, 0, location)
+	elapsedHours := now.Sub(todayStart).Hours()
+	todayHourly := 0.0
+	if elapsedHours >= rechargeMinimumSpan.Hours() && latestTodayCost > 0 {
+		todayHourly = latestTodayCost / elapsedHours
+	}
+	hourlyUsage := math.Max(recentHourly, math.Max(historicalDaily/24, todayHourly))
+	forecast24Hours := hourlyUsage * 24
+	recommendedAmount := (forecast24Hours * rechargeSafetyFactor) + threshold - balance
+	if recommendedAmount < rechargeMinimumAmount {
+		recommendedAmount = rechargeMinimumAmount
+	}
+	recommendedAmount = math.Ceil(recommendedAmount/rechargeRoundingUnit) * rechargeRoundingUnit
+
+	basis := "消费样本不足，按预警阈值和最低充值金额估算"
+	parts := make([]string, 0, 3)
+	if recentHourly > 0 {
+		parts = append(parts, fmt.Sprintf("近 6 小时 %.2f 元/小时", recentHourly))
+	}
+	if len(dailyCosts) > 0 {
+		parts = append(parts, fmt.Sprintf("近 %d 天日均 %.2f 元", len(dailyCosts), historicalDaily))
+	}
+	if todayHourly > 0 {
+		parts = append(parts, fmt.Sprintf("今日平均 %.2f 元/小时", todayHourly))
+	}
+	if len(parts) > 0 {
+		basis = strings.Join(parts, "；") + "，取较高值"
+	}
+	estimatedBalanceHours := 0.0
+	if hourlyUsage > 0 && balance > 0 {
+		estimatedBalanceHours = balance / hourlyUsage
+	}
+	return rechargeSuggestion{
+		RecommendedAmount:     recommendedAmount,
+		Forecast24Hours:       forecast24Hours,
+		HourlyUsage:           hourlyUsage,
+		EstimatedBalanceHours: estimatedBalanceHours,
+		Basis:                 basis,
+	}
+}
+
+func formatBalanceHours(hours float64) string {
+	if hours < 1 {
+		return "不足 1 小时"
+	}
+	if hours < 24 {
+		return fmt.Sprintf("%.1f 小时", hours)
+	}
+	return fmt.Sprintf("%.1f 天", hours/24)
+}
+
+func dayKey(value time.Time) string {
+	return value.Format("2006-01-02")
 }
 
 // RefreshRates 单个渠道倍率刷新，可被 API 手动触发。

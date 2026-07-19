@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -152,6 +153,119 @@ func TestRefreshRatesSyncAnnouncementsAndNotify(t *testing.T) {
 	}
 	if len(logs) != 1 || logs[0].Event != storage.EventAnnouncement || !logs[0].Success {
 		t.Fatalf("logs = %#v", logs)
+	}
+}
+
+func TestCalculateRechargeSuggestionUsesRecentAndDailyConsumption(t *testing.T) {
+	location := time.FixedZone("Asia/Shanghai", 8*60*60)
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, location)
+	snapshots := []storage.CostSnapshot{
+		{ChannelID: 1, TodayCost: 120, SampledAt: time.Date(2026, 7, 18, 23, 45, 0, 0, location)},
+		{ChannelID: 1, TodayCost: 30, SampledAt: now.Add(-6 * time.Hour)},
+		{ChannelID: 1, TodayCost: 90, SampledAt: now},
+	}
+	todayCost := 90.0
+
+	suggestion := calculateRechargeSuggestion(snapshots, 20, 50, &todayCost, now)
+
+	if suggestion.HourlyUsage != 10 || suggestion.Forecast24Hours != 240 || suggestion.RecommendedAmount != 320 {
+		t.Fatalf("suggestion = %#v", suggestion)
+	}
+	if suggestion.EstimatedBalanceHours != 2 || !strings.Contains(suggestion.Basis, "近 6 小时") || !strings.Contains(suggestion.Basis, "近 1 天") {
+		t.Fatalf("suggestion basis = %#v", suggestion)
+	}
+}
+
+func TestCalculateRechargeSuggestionUsesMinimumRecharge(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	suggestion := calculateRechargeSuggestion(nil, 4, 5, nil, now)
+
+	if suggestion.Forecast24Hours != 0 || suggestion.RecommendedAmount != rechargeMinimumAmount {
+		t.Fatalf("suggestion = %#v", suggestion)
+	}
+	if !strings.Contains(suggestion.Basis, "消费样本不足") {
+		t.Fatalf("suggestion basis = %q", suggestion.Basis)
+	}
+}
+
+func TestRefreshBalanceStillSendsLowBalanceSuggestionWhenCostCollectionFails(t *testing.T) {
+	db := openTestDB(t)
+	channels := storage.NewChannels(db)
+	authSessions := storage.NewAuthSessions(db)
+	captchas := storage.NewCaptchas(db)
+	announcements := storage.NewUpstreamAnnouncements(db)
+	rates := storage.NewRates(db)
+	monitorLogs := storage.NewMonitorLogs(db)
+	notifies := storage.NewNotifications(db)
+	cipher, err := crypto.NewCipher("secret")
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+
+	type webhookMessage struct {
+		Event string `json:"event"`
+		Body  string `json:"body"`
+	}
+	messages := make(chan webhookMessage, 1)
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var message webhookMessage
+		if err := json.NewDecoder(r.Body).Decode(&message); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		messages <- message
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer webhookSrv.Close()
+
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/auth/me":
+			_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"balance":4}}`))
+		case "/api/v1/usage/dashboard/stats":
+			http.Error(w, "temporary failure", http.StatusBadGateway)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer apiSrv.Close()
+
+	channelItem := &storage.Channel{
+		Name:             "demo",
+		Type:             storage.ChannelTypeSub2API,
+		SiteURL:          apiSrv.URL,
+		Username:         "u",
+		PasswordCipher:   mustEncrypt(t, cipher, `{"access_token":"token"}`),
+		CredentialMode:   storage.CredentialModeToken,
+		MonitorEnabled:   true,
+		BalanceThreshold: 5,
+	}
+	if err := channels.Create(channelItem); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	if err := notifies.CreateChannel(&storage.NotificationChannel{
+		Name:          "webhook",
+		Type:          storage.NotifyWebhook,
+		ConfigCipher:  mustEncrypt(t, cipher, `{"url":"`+webhookSrv.URL+`"}`),
+		Subscriptions: fmt.Sprintf(`[{"channel_ids":[%d],"mode":"all","events":["balance_low"]}]`, channelItem.ID),
+	}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+
+	channelSvc := channel.NewService(channels, authSessions, captchas, rates, monitorLogs, cipher)
+	dispatcher := notify.NewDispatcher(notifies, cipher, slog.New(slog.NewTextHandler(io.Discard, nil)), notify.Policy{SendMaxAttempts: 1})
+	service := NewService(channels, announcements, rates, monitorLogs, channelSvc, dispatcher, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := service.RefreshBalance(context.Background(), channelItem); err == nil {
+		t.Fatal("cost collection failure was not returned")
+	}
+	select {
+	case message := <-messages:
+		if message.Event != string(storage.EventBalanceLow) || !strings.Contains(message.Body, "建议充值金额") || !strings.Contains(message.Body, "10 元") {
+			t.Fatalf("message = %#v", message)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("low balance notification was not sent")
 	}
 }
 
