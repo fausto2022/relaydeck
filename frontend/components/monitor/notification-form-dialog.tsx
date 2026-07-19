@@ -33,6 +33,11 @@ import { ChevronsUpDown } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { useTriggerRefresh } from "@/lib/refresh-context"
 import { useChannels, useMultiChannelRates } from "@/lib/queries"
+import {
+  ALL_NOTIFICATION_EVENTS,
+  NOTIFICATION_EVENT_OPTIONS,
+  RATE_NOTIFICATION_EVENTS,
+} from "@/lib/notification-events"
 import type {
   NotificationChannel,
   NotificationChannelType,
@@ -107,50 +112,7 @@ function emptyConfig(): ConfigState {
   }
 }
 
-const notificationEventOptions: Array<{ id: string; label: string; events: NotificationEvent[] }> = [
-  { id: "balance_low", label: "余额不足", events: ["balance_low"] },
-  { id: "rate_changed", label: "倍率变化", events: ["rate_changed"] },
-  {
-    id: "rate_group_changed",
-    label: "分组变动",
-    events: ["rate_structure_changed", "rate_added", "rate_removed"],
-  },
-  {
-    id: "upstream_sync_group_changed",
-    label: "同步分组变动",
-    events: ["upstream_sync_group_changed"],
-  },
-  {
-    id: "main_account_scheduling",
-    label: "主站账号启停",
-    events: ["main_member_disabled", "main_member_reenabled"],
-  },
-  { id: "announcement", label: "上游公告", events: ["announcement"] },
-  { id: "login_failed", label: "登录失败", events: ["login_failed"] },
-  { id: "captcha_failed", label: "验证码失败", events: ["captcha_failed"] },
-  { id: "monitor_failed", label: "采集失败", events: ["monitor_failed"] },
-  {
-    id: "subscription_notice",
-    label: "订阅通知",
-    events: [
-      "subscription_daily_remaining_low",
-      "subscription_weekly_remaining_low",
-      "subscription_monthly_remaining_low",
-      "subscription_expiring",
-    ],
-  },
-]
-
-const allNotificationEvents = Array.from(
-  new Set(notificationEventOptions.flatMap((option) => option.events)),
-)
-
-const rateEventSet = new Set<NotificationEvent>([
-  "rate_changed",
-  "rate_structure_changed",
-  "rate_added",
-  "rate_removed",
-])
+const rateEventSet = new Set<NotificationEvent>(RATE_NOTIFICATION_EVENTS)
 
 function hasRateEvents(row: SubRow) {
   return row.event_mode === "all" || row.events.some((event) => rateEventSet.has(event))
@@ -809,12 +771,12 @@ function SubRowEditor({ rowIndex, row, channels, onChange, onRemove, disabled }:
   const allGroupsSelected = groupNames.length > 0 && selectedGroupCount === groupNames.length
   const someGroupsSelected = selectedGroupCount > 0 && !allGroupsSelected
   const allGroupsChecked = allGroupsSelected ? true : someGroupsSelected ? "indeterminate" : false
-  const selectedEventCount = notificationEventOptions.filter((option) =>
+  const selectedEventCount = NOTIFICATION_EVENT_OPTIONS.filter((option) =>
     option.events.some((event) => row.events.includes(event)),
   ).length
   const allEventsSelected =
-    allNotificationEvents.length > 0 &&
-    allNotificationEvents.every((event) => row.events.includes(event))
+    ALL_NOTIFICATION_EVENTS.length > 0 &&
+    ALL_NOTIFICATION_EVENTS.every((event) => row.events.includes(event))
   const someEventsSelected = row.events.length > 0 && !allEventsSelected
   const allEventsChecked = allEventsSelected ? true : someEventsSelected ? "indeterminate" : false
 
@@ -973,7 +935,7 @@ function SubRowEditor({ rowIndex, row, channels, onChange, onRemove, disabled }:
                 checked={allEventsChecked}
                 onCheckedChange={(v) =>
                   onChange({
-                    events: v === true ? allNotificationEvents : [],
+                    events: v === true ? ALL_NOTIFICATION_EVENTS : [],
                   })
                 }
                 disabled={disabled}
@@ -981,12 +943,12 @@ function SubRowEditor({ rowIndex, row, channels, onChange, onRemove, disabled }:
               <span>全选事件</span>
             </label>
             <span className="text-[11px] text-muted-foreground">
-              已选 {selectedEventCount}/{notificationEventOptions.length}
+              已选 {selectedEventCount}/{NOTIFICATION_EVENT_OPTIONS.length}
             </span>
           </div>
           <ScrollArea className="max-h-56 rounded border border-border bg-muted/30">
             <div className="grid grid-cols-1 gap-1.5 p-2 sm:grid-cols-2">
-              {notificationEventOptions.map((option) => {
+              {NOTIFICATION_EVENT_OPTIONS.map((option) => {
                 const id = `event-${rowIndex}-${option.id}`
                 const checked = eventOptionChecked(option.events)
                 return (

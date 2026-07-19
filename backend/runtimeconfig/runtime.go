@@ -11,6 +11,7 @@ import (
 	"github.com/fausto2022/relaydeck/backend/config"
 	"github.com/fausto2022/relaydeck/backend/notify"
 	"github.com/fausto2022/relaydeck/backend/scheduler"
+	"github.com/fausto2022/relaydeck/backend/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -144,6 +145,7 @@ func (m *Manager) ApplyFromFile() (*ApplyResult, error) {
 	if dispatcher != nil {
 		dispatcher.UpdatePolicy(notify.Policy{
 			BatchRateChanges:                         cfg.Notifications.BatchRateChanges,
+			DisabledEvents:                           append([]storage.NotificationEvent(nil), cfg.Notifications.DisabledEvents...),
 			MinChangePct:                             cfg.Notifications.MinChangePct,
 			BalanceLowCooldown:                       time.Duration(cfg.Notifications.BalanceLowCooldownMinutes) * time.Minute,
 			SubscriptionDailyRemainingThresholdPct:   cfg.Notifications.SubscriptionDailyRemainingThresholdPct,

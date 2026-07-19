@@ -37,9 +37,11 @@ import type {
   CaptchaConfig,
   NotificationChannel,
   NotificationChannelType,
+  NotificationEvent,
   SystemConfig,
 } from "@/lib/api-types";
 import { decimal, money, relativeTime } from "@/lib/format";
+import { NOTIFICATION_EVENT_OPTIONS } from "@/lib/notification-events";
 import {
   useCaptchaConfigs,
   useNotificationLogs,
@@ -138,6 +140,25 @@ export default function SettingsPage() {
   const recentLogs = notificationLogs.data?.items ?? [];
   const lastSent = recentLogs[0]?.sent_at ?? null;
   const recentFailed = recentLogs.filter((item) => !item.success).length;
+  const disabledNotificationEvents = new Set(form.notifications.disabledEvents ?? []);
+
+  function setNotificationEventEnabled(events: NotificationEvent[], enabled: boolean) {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const disabled = new Set(prev.notifications.disabledEvents ?? []);
+      for (const event of events) {
+        if (enabled) disabled.delete(event);
+        else disabled.add(event);
+      }
+      return {
+        ...prev,
+        notifications: {
+          ...prev.notifications,
+          disabledEvents: Array.from(disabled),
+        },
+      };
+    });
+  }
 
   async function handleDeleteNotification(channel: NotificationChannel) {
     const ok = await confirm({
@@ -641,49 +662,70 @@ export default function SettingsPage() {
             title="通知策略"
             description="这些项决定系统怎么合并、过滤和重试通知。"
           >
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <InlineSwitch
-                id="batch-rate"
-                label="合并倍率变化"
-                description="同一次扫描中的多条倍率变化合并发送。"
-                checked={form.notifications.batchRateChanges}
-                onCheckedChange={(checked) =>
-                  setForm((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          notifications: {
-                            ...prev.notifications,
-                            batchRateChanges: checked,
-                          },
-                        }
-                      : prev,
-                  )
-                }
-              />
-              <Field
-                label="最小涨跌幅百分比"
-                description="低于该值的倍率变化不发送通知。"
-              >
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={String(form.notifications.minChangePct)}
-                  onChange={(e) =>
+            <div className="space-y-5">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">全局通知类型</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    关闭后所有通知渠道都不会发送该类型；通知渠道中的订阅规则会继续做二次过滤。
+                  </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {NOTIFICATION_EVENT_OPTIONS.map((option) => (
+                    <InlineSwitch
+                      key={option.id}
+                      id={`notification-event-${option.id}`}
+                      label={option.label}
+                      description={option.description}
+                      checked={option.events.every((event) => !disabledNotificationEvents.has(event))}
+                      onCheckedChange={(checked) => setNotificationEventEnabled(option.events, checked)}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-4 border-t border-border pt-5 md:grid-cols-2 xl:grid-cols-4">
+                <InlineSwitch
+                  id="batch-rate"
+                  label="合并倍率变化"
+                  description="同一次扫描中的多条倍率变化合并发送。"
+                  checked={form.notifications.batchRateChanges}
+                  onCheckedChange={(checked) =>
                     setForm((prev) =>
                       prev
                         ? {
                             ...prev,
                             notifications: {
                               ...prev.notifications,
-                              minChangePct: Number(e.target.value || 0),
+                              batchRateChanges: checked,
                             },
                           }
                         : prev,
                     )
                   }
                 />
-              </Field>
+                <Field
+                  label="最小涨跌幅百分比"
+                  description="低于该值的倍率变化不发送通知。"
+                >
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={String(form.notifications.minChangePct)}
+                    onChange={(e) =>
+                      setForm((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              notifications: {
+                                ...prev.notifications,
+                                minChangePct: Number(e.target.value || 0),
+                              },
+                            }
+                          : prev,
+                      )
+                    }
+                  />
+                </Field>
               <Field
                 label="余额不足冷却分钟"
                 description="同一渠道重复告警的抑制时间。"
@@ -841,6 +883,7 @@ export default function SettingsPage() {
                   }
                 />
               </Field>
+              </div>
             </div>
           </SectionCard>
 

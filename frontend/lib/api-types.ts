@@ -330,6 +330,7 @@ export interface SystemSchedulerConfig {
 
 export interface SystemNotificationsConfig {
   batchRateChanges: boolean
+  disabledEvents: NotificationEvent[]
   minChangePct: number
   balanceLowCooldownMinutes: number
   subscriptionDailyRemainingThresholdPct: number

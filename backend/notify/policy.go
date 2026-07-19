@@ -15,6 +15,7 @@ import (
 //   - SendMaxAttempts：单条消息最多发送尝试次数（含首发），<=1 表示不重试
 type Policy struct {
 	BatchRateChanges                         bool
+	DisabledEvents                           []storage.NotificationEvent
 	MinChangePct                             float64
 	BalanceLowCooldown                       time.Duration
 	SubscriptionDailyRemainingThresholdPct   float64
@@ -23,6 +24,15 @@ type Policy struct {
 	SubscriptionExpiryThreshold              time.Duration
 	SubscriptionAlertCooldown                time.Duration
 	SendMaxAttempts                          int
+}
+
+func (p Policy) EventEnabled(event storage.NotificationEvent) bool {
+	for _, disabled := range p.DisabledEvents {
+		if disabled == event {
+			return false
+		}
+	}
+	return true
 }
 
 // CooldownStore Dispatcher 用来判断某个 (channelID, event) 是否还在冷却窗口。

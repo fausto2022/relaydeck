@@ -105,6 +105,9 @@ func (d *Dispatcher) Send(ctx context.Context, ch *storage.NotificationChannel, 
 // 去抖：balance_low 同渠道在 BalanceLowCooldown 内不重复推送，状态在数据库里持久化。
 // 失败：按 SendMaxAttempts 进行指数退避重试。
 func (d *Dispatcher) Dispatch(ctx context.Context, msg Message) error {
+	if !d.Policy().EventEnabled(msg.Event) {
+		return nil
+	}
 	claimed, suppressed := d.claimCooldown(msg)
 	if suppressed {
 		return nil
@@ -136,6 +139,9 @@ func (d *Dispatcher) DispatchRateEventBatch(ctx context.Context, channel *storag
 		return nil
 	}
 	policy := d.Policy()
+	if !policy.EventEnabled(event) {
+		return nil
+	}
 
 	filtered := make([]RateChange, 0, len(changes))
 	for _, c := range changes {
@@ -186,6 +192,9 @@ func (d *Dispatcher) DispatchRateEventBatch(ctx context.Context, channel *storag
 
 func (d *Dispatcher) DispatchRateStructureBatch(ctx context.Context, channel *storage.Channel, change RateStructureChange) error {
 	if channel == nil || len(change.Added)+len(change.Removed) == 0 {
+		return nil
+	}
+	if !d.Policy().EventEnabled(storage.EventRateStructureChanged) {
 		return nil
 	}
 	notifyChannels, err := d.repo.ListEnabledChannels()

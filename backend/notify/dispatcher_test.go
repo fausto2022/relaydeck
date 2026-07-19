@@ -69,3 +69,22 @@ func TestNotificationHTTPClientsHaveTimeout(t *testing.T) {
 		t.Fatalf("notification timeout = %s, want %s", client.GetClient().Timeout, notificationHTTPTimeout)
 	}
 }
+
+func TestDispatcherSkipsGloballyDisabledEvents(t *testing.T) {
+	dispatcher := &Dispatcher{policy: Policy{DisabledEvents: []storage.NotificationEvent{
+		storage.EventBalanceLow,
+		storage.EventRateChanged,
+		storage.EventRateStructureChanged,
+	}}}
+	if err := dispatcher.Dispatch(context.Background(), Message{Event: storage.EventBalanceLow, ChannelID: 1}); err != nil {
+		t.Fatalf("dispatch disabled event: %v", err)
+	}
+	if err := dispatcher.DispatchRateBatch(context.Background(), &storage.Channel{ID: 1}, []RateChange{{GroupName: "default", OldRatio: 1, NewRatio: 2}}); err != nil {
+		t.Fatalf("dispatch disabled rate event: %v", err)
+	}
+	if err := dispatcher.DispatchRateStructureBatch(context.Background(), &storage.Channel{ID: 1}, RateStructureChange{
+		Added: []RateChange{{GroupName: "new", NewRatio: 1}},
+	}); err != nil {
+		t.Fatalf("dispatch disabled rate structure event: %v", err)
+	}
+}
