@@ -191,10 +191,6 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 	if rankingErr := s.markPoolRankingDirty(pool.ID); rankingErr != nil && s.log != nil {
 		s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", pool.ID)
 	}
-	if (newHealth == "unhealthy" && oldHealth != "unhealthy" && oldHealth != "quarantined") ||
-		(newHealth == "healthy" && (oldHealth == "unhealthy" || oldHealth == "quarantined" || oldHealth == "degraded")) {
-		s.notifyHealthTransition(ctx, pool, updated, &check, oldHealth, newHealth)
-	}
 	_, _ = s.EvaluatePoolCapacity(ctx, pool.ID)
 	stats, err := s.MemberHealthStats(member.ID)
 	if err != nil {
@@ -927,46 +923,6 @@ func (s *Service) notifyHealthBudgetExceeded(ctx context.Context, pool *storage.
 			notify.Detail("Token 用量", fmt.Sprintf("%d / %d", budget.DailyTokens, budget.TokenLimit)),
 		) + notify.MarkdownNote("系统动作", "已暂停非必要的 L1/L2 测活，基础 L0 探测继续运行。"),
 	})
-}
-
-func (s *Service) notifyHealthTransition(ctx context.Context, pool *storage.MainAccountPool, member *storage.MainAccountPoolMember, check *storage.MainAccountHealthCheck, oldHealth, newHealth string) {
-	if s.dispatcher == nil {
-		return
-	}
-	event := storage.EventMainMemberHealthFailed
-	subject := "主站成员测活失败"
-	if newHealth == "healthy" {
-		event = storage.EventMainMemberHealthRecovered
-		subject = "主站成员健康恢复"
-	}
-	dedupKey := fmt.Sprintf("%s:%d:%d:0", event, pool.ID, member.ID)
-	claimed, err := s.store.TryClaimNotificationCooldown(dedupKey, string(event), pool.ID, member.ID, 0, 30*time.Minute)
-	if err != nil || !claimed {
-		return
-	}
-	_ = s.dispatcher.Dispatch(ctx, notify.Message{
-		Event: event, ChannelID: member.SourceChannelID,
-		Subject: fmt.Sprintf("%s · %s · 成员 #%d", subject, pool.Name, member.ID),
-		Body: notify.MarkdownDetails(
-			"主站成员健康状态发生变化。",
-			notify.Detail("账号池", pool.Name),
-			notify.Detail("成员", fmt.Sprintf("#%d", member.ID)),
-			notify.Detail("主站账号", member.RemoteAccountName),
-			notify.Detail("状态变化", fmt.Sprintf("%s -> %s", notificationStatusLabel(oldHealth), notificationStatusLabel(newHealth))),
-			notify.Detail("测活层级", check.Level),
-			notify.Detail("探测模型", check.Model),
-			notify.Detail("错误类型", check.ErrorClass),
-			notify.Detail("连续失败", member.ConsecutiveHealthFailure),
-			notify.Detail("请求延迟", fmt.Sprintf("%d ms", check.LatencyMS)),
-		) + notify.MarkdownNote("系统动作", healthTransitionAction(newHealth)),
-	})
-}
-
-func healthTransitionAction(newHealth string) string {
-	if newHealth == "healthy" {
-		return "成员已恢复健康，后续调度将按当前账号池策略自动恢复。"
-	}
-	return "成员将按健康保护策略降级或停用，后台仍会持续探测恢复情况。"
 }
 
 func parseHealthPolicy(raw string) healthPolicy {

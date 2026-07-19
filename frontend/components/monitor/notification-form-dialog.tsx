@@ -120,6 +120,11 @@ const notificationEventOptions: Array<{ id: string; label: string; events: Notif
     label: "同步分组变动",
     events: ["upstream_sync_group_changed"],
   },
+  {
+    id: "main_account_scheduling",
+    label: "主站账号启停",
+    events: ["main_member_disabled", "main_member_reenabled"],
+  },
   { id: "announcement", label: "上游公告", events: ["announcement"] },
   { id: "login_failed", label: "登录失败", events: ["login_failed"] },
   { id: "captcha_failed", label: "验证码失败", events: ["captcha_failed"] },

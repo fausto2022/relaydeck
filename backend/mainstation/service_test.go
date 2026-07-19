@@ -16,6 +16,7 @@ import (
 	"github.com/fausto2022/relaydeck/backend/connector"
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
 	"github.com/fausto2022/relaydeck/backend/crypto"
+	"github.com/fausto2022/relaydeck/backend/notify"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"gorm.io/gorm"
 )
@@ -565,6 +566,67 @@ func TestUpdateBoundMemberEnabledReconcilesRemoteScheduling(t *testing.T) {
 	if !enabled.Enabled || len(admin.schedulableCalls) != 2 || !admin.schedulableCalls[1] {
 		t.Fatalf("enabled member=%#v calls=%#v", enabled, admin.schedulableCalls)
 	}
+}
+
+func TestSchedulingTransitionsSendDisabledAndReenabledNotifications(t *testing.T) {
+	service, db, _, pool, member := createBoundSchedulingMember(t)
+	events := make(chan storage.NotificationEvent, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Event storage.NotificationEvent `json:"event"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		events <- body.Event
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	configBody, err := json.Marshal(map[string]any{"url": server.URL, "method": http.MethodPost})
+	if err != nil {
+		t.Fatalf("marshal notification config: %v", err)
+	}
+	configCipher, err := service.cipher.Encrypt(string(configBody))
+	if err != nil {
+		t.Fatalf("encrypt notification config: %v", err)
+	}
+	notifications := storage.NewNotifications(db)
+	if err := notifications.CreateChannel(&storage.NotificationChannel{
+		Name: "webhook", Type: storage.NotifyWebhook, ConfigCipher: configCipher, Subscriptions: "[]", Enabled: true,
+	}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	service.SetDispatcher(notify.NewDispatcher(
+		notifications,
+		service.cipher,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		notify.Policy{SendMaxAttempts: 1},
+	))
+
+	for _, enabled := range []bool{false, true} {
+		if _, err := service.UpdateMember(context.Background(), pool.ID, member.ID, MemberInput{
+			AccountName: member.AccountName, SourceChannelID: member.SourceChannelID,
+			Enabled: boolPtr(enabled), Priority: member.Priority, Concurrency: member.Concurrency,
+		}); err != nil {
+			t.Fatalf("update member enabled=%v: %v", enabled, err)
+		}
+	}
+
+	assertEvent := func(want storage.NotificationEvent) {
+		t.Helper()
+		select {
+		case event := <-events:
+			if event != want {
+				t.Fatalf("notification event = %q, want %q", event, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for notification %q", want)
+		}
+	}
+	assertEvent(storage.EventMainMemberDisabled)
+	assertEvent(storage.EventMainMemberReenabled)
 }
 
 func TestDeleteManagedMemberToleratesAlreadyMissingRemoteResources(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
+	"github.com/fausto2022/relaydeck/backend/notify"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"gorm.io/gorm"
 )
@@ -195,7 +196,121 @@ func (s *Service) ReconcileAccount(ctx context.Context, remoteAccountID int64, s
 	decision.RemoteSchedulable = updated.Schedulable
 	s.saveRemoteSchedulingSnapshot(updated, remoteAccountID)
 	_ = s.appendAudit(&pool.ID, &member.ID, &remoteAccountID, "schedulable_reconcile", source, true, before, updated, decision, "remote schedulable updated", "")
+	s.notifySchedulingTransition(ctx, pool, member, updated, decision, source)
 	return decision, nil
+}
+
+func (s *Service) notifySchedulingTransition(ctx context.Context, pool *storage.MainAccountPool, member *storage.MainAccountPoolMember, remote *sub2api.AdminAccount, decision *SchedulingDecision, source string) {
+	if s.dispatcher == nil || pool == nil || member == nil || remote == nil || decision == nil || !decision.Changed {
+		return
+	}
+	event := storage.EventMainMemberDisabled
+	state := "已停用"
+	action := "账号已退出主站调度，后台仍会按现有策略检查恢复条件。"
+	if decision.DesiredSchedulable {
+		event = storage.EventMainMemberReenabled
+		state = "已启用"
+		action = "账号已恢复参与主站调度。"
+	}
+	dedupKey := fmt.Sprintf("%s:%d:%d:0", event, pool.ID, member.ID)
+	claimed, err := s.store.TryClaimNotificationCooldown(dedupKey, string(event), pool.ID, member.ID, 0, 5*time.Minute)
+	if err != nil || !claimed {
+		return
+	}
+	message := notify.Message{
+		Event: event, ChannelID: member.SourceChannelID,
+		Subject: fmt.Sprintf("主站账号%s · %s · %s", state, pool.Name, remote.Name),
+		Body: notify.MarkdownDetails(
+			"主站账号调度状态发生变化。",
+			notify.Detail("主站分组", pool.Name),
+			notify.Detail("主站账号", remote.Name),
+			notify.Detail("远端 ID", remote.ID),
+			notify.Detail("状态变化", fmt.Sprintf("%s -> %s", schedulingStateLabel(!decision.DesiredSchedulable), schedulingStateLabel(decision.DesiredSchedulable))),
+			notify.Detail("触发来源", schedulingSourceLabel(source)),
+			notify.Detail("原因", schedulingDecisionLabel(decision)),
+		) + notify.MarkdownNote("系统动作", action),
+	}
+	if err := s.dispatcher.Dispatch(ctx, message); err != nil && s.log != nil {
+		s.log.Warn("dispatch main station scheduling transition", "err", err, "member_id", member.ID, "event", event)
+	}
+}
+
+func schedulingStateLabel(schedulable bool) string {
+	if schedulable {
+		return "启用"
+	}
+	return "停用"
+}
+
+func schedulingSourceLabel(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "manual", "admin":
+		return "人工操作"
+	case "health":
+		return "健康保护"
+	case "margin", "profit":
+		return "利润保护"
+	case "syncer":
+		return "同步流程"
+	case "scheduler":
+		return "后台重试"
+	case "system":
+		return "系统策略"
+	default:
+		if strings.TrimSpace(source) == "" {
+			return "系统策略"
+		}
+		return source
+	}
+}
+
+func schedulingDecisionLabel(decision *SchedulingDecision) string {
+	if decision == nil {
+		return "未记录"
+	}
+	if decision.DesiredSchedulable {
+		return "所有调度条件已恢复"
+	}
+	if len(decision.Locks) > 0 {
+		labels := make([]string, 0, len(decision.Locks))
+		for _, lock := range decision.Locks {
+			labels = append(labels, schedulingLockLabel(lock.LockType))
+		}
+		return "停用保护：" + strings.Join(labels, "、")
+	}
+	switch decision.Reason {
+	case "main station management is disabled":
+		return "主站管理已停用"
+	case "account pool is disabled":
+		return "主站分组已停用"
+	case "pool member is disabled":
+		return "账号已在设置中关闭"
+	case "remote account status is not active":
+		return "远端账号状态不是启用"
+	case "member binding is invalid":
+		return "账号绑定关系无效"
+	default:
+		return decision.Reason
+	}
+}
+
+func schedulingLockLabel(lockType string) string {
+	switch lockType {
+	case "manual":
+		return "人工停用"
+	case "health":
+		return "健康异常"
+	case "margin":
+		return "利润不足"
+	case "sync":
+		return "同步保护"
+	case "credential":
+		return "凭据异常"
+	case "binding":
+		return "绑定异常"
+	default:
+		return lockType
+	}
 }
 
 func (s *Service) RunDueSchedulingReconciles(ctx context.Context) {
