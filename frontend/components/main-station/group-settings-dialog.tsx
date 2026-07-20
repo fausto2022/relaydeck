@@ -23,16 +23,17 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { apiFetch } from "@/lib/api"
-import type { MainStationGroupWorkspace } from "@/lib/api-types"
+import type { MainStationConfig, MainStationGroupWorkspace } from "@/lib/api-types"
 
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   workspace: MainStationGroupWorkspace | null
+  config: MainStationConfig | null
   onSaved: (workspace: MainStationGroupWorkspace) => void
 }
 
-export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: Props) {
+export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onSaved }: Props) {
   const [enabled, setEnabled] = useState(true)
   const [minimumHealthy, setMinimumHealthy] = useState(1)
   const [minimumConcurrency, setMinimumConcurrency] = useState(1)
@@ -40,6 +41,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
   const [healthPolicy, setHealthPolicy] = useState("")
   const [marginPolicy, setMarginPolicy] = useState("")
   const [rankingIntervalSeconds, setRankingIntervalSeconds] = useState(0)
+  const [minimumMarginPercent, setMinimumMarginPercent] = useState("")
   const [autoExpandEnabled, setAutoExpandEnabled] = useState(false)
   const [autoExpandMinMarginPercent, setAutoExpandMinMarginPercent] = useState(0)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -54,6 +56,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
     setHealthPolicy(workspace.health_policy)
     setMarginPolicy(workspace.margin_policy)
     setRankingIntervalSeconds(workspace.ranking_interval_seconds ?? 0)
+    setMinimumMarginPercent(workspace.minimum_margin_basis_points == null ? "" : String(workspace.minimum_margin_basis_points / 100))
     setAutoExpandEnabled(workspace.auto_expand_enabled ?? false)
     setAutoExpandMinMarginPercent((workspace.auto_expand_min_margin_basis_points ?? 0) / 100)
     setAdvancedOpen(false)
@@ -69,6 +72,11 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
       toast.error("自动扩池最低利润率必须在 0% 到 99% 之间")
       return
     }
+    const minimumMarginValue = minimumMarginPercent.trim() === "" ? null : Number(minimumMarginPercent)
+    if (minimumMarginValue != null && (!Number.isFinite(minimumMarginValue) || minimumMarginValue < 0 || minimumMarginValue > 99)) {
+      toast.error("本分组最低利润率必须在 0% 到 99% 之间")
+      return
+    }
     setBusy(true)
     try {
       const saved = await apiFetch<MainStationGroupWorkspace>(`/main-station/groups/${workspace.group.id}/settings`, {
@@ -81,6 +89,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
           health_policy: healthPolicy,
           margin_policy: marginPolicy,
           ranking_interval_seconds: rankingIntervalSeconds,
+          minimum_margin_basis_points: minimumMarginValue == null ? null : Math.round(minimumMarginValue * 100),
           auto_expand_enabled: autoExpandEnabled,
           auto_expand_min_margin_basis_points: Math.round(autoExpandMinMarginPercent * 100),
         }),
@@ -139,6 +148,20 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
             />
             <p className="text-xs text-muted-foreground">填 0 继承主站全局设置；最小自定义间隔为 5 秒。</p>
           </div>
+          <div className="space-y-2 border-t pt-4 sm:col-span-2">
+            <Label htmlFor="group-minimum-margin">本分组最低利润率（%）</Label>
+            <Input
+              id="group-minimum-margin"
+              type="number"
+              min={0}
+              max={99}
+              step={0.1}
+              value={minimumMarginPercent}
+              placeholder={`继承全局（${((config?.minimum_margin_basis_points ?? 0) / 100).toFixed(1)}%）`}
+              onChange={(event) => setMinimumMarginPercent(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">留空继承全局；实际利润率等于最低要求时仍算正常，低于要求才判定利润不足。</p>
+          </div>
           <div className="space-y-4 border-t pt-4 sm:col-span-2">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
@@ -150,7 +173,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
               <Switch id="group-auto-expand" checked={autoExpandEnabled} onCheckedChange={setAutoExpandEnabled} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="group-auto-expand-margin">最低利润率（%）</Label>
+              <Label htmlFor="group-auto-expand-margin">自动扩池最低利润率（%）</Label>
               <Input
                 id="group-auto-expand-margin"
                 type="number"

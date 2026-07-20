@@ -671,6 +671,7 @@ export interface MainStationConfig {
   auto_margin_protection: boolean
   auto_health_protection: boolean
   auto_recovery: boolean
+  minimum_margin_basis_points: number
   health_models: Record<string, string>
   health_interval_seconds: number
   health_failure_threshold: number
@@ -779,6 +780,7 @@ export interface MainStationGroupWorkspace {
   rate_sort_direction: "asc" | "desc" | "stability"
   health_policy: string
   margin_policy: string
+  minimum_margin_basis_points?: number | null
   ranking_interval_seconds: number
   ranking_dirty_at?: string | null
   last_ranking_at?: string | null

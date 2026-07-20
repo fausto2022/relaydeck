@@ -9,26 +9,27 @@ const (
 
 // MainStationConfig 将一条现有目标站点提升为唯一 Sub2API 主站。
 type MainStationConfig struct {
-	ID                      uint       `gorm:"primaryKey;check:id = 1" json:"id"`
-	TargetID                uint       `gorm:"not null;uniqueIndex" json:"target_id"`
-	Enabled                 bool       `gorm:"not null;default:true" json:"enabled"`
-	LastSyncStatus          string     `gorm:"size:32" json:"last_sync_status,omitempty"`
-	LastSyncAt              *time.Time `json:"last_sync_at,omitempty"`
-	LastSyncError           string     `gorm:"type:text" json:"last_sync_error,omitempty"`
-	AutoMarginProtection    bool       `gorm:"not null;default:false" json:"auto_margin_protection"`
-	AutoHealthProtection    bool       `gorm:"not null;default:false" json:"auto_health_protection"`
-	AutoRecovery            bool       `gorm:"not null;default:false" json:"auto_recovery"`
-	HealthModelsJSON        string     `gorm:"type:text;not null;default:'{}'" json:"-"`
-	HealthIntervalSeconds   int        `gorm:"not null;default:30" json:"health_interval_seconds"`
-	HealthFailureThreshold  int        `gorm:"not null;default:10" json:"health_failure_threshold"`
-	HealthRecoveryThreshold int        `gorm:"not null;default:3" json:"health_recovery_threshold"`
-	RankingIntervalSeconds  int        `gorm:"not null;default:30" json:"ranking_interval_seconds"`
-	SyncIntervalSeconds     int        `gorm:"not null;default:300" json:"sync_interval_seconds"`
-	ObservationEvaluatedAt  *time.Time `json:"observation_evaluated_at,omitempty"`
-	HealthObservedAt        *time.Time `json:"health_observed_at,omitempty"`
-	MarginObservedAt        *time.Time `json:"margin_observed_at,omitempty"`
-	CreatedAt               time.Time  `json:"created_at"`
-	UpdatedAt               time.Time  `json:"updated_at"`
+	ID                       uint       `gorm:"primaryKey;check:id = 1" json:"id"`
+	TargetID                 uint       `gorm:"not null;uniqueIndex" json:"target_id"`
+	Enabled                  bool       `gorm:"not null;default:true" json:"enabled"`
+	LastSyncStatus           string     `gorm:"size:32" json:"last_sync_status,omitempty"`
+	LastSyncAt               *time.Time `json:"last_sync_at,omitempty"`
+	LastSyncError            string     `gorm:"type:text" json:"last_sync_error,omitempty"`
+	AutoMarginProtection     bool       `gorm:"not null;default:false" json:"auto_margin_protection"`
+	AutoHealthProtection     bool       `gorm:"not null;default:false" json:"auto_health_protection"`
+	AutoRecovery             bool       `gorm:"not null;default:false" json:"auto_recovery"`
+	MinimumMarginBasisPoints int64      `gorm:"not null;default:0" json:"minimum_margin_basis_points"`
+	HealthModelsJSON         string     `gorm:"type:text;not null;default:'{}'" json:"-"`
+	HealthIntervalSeconds    int        `gorm:"not null;default:30" json:"health_interval_seconds"`
+	HealthFailureThreshold   int        `gorm:"not null;default:10" json:"health_failure_threshold"`
+	HealthRecoveryThreshold  int        `gorm:"not null;default:3" json:"health_recovery_threshold"`
+	RankingIntervalSeconds   int        `gorm:"not null;default:30" json:"ranking_interval_seconds"`
+	SyncIntervalSeconds      int        `gorm:"not null;default:300" json:"sync_interval_seconds"`
+	ObservationEvaluatedAt   *time.Time `json:"observation_evaluated_at,omitempty"`
+	HealthObservedAt         *time.Time `json:"health_observed_at,omitempty"`
+	MarginObservedAt         *time.Time `json:"margin_observed_at,omitempty"`
+	CreatedAt                time.Time  `json:"created_at"`
+	UpdatedAt                time.Time  `json:"updated_at"`
 }
 
 func (MainStationConfig) TableName() string { return "main_station_configs" }
@@ -99,6 +100,7 @@ type MainAccountPool struct {
 	RateSortDirection              string     `gorm:"size:16;not null;default:'asc'" json:"rate_sort_direction"`
 	HealthPolicyJSON               string     `gorm:"type:text;not null" json:"health_policy"`
 	MarginPolicyJSON               string     `gorm:"type:text;not null" json:"margin_policy"`
+	MinimumMarginBasisPoints       *int64     `json:"minimum_margin_basis_points,omitempty"`
 	RankingIntervalSeconds         int        `gorm:"not null;default:0" json:"ranking_interval_seconds"`
 	RankingDirtyAt                 *time.Time `json:"ranking_dirty_at,omitempty"`
 	LastRankingAt                  *time.Time `json:"last_ranking_at,omitempty"`

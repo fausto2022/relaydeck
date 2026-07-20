@@ -193,6 +193,7 @@ func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto.AutoMarginProtection = config.AutoMarginProtection
 	dto.AutoHealthProtection = config.AutoHealthProtection
 	dto.AutoRecovery = config.AutoRecovery
+	dto.MinimumMarginBasisPoints = config.MinimumMarginBasisPoints
 	dto.HealthModels = decodeHealthModels(config.HealthModelsJSON)
 	dto.HealthIntervalSeconds = normalizedGlobalHealthInterval(config.HealthIntervalSeconds)
 	dto.HealthFailureThreshold = normalizedHealthThreshold(config.HealthFailureThreshold, defaultHealthFailureThreshold)
@@ -277,15 +278,23 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 			return nil, err
 		}
 	}
+	minimumMarginBasisPoints := int64(0)
+	if in.MinimumMarginBasisPoints != nil {
+		minimumMarginBasisPoints = *in.MinimumMarginBasisPoints
+		if err := validateMinimumMarginBasisPoints(minimumMarginBasisPoints); err != nil {
+			return nil, err
+		}
+	}
 	config := &storage.MainStationConfig{
-		ID:                      storage.MainStationSingletonID,
-		Enabled:                 enabled,
-		HealthModelsJSON:        healthModelsJSON,
-		HealthIntervalSeconds:   healthIntervalSeconds,
-		HealthFailureThreshold:  healthFailureThreshold,
-		HealthRecoveryThreshold: healthRecoveryThreshold,
-		RankingIntervalSeconds:  rankingIntervalSeconds,
-		SyncIntervalSeconds:     syncIntervalSeconds,
+		ID:                       storage.MainStationSingletonID,
+		Enabled:                  enabled,
+		HealthModelsJSON:         healthModelsJSON,
+		HealthIntervalSeconds:    healthIntervalSeconds,
+		HealthFailureThreshold:   healthFailureThreshold,
+		HealthRecoveryThreshold:  healthRecoveryThreshold,
+		MinimumMarginBasisPoints: minimumMarginBasisPoints,
+		RankingIntervalSeconds:   rankingIntervalSeconds,
+		SyncIntervalSeconds:      syncIntervalSeconds,
 	}
 	target := &storage.UpstreamSyncTarget{
 		Name:              name,
@@ -388,6 +397,12 @@ func (s *Service) UpdateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 	}
 	if in.AutoRecovery != nil {
 		config.AutoRecovery = *in.AutoRecovery
+	}
+	if in.MinimumMarginBasisPoints != nil {
+		if err := validateMinimumMarginBasisPoints(*in.MinimumMarginBasisPoints); err != nil {
+			return nil, err
+		}
+		config.MinimumMarginBasisPoints = *in.MinimumMarginBasisPoints
 	}
 	if in.HealthModels != nil {
 		config.HealthModelsJSON, err = encodeHealthModels(in.HealthModels)

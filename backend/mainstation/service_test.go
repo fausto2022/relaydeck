@@ -225,17 +225,26 @@ func TestConfigIsSingletonAndConnectionErrorIsRedacted(t *testing.T) {
 	if config.HealthFailureThreshold != defaultHealthFailureThreshold || config.HealthRecoveryThreshold != defaultHealthRecoveryThreshold {
 		t.Fatalf("default health thresholds = %d/%d", config.HealthFailureThreshold, config.HealthRecoveryThreshold)
 	}
+	if config.MinimumMarginBasisPoints != 0 {
+		t.Fatalf("default minimum margin = %d", config.MinimumMarginBasisPoints)
+	}
 	interval := 60
 	failureThreshold := 20
 	recoveryThreshold := 5
+	minimumMargin := int64(2000)
 	updated, err := service.UpdateConfig(context.Background(), ConfigInput{
 		HealthIntervalSeconds: &interval, HealthFailureThreshold: &failureThreshold, HealthRecoveryThreshold: &recoveryThreshold,
+		MinimumMarginBasisPoints: &minimumMargin,
 	})
 	if err != nil {
 		t.Fatalf("update health interval: %v", err)
 	}
-	if updated.HealthIntervalSeconds != interval || updated.HealthFailureThreshold != failureThreshold || updated.HealthRecoveryThreshold != recoveryThreshold {
+	if updated.HealthIntervalSeconds != interval || updated.HealthFailureThreshold != failureThreshold || updated.HealthRecoveryThreshold != recoveryThreshold || updated.MinimumMarginBasisPoints != minimumMargin {
 		t.Fatalf("updated health strategy = %#v", updated)
+	}
+	invalidMargin := int64(10000)
+	if _, err := service.UpdateConfig(context.Background(), ConfigInput{MinimumMarginBasisPoints: &invalidMargin}); err == nil {
+		t.Fatal("invalid minimum margin was accepted")
 	}
 	invalidInterval := 29
 	if _, err := service.UpdateConfig(context.Background(), ConfigInput{HealthIntervalSeconds: &invalidInterval}); err == nil {
@@ -294,6 +303,49 @@ func TestMainStationGroupsAreDirectAccountWorkspaces(t *testing.T) {
 	}
 	if updated.Enabled || updated.MinimumHealthyAccounts != 2 || updated.MinimumEffectiveConcurrency != 20 || updated.RateSortDirection != "desc" {
 		t.Fatalf("updated workspace = %#v", updated)
+	}
+	groupMinimum := int64(1500)
+	updated, err = service.UpdateGroupSettings(context.Background(), workspaces[0].Group.ID, GroupSettingsInput{
+		Enabled: &enabled, MinimumHealthyAccounts: 2, MinimumEffectiveConcurrency: 20, RateSortDirection: "desc",
+		MinimumMarginBasisPoints: &groupMinimum,
+	})
+	if err != nil {
+		t.Fatalf("set group minimum margin: %v", err)
+	}
+	if updated.MinimumMarginBasisPoints == nil || *updated.MinimumMarginBasisPoints != groupMinimum {
+		t.Fatalf("group minimum margin = %#v", updated.MinimumMarginBasisPoints)
+	}
+	updated, err = service.UpdateGroupSettings(context.Background(), workspaces[0].Group.ID, GroupSettingsInput{
+		Enabled: &enabled, MinimumHealthyAccounts: 2, MinimumEffectiveConcurrency: 20, RateSortDirection: "desc",
+	})
+	if err != nil {
+		t.Fatalf("clear group minimum margin: %v", err)
+	}
+	if updated.MinimumMarginBasisPoints != nil {
+		t.Fatalf("group minimum margin did not return to inheritance: %#v", updated.MinimumMarginBasisPoints)
+	}
+	legacyMargin := `{"mode":"observe","minimum_margin_basis_points":1200,"risk_confirmations":2,"cost_max_age_minutes":60}`
+	legacyPool, err := service.store.FindPool(firstPoolID)
+	if err != nil {
+		t.Fatalf("load legacy margin pool: %v", err)
+	}
+	legacyPool.MarginPolicyJSON = legacyMargin
+	if err := service.store.UpdatePool(legacyPool, []uint{workspaces[0].Group.ID}); err != nil {
+		t.Fatalf("save legacy margin policy: %v", err)
+	}
+	legacyWorkspaces, err := service.ListGroupWorkspaces(false)
+	if err != nil || legacyWorkspaces[0].MinimumMarginBasisPoints == nil || *legacyWorkspaces[0].MinimumMarginBasisPoints != 1200 {
+		t.Fatalf("legacy margin override = %#v, err=%v", legacyWorkspaces, err)
+	}
+	updated, err = service.UpdateGroupSettings(context.Background(), workspaces[0].Group.ID, GroupSettingsInput{
+		Enabled: &enabled, MinimumHealthyAccounts: 2, MinimumEffectiveConcurrency: 20, RateSortDirection: "desc",
+		MarginPolicy: legacyMargin,
+	})
+	if err != nil {
+		t.Fatalf("clear legacy group minimum margin: %v", err)
+	}
+	if updated.MinimumMarginBasisPoints != nil || strings.Contains(updated.MarginPolicy, "minimum_margin_basis_points") {
+		t.Fatalf("legacy margin override was not cleared: %#v", updated)
 	}
 }
 

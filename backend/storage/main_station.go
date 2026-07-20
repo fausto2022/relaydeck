@@ -13,7 +13,7 @@ import (
 
 const (
 	defaultMainHealthPolicy                 = `{"mode":"observe","l0_interval_minutes":5,"l1_interval_minutes":30,"l2_interval_minutes":720,"jitter_percent":10,"transient_failure_threshold":3,"empty_failure_threshold":2,"recovery_success_threshold":3,"window_size":20,"global_concurrency":4,"channel_concurrency":1,"daily_l1_limit":48,"daily_l2_limit":2}`
-	defaultMainMarginPolicy                 = `{"mode":"observe","minimum_margin_basis_points":0,"risk_confirmations":2,"cost_max_age_minutes":60}`
+	defaultMainMarginPolicy                 = `{"mode":"observe","risk_confirmations":2,"cost_max_age_minutes":60}`
 	defaultMainStationHealthIntervalSeconds = 30
 )
 
@@ -920,6 +920,10 @@ func applyPoolDefaults(item *MainAccountPool) {
 	}
 	if item.AutoExpandMinMarginBasisPoints < 0 {
 		item.AutoExpandMinMarginBasisPoints = 0
+	}
+	if item.MinimumMarginBasisPoints != nil && *item.MinimumMarginBasisPoints < 0 {
+		value := int64(0)
+		item.MinimumMarginBasisPoints = &value
 	}
 	if item.RateSortDirection != "desc" && item.RateSortDirection != "stability" {
 		item.RateSortDirection = "asc"

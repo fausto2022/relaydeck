@@ -180,6 +180,58 @@ func TestProfitEvaluationDoesNotProtectExpiredOrUnsupportedPricing(t *testing.T)
 	}
 }
 
+func TestProfitMinimumMarginUsesGlobalBoundaryAndGroupOverride(t *testing.T) {
+	service, db, admin, _ := newTestService(t)
+	current := time.Date(2026, 7, 20, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	service.now = func() time.Time { return current }
+	pool, member, group := createProfitMember(
+		t, service, db, admin, current, 0.8,
+		`{"mode":"observe","minimum_margin_basis_points":0,"risk_confirmations":2,"cost_max_age_minutes":60}`,
+	)
+	config, err := service.store.GetConfig()
+	if err != nil {
+		t.Fatalf("get main station config: %v", err)
+	}
+	config.MinimumMarginBasisPoints = 2000
+	if err := service.store.SaveConfig(config); err != nil {
+		t.Fatalf("save global minimum margin: %v", err)
+	}
+
+	boundary, err := service.EvaluatePool(context.Background(), pool.ID, "manual")
+	if err != nil {
+		t.Fatalf("evaluate 20 percent boundary: %v", err)
+	}
+	if len(boundary.Checks) != 1 || boundary.Checks[0].Status != "healthy" || boundary.Checks[0].MarginBasisPoints != 2000 {
+		t.Fatalf("20 percent boundary = %#v", boundary.Checks)
+	}
+
+	if err := db.Model(&storage.RateSnapshot{}).
+		Where("channel_id = ? AND remote_group_id = ?", member.SourceChannelID, *member.SourceGroupID).
+		Updates(map[string]any{"ratio": 0.9, "last_seen_at": current}).Error; err != nil {
+		t.Fatalf("update source cost to 0.9: %v", err)
+	}
+	belowGlobal, err := service.EvaluatePool(context.Background(), pool.ID, "manual")
+	if err != nil {
+		t.Fatalf("evaluate below global margin: %v", err)
+	}
+	if len(belowGlobal.Checks) != 1 || belowGlobal.Checks[0].Status != "risk" || belowGlobal.Checks[0].MarginBasisPoints != 1000 {
+		t.Fatalf("below global margin = %#v", belowGlobal.Checks)
+	}
+
+	groupMinimum := int64(500)
+	pool.MinimumMarginBasisPoints = &groupMinimum
+	if err := service.store.UpdatePool(pool, []uint{group.ID}); err != nil {
+		t.Fatalf("save group minimum margin: %v", err)
+	}
+	groupOverride, err := service.EvaluatePool(context.Background(), pool.ID, "manual")
+	if err != nil {
+		t.Fatalf("evaluate group override: %v", err)
+	}
+	if len(groupOverride.Checks) != 1 || groupOverride.Checks[0].Status != "healthy" || groupOverride.Checks[0].MarginBasisPoints != 1000 {
+		t.Fatalf("group override margin = %#v", groupOverride.Checks)
+	}
+}
+
 func createProfitMember(t *testing.T, service *Service, db *gorm.DB, admin *fakeAdminClient, rateObservedAt time.Time, costRatio float64, marginPolicy string) (*storage.MainAccountPool, *storage.MainAccountPoolMember, *storage.UpstreamSyncTargetGroup) {
 	t.Helper()
 	configureTestStation(t, service)

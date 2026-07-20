@@ -123,6 +123,7 @@ func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO,
 			RateSortDirection:              pool.RateSortDirection,
 			HealthPolicy:                   pool.HealthPolicyJSON,
 			MarginPolicy:                   pool.MarginPolicyJSON,
+			MinimumMarginBasisPoints:       poolMinimumMarginOverride(pool),
 			LastStatus:                     pool.LastStatus,
 			LastEvaluatedAt:                pool.LastEvaluatedAt,
 			RankingIntervalSeconds:         pool.RankingIntervalSeconds,
@@ -201,6 +202,10 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	if err := validatePolicyJSON("margin_policy", in.MarginPolicy); err != nil {
 		return nil, err
 	}
+	marginPolicy, err := marginPolicyWithoutMinimum(in.MarginPolicy)
+	if err != nil {
+		return nil, err
+	}
 	before := *pool
 	enabledChanged := false
 	if in.Enabled != nil {
@@ -215,6 +220,11 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	if err := validatePoolRankingInterval(in.RankingIntervalSeconds); err != nil {
 		return nil, err
 	}
+	if in.MinimumMarginBasisPoints != nil {
+		if err := validateMinimumMarginBasisPoints(*in.MinimumMarginBasisPoints); err != nil {
+			return nil, err
+		}
+	}
 	if err := validateAutoExpandMarginBasisPoints(in.AutoExpandMinMarginBasisPoints); err != nil {
 		return nil, err
 	}
@@ -228,10 +238,11 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 		}
 	}
 	pool.RankingIntervalSeconds = in.RankingIntervalSeconds
+	pool.MinimumMarginBasisPoints = copyOptionalInt64(in.MinimumMarginBasisPoints)
 	pool.AutoExpandEnabled = in.AutoExpandEnabled
 	pool.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
 	pool.HealthPolicyJSON = strings.TrimSpace(in.HealthPolicy)
-	pool.MarginPolicyJSON = strings.TrimSpace(in.MarginPolicy)
+	pool.MarginPolicyJSON = marginPolicy
 	if err := s.store.UpdatePool(pool, []uint{group.ID}); err != nil {
 		return nil, err
 	}
@@ -422,6 +433,10 @@ func (s *Service) poolFromInput(existing *storage.MainAccountPool, in PoolInput)
 	if err := validatePolicyJSON("margin_policy", in.MarginPolicy); err != nil {
 		return nil, nil, err
 	}
+	marginPolicy, err := marginPolicyWithoutMinimum(in.MarginPolicy)
+	if err != nil {
+		return nil, nil, err
+	}
 	item := &storage.MainAccountPool{}
 	if existing != nil {
 		*item = *existing
@@ -433,7 +448,13 @@ func (s *Service) poolFromInput(existing *storage.MainAccountPool, in PoolInput)
 	item.MinimumEffectiveConcurrency = in.MinimumEffectiveConcurrency
 	item.RateSortDirection = strings.TrimSpace(in.RateSortDirection)
 	item.HealthPolicyJSON = strings.TrimSpace(in.HealthPolicy)
-	item.MarginPolicyJSON = strings.TrimSpace(in.MarginPolicy)
+	item.MarginPolicyJSON = marginPolicy
+	if in.MinimumMarginBasisPoints != nil {
+		if err := validateMinimumMarginBasisPoints(*in.MinimumMarginBasisPoints); err != nil {
+			return nil, nil, err
+		}
+	}
+	item.MinimumMarginBasisPoints = copyOptionalInt64(in.MinimumMarginBasisPoints)
 	if err := validatePoolRankingInterval(in.RankingIntervalSeconds); err != nil {
 		return nil, nil, err
 	}
@@ -496,6 +517,34 @@ func validatePolicyJSON(field, raw string) error {
 		return fmt.Errorf("%s must be a JSON object: %w", field, err)
 	}
 	return nil
+}
+
+func marginPolicyWithoutMinimum(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	var object map[string]any
+	if err := json.Unmarshal([]byte(raw), &object); err != nil {
+		return "", fmt.Errorf("margin_policy must be a JSON object: %w", err)
+	}
+	if _, exists := object["minimum_margin_basis_points"]; !exists {
+		return raw, nil
+	}
+	delete(object, "minimum_margin_basis_points")
+	encoded, err := json.Marshal(object)
+	if err != nil {
+		return "", fmt.Errorf("encode margin_policy: %w", err)
+	}
+	return string(encoded), nil
+}
+
+func copyOptionalInt64(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
 }
 
 func (s *Service) poolDTO(item *storage.MainAccountPool) (*PoolDTO, error) {

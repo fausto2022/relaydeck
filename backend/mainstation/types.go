@@ -20,46 +20,48 @@ type MigrationStateDTO struct {
 }
 
 type ConfigDTO struct {
-	Configured              bool               `json:"configured"`
-	ID                      uint               `json:"id,omitempty"`
-	TargetID                uint               `json:"target_id,omitempty"`
-	Name                    string             `json:"name,omitempty"`
-	BaseURL                 string             `json:"base_url,omitempty"`
-	HasAdminAPIKey          bool               `json:"has_admin_api_key"`
-	Enabled                 bool               `json:"enabled"`
-	LastSyncStatus          string             `json:"last_sync_status,omitempty"`
-	LastSyncAt              *time.Time         `json:"last_sync_at,omitempty"`
-	LastSyncError           string             `json:"last_sync_error,omitempty"`
-	AutoMarginProtection    bool               `json:"auto_margin_protection"`
-	AutoHealthProtection    bool               `json:"auto_health_protection"`
-	AutoRecovery            bool               `json:"auto_recovery"`
-	HealthModels            map[string]string  `json:"health_models"`
-	HealthIntervalSeconds   int                `json:"health_interval_seconds"`
-	HealthFailureThreshold  int                `json:"health_failure_threshold"`
-	HealthRecoveryThreshold int                `json:"health_recovery_threshold"`
-	RankingIntervalSeconds  int                `json:"ranking_interval_seconds"`
-	SyncIntervalSeconds     int                `json:"sync_interval_seconds"`
-	ObservationEvaluatedAt  *time.Time         `json:"observation_evaluated_at,omitempty"`
-	HealthObservedAt        *time.Time         `json:"health_observed_at,omitempty"`
-	MarginObservedAt        *time.Time         `json:"margin_observed_at,omitempty"`
-	Migration               *MigrationStateDTO `json:"migration,omitempty"`
+	Configured               bool               `json:"configured"`
+	ID                       uint               `json:"id,omitempty"`
+	TargetID                 uint               `json:"target_id,omitempty"`
+	Name                     string             `json:"name,omitempty"`
+	BaseURL                  string             `json:"base_url,omitempty"`
+	HasAdminAPIKey           bool               `json:"has_admin_api_key"`
+	Enabled                  bool               `json:"enabled"`
+	LastSyncStatus           string             `json:"last_sync_status,omitempty"`
+	LastSyncAt               *time.Time         `json:"last_sync_at,omitempty"`
+	LastSyncError            string             `json:"last_sync_error,omitempty"`
+	AutoMarginProtection     bool               `json:"auto_margin_protection"`
+	AutoHealthProtection     bool               `json:"auto_health_protection"`
+	AutoRecovery             bool               `json:"auto_recovery"`
+	MinimumMarginBasisPoints int64              `json:"minimum_margin_basis_points"`
+	HealthModels             map[string]string  `json:"health_models"`
+	HealthIntervalSeconds    int                `json:"health_interval_seconds"`
+	HealthFailureThreshold   int                `json:"health_failure_threshold"`
+	HealthRecoveryThreshold  int                `json:"health_recovery_threshold"`
+	RankingIntervalSeconds   int                `json:"ranking_interval_seconds"`
+	SyncIntervalSeconds      int                `json:"sync_interval_seconds"`
+	ObservationEvaluatedAt   *time.Time         `json:"observation_evaluated_at,omitempty"`
+	HealthObservedAt         *time.Time         `json:"health_observed_at,omitempty"`
+	MarginObservedAt         *time.Time         `json:"margin_observed_at,omitempty"`
+	Migration                *MigrationStateDTO `json:"migration,omitempty"`
 }
 
 type ConfigInput struct {
-	TargetID                uint              `json:"target_id,omitempty"`
-	Name                    string            `json:"name"`
-	BaseURL                 string            `json:"base_url"`
-	AdminAPIKey             string            `json:"admin_api_key"`
-	Enabled                 *bool             `json:"enabled,omitempty"`
-	AutoMarginProtection    *bool             `json:"auto_margin_protection,omitempty"`
-	AutoHealthProtection    *bool             `json:"auto_health_protection,omitempty"`
-	AutoRecovery            *bool             `json:"auto_recovery,omitempty"`
-	HealthModels            map[string]string `json:"health_models,omitempty"`
-	HealthIntervalSeconds   *int              `json:"health_interval_seconds,omitempty"`
-	HealthFailureThreshold  *int              `json:"health_failure_threshold,omitempty"`
-	HealthRecoveryThreshold *int              `json:"health_recovery_threshold,omitempty"`
-	RankingIntervalSeconds  *int              `json:"ranking_interval_seconds,omitempty"`
-	SyncIntervalSeconds     *int              `json:"sync_interval_seconds,omitempty"`
+	TargetID                 uint              `json:"target_id,omitempty"`
+	Name                     string            `json:"name"`
+	BaseURL                  string            `json:"base_url"`
+	AdminAPIKey              string            `json:"admin_api_key"`
+	Enabled                  *bool             `json:"enabled,omitempty"`
+	AutoMarginProtection     *bool             `json:"auto_margin_protection,omitempty"`
+	AutoHealthProtection     *bool             `json:"auto_health_protection,omitempty"`
+	AutoRecovery             *bool             `json:"auto_recovery,omitempty"`
+	MinimumMarginBasisPoints *int64            `json:"minimum_margin_basis_points,omitempty"`
+	HealthModels             map[string]string `json:"health_models,omitempty"`
+	HealthIntervalSeconds    *int              `json:"health_interval_seconds,omitempty"`
+	HealthFailureThreshold   *int              `json:"health_failure_threshold,omitempty"`
+	HealthRecoveryThreshold  *int              `json:"health_recovery_threshold,omitempty"`
+	RankingIntervalSeconds   *int              `json:"ranking_interval_seconds,omitempty"`
+	SyncIntervalSeconds      *int              `json:"sync_interval_seconds,omitempty"`
 }
 
 type HealthModelCatalog struct {
@@ -135,6 +137,7 @@ type GroupWorkspaceDTO struct {
 	RateSortDirection              string                          `json:"rate_sort_direction"`
 	HealthPolicy                   string                          `json:"health_policy"`
 	MarginPolicy                   string                          `json:"margin_policy"`
+	MinimumMarginBasisPoints       *int64                          `json:"minimum_margin_basis_points"`
 	LastStatus                     string                          `json:"last_status"`
 	LastEvaluatedAt                *time.Time                      `json:"last_evaluated_at,omitempty"`
 	RankingIntervalSeconds         int                             `json:"ranking_interval_seconds"`
@@ -202,6 +205,7 @@ type GroupSettingsInput struct {
 	RateSortDirection              string `json:"rate_sort_direction"`
 	HealthPolicy                   string `json:"health_policy"`
 	MarginPolicy                   string `json:"margin_policy"`
+	MinimumMarginBasisPoints       *int64 `json:"minimum_margin_basis_points"`
 	RankingIntervalSeconds         int    `json:"ranking_interval_seconds"`
 	AutoExpandEnabled              bool   `json:"auto_expand_enabled"`
 	AutoExpandMinMarginBasisPoints int64  `json:"auto_expand_min_margin_basis_points"`
@@ -225,6 +229,7 @@ type PoolInput struct {
 	RateSortDirection              string `json:"rate_sort_direction"`
 	HealthPolicy                   string `json:"health_policy"`
 	MarginPolicy                   string `json:"margin_policy"`
+	MinimumMarginBasisPoints       *int64 `json:"minimum_margin_basis_points"`
 	RankingIntervalSeconds         int    `json:"ranking_interval_seconds"`
 	AutoExpandEnabled              bool   `json:"auto_expand_enabled"`
 	AutoExpandMinMarginBasisPoints int64  `json:"auto_expand_min_margin_basis_points"`

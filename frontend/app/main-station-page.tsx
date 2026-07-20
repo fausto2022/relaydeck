@@ -679,7 +679,7 @@ export default function MainStationPage() {
         groupID={selectedWorkspace?.group.id ?? null}
         account={healthHistoryAccount}
       />
-      <GroupSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} workspace={selectedWorkspace} onSaved={(saved) => { setWorkspaces((items) => items.map((item) => item.group.id === saved.group.id ? saved : item)); void loadAccounts(selectedGroupID); void loadRisk(selectedGroupID) }} />
+      <GroupSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} workspace={selectedWorkspace} config={config} onSaved={(saved) => { setWorkspaces((items) => items.map((item) => item.group.id === saved.group.id ? saved : item)); void loadAccounts(selectedGroupID); void loadRisk(selectedGroupID) }} />
       {confirmDialog}
     </div>
   )

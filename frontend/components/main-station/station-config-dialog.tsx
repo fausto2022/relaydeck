@@ -49,6 +49,7 @@ export function StationConfigDialog({
   const [autoHealthProtection, setAutoHealthProtection] = useState(false)
   const [autoMarginProtection, setAutoMarginProtection] = useState(false)
   const [autoRecovery, setAutoRecovery] = useState(false)
+  const [minimumMarginPercent, setMinimumMarginPercent] = useState(0)
   const [healthModels, setHealthModels] = useState<Record<string, string>>({})
   const [healthIntervalSeconds, setHealthIntervalSeconds] = useState(30)
   const [healthFailureThreshold, setHealthFailureThreshold] = useState(10)
@@ -69,6 +70,7 @@ export function StationConfigDialog({
     setAutoHealthProtection(config?.auto_health_protection ?? false)
     setAutoMarginProtection(config?.auto_margin_protection ?? false)
     setAutoRecovery(config?.auto_recovery ?? false)
+    setMinimumMarginPercent((config?.minimum_margin_basis_points ?? 0) / 100)
     setHealthModels(config?.health_models ?? {})
     setHealthIntervalSeconds(config?.health_interval_seconds ?? 30)
     setHealthFailureThreshold(config?.health_failure_threshold ?? 10)
@@ -163,6 +165,10 @@ export function StationConfigDialog({
       toast.error("失败和恢复次数必须在 1 到 100 之间")
       return
     }
+    if (!Number.isFinite(minimumMarginPercent) || minimumMarginPercent < 0 || minimumMarginPercent > 99) {
+      toast.error("全局最低利润率必须在 0% 到 99% 之间")
+      return
+    }
     setBusy("save")
     try {
       const saved = await apiFetch<MainStationConfig>("/main-station", {
@@ -176,6 +182,7 @@ export function StationConfigDialog({
           auto_health_protection: autoHealthProtection,
           auto_margin_protection: autoMarginProtection,
           auto_recovery: autoRecovery,
+          minimum_margin_basis_points: Math.round(minimumMarginPercent * 100),
           health_models: healthModels,
           health_interval_seconds: healthIntervalSeconds,
           health_failure_threshold: healthFailureThreshold,
@@ -277,6 +284,19 @@ export function StationConfigDialog({
               <div className="flex items-center justify-between"><span className="text-sm">健康异常自动停用</span><Switch checked={autoHealthProtection} onCheckedChange={setAutoHealthProtection} /></div>
               <div className="flex items-center justify-between"><span className="text-sm">利润不足自动停用</span><Switch checked={autoMarginProtection} onCheckedChange={setAutoMarginProtection} /></div>
               <div className="flex items-center justify-between"><span className="text-sm">条件恢复后自动启用</span><Switch checked={autoRecovery} onCheckedChange={setAutoRecovery} /></div>
+              <div className="space-y-2 pt-1">
+                <Label htmlFor="main-station-minimum-margin">全局最低利润率（%）</Label>
+                <Input
+                  id="main-station-minimum-margin"
+                  type="number"
+                  min={0}
+                  max={99}
+                  step={0.1}
+                  value={minimumMarginPercent}
+                  onChange={(event) => setMinimumMarginPercent(Number(event.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">实际利润率低于该值时判定为利润不足；分组单独设置后优先使用分组值。</p>
+              </div>
             </div>
           ) : null}
           {config?.configured ? (

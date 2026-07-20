@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	maximumAutoExpandMarginBasisPoints = int64(9900)
-	autoExpansionMaxTestsPerPool       = 3
-	autoExpansionFailureCooldown       = 6 * time.Hour
-	autoExpansionErrorCooldown         = time.Hour
-	autoExpansionRateFreshness         = 15 * time.Minute
+	maximumMarginBasisPoints     = int64(9900)
+	autoExpansionMaxTestsPerPool = 3
+	autoExpansionFailureCooldown = 6 * time.Hour
+	autoExpansionErrorCooldown   = time.Hour
+	autoExpansionRateFreshness   = 15 * time.Minute
 )
 
 var autoExpansionProviderPatterns = []struct {
@@ -42,7 +42,7 @@ type autoExpansionCandidate struct {
 }
 
 func validateAutoExpandMarginBasisPoints(value int64) error {
-	if value < 0 || value > maximumAutoExpandMarginBasisPoints {
+	if value < 0 || value > maximumMarginBasisPoints {
 		return errors.New("自动扩池最低利润率必须在 0% 到 99% 之间")
 	}
 	return nil

@@ -32,6 +32,13 @@ type resolvedCost struct {
 	Reason    string
 }
 
+func validateMinimumMarginBasisPoints(value int64) error {
+	if value < 0 || value > maximumMarginBasisPoints {
+		return errors.New("最低利润率必须在 0% 到 99% 之间")
+	}
+	return nil
+}
+
 func (s *Service) EvaluatePool(ctx context.Context, poolID uint, source string) (*PoolEvaluationResult, error) {
 	pool, err := s.store.FindPool(poolID)
 	if err != nil {
@@ -40,7 +47,12 @@ func (s *Service) EvaluatePool(ctx context.Context, poolID uint, source string) 
 	if source == "" {
 		source = "manual"
 	}
+	config, err := s.store.GetConfig()
+	if err != nil {
+		return nil, err
+	}
 	policy := parseMarginPolicy(pool.MarginPolicyJSON)
+	policy.MinimumMarginBasisPoints = effectiveMinimumMarginBasisPoints(config, pool)
 	groupIDs, err := s.store.ListPoolGroupIDs(pool.ID)
 	if err != nil {
 		return nil, err
@@ -54,10 +66,6 @@ func (s *Service) EvaluatePool(ctx context.Context, poolID uint, source string) 
 		groups = append(groups, *group)
 	}
 	members, err := s.store.ListMembers(pool.ID)
-	if err != nil {
-		return nil, err
-	}
-	config, err := s.store.GetConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -587,6 +595,31 @@ func parseMarginPolicy(raw string) marginPolicy {
 		policy.CostMaxAgeMinutes = 60
 	}
 	return policy
+}
+
+func poolMinimumMarginOverride(pool *storage.MainAccountPool) *int64 {
+	if pool == nil {
+		return nil
+	}
+	if pool.MinimumMarginBasisPoints != nil {
+		return copyOptionalInt64(pool.MinimumMarginBasisPoints)
+	}
+	legacy := parseMarginPolicy(pool.MarginPolicyJSON).MinimumMarginBasisPoints
+	if legacy <= 0 {
+		return nil
+	}
+	return &legacy
+}
+
+func effectiveMinimumMarginBasisPoints(config *storage.MainStationConfig, pool *storage.MainAccountPool) int64 {
+	value := int64(0)
+	if config != nil && config.MinimumMarginBasisPoints > 0 {
+		value = config.MinimumMarginBasisPoints
+	}
+	if override := poolMinimumMarginOverride(pool); override != nil {
+		value = *override
+	}
+	return value
 }
 
 func evaluatedPoolStatus(result *PoolEvaluationResult, memberCount int) string {
