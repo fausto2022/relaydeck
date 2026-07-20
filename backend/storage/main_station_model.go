@@ -134,6 +134,7 @@ type MainAccountPoolMember struct {
 	SourceGroupID            *int64     `json:"source_group_id,omitempty"`
 	SourceGroupName          string     `gorm:"size:256;not null;default:''" json:"source_group_name,omitempty"`
 	SourceAPIKeyID           *int64     `json:"source_api_key_id,omitempty"`
+	SourceAPIKeyManaged      bool       `gorm:"not null;default:false;index" json:"source_api_key_managed"`
 	RemoteAccountID          *int64     `gorm:"uniqueIndex" json:"remote_account_id,omitempty"`
 	RemoteAccountName        string     `gorm:"size:256;not null;default:''" json:"remote_account_name,omitempty"`
 	OwnershipMode            string     `gorm:"size:16;not null;index" json:"ownership_mode"`

@@ -110,7 +110,7 @@ func (s *Service) sync(ctx context.Context, source string) (*SyncResult, error) 
 	if err != nil {
 		return nil, s.recordSyncFailure(target, apiKey, source, fmt.Errorf("save main station account snapshots: %w", err))
 	}
-	sourceBindings, err := s.refreshSourceAPIKeyGroups(ctx, source)
+	sourceBindings, err := s.refreshSourceAPIKeyGroups(ctx, client, adminTarget, accounts, missingAccounts, source)
 	if err != nil {
 		return nil, s.recordSyncFailure(target, apiKey, source, fmt.Errorf("refresh source api key groups: %w", err))
 	}
@@ -131,6 +131,8 @@ func (s *Service) sync(ctx context.Context, source string) (*SyncResult, error) 
 		SourceBindingsChecked: sourceBindings.Checked,
 		SourceBindingsUpdated: sourceBindings.Updated,
 		SourceBindingsMissing: sourceBindings.Missing,
+		SourceBindingsRenamed: sourceBindings.Renamed,
+		SourceBindingsCleaned: sourceBindings.Cleaned,
 		SourceBindingWarnings: sourceBindings.Warnings,
 		SyncedAt:              syncedAt,
 	}

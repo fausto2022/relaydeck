@@ -253,8 +253,10 @@ export default function MainStationPage() {
     setSyncing(true)
     try {
       const result = await apiFetch<MainStationSyncResult>("/main-station/sync", { method: "POST" })
-      const bindingDetail = result.source_bindings_updated > 0 ? `，更新 ${result.source_bindings_updated} 个上游 Key 分组` : ""
-      toast.success(`已同步 ${result.groups} 个分组、${result.accounts} 个账号${bindingDetail}`)
+      const bindingDetail = result.source_bindings_updated > 0 ? `，更新 ${result.source_bindings_updated} 个上游绑定` : ""
+      const renameDetail = result.source_bindings_renamed > 0 ? `，更正 ${result.source_bindings_renamed} 个账号名称` : ""
+      const cleanupDetail = result.source_bindings_cleaned > 0 ? `，清理 ${result.source_bindings_cleaned} 个失效托管账号` : ""
+      toast.success(`已同步 ${result.groups} 个分组、${result.accounts} 个账号${bindingDetail}${renameDetail}${cleanupDetail}`)
       if (result.source_binding_warnings?.length) toast.warning(result.source_binding_warnings.join("；"))
       await loadBase()
       await loadAccounts(selectedGroupID)
@@ -930,6 +932,7 @@ function actionLabel(action: string) {
     member_bind_batch: "批量接管账号",
     member_managed_sync: "同步账号",
     member_source_group_sync: "同步上游 Key 分组",
+    member_auto_cleanup: "自动清理失效账号",
     member_update: "更新账号",
     member_delete: "删除账号",
     member_unbind: "解除接管",

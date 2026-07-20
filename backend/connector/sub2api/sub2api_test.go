@@ -683,6 +683,12 @@ func TestCreateUpdateDeleteRevealAPIKey(t *testing.T) {
 			if body["status"] != "inactive" {
 				t.Fatalf("update body = %#v", body)
 			}
+			if _, ok := body["ip_whitelist"]; ok {
+				t.Fatalf("unspecified ip whitelist must be preserved: %#v", body)
+			}
+			if _, ok := body["ip_blacklist"]; ok {
+				t.Fatalf("unspecified ip blacklist must be preserved: %#v", body)
+			}
 			_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"id":8,"key":"sk-custom","name":"main","status":"disabled"}}`))
 		case http.MethodDelete:
 			_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"message":"ok"}}`))

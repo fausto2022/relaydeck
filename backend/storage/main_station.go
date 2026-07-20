@@ -293,6 +293,12 @@ func (r *MainStationStore) UpsertAccountSnapshot(item *MainStationAccountSnapsho
 	}).Create(item).Error
 }
 
+func (r *MainStationStore) MarkAccountSnapshotMissing(remoteAccountID int64, syncedAt time.Time) error {
+	return r.db.Model(&MainStationAccountSnapshot{}).
+		Where("main_station_id = ? AND remote_account_id = ?", MainStationSingletonID, remoteAccountID).
+		Updates(map[string]any{"missing": true, "last_sync_at": syncedAt}).Error
+}
+
 func (r *MainStationStore) ListPools(page, pageSize int) ([]MainAccountPool, int64, error) {
 	page, pageSize = normalizeStoragePage(page, pageSize)
 	var total int64
@@ -1182,6 +1188,7 @@ func migrateLegacyMainMember(tx *gorm.DB, poolID uint, legacy *UpstreamSyncAccou
 		keyID := managed.SourceAPIKeyID
 		remoteID := managed.TargetAccountID
 		member.SourceAPIKeyID = &keyID
+		member.SourceAPIKeyManaged = true
 		member.RemoteAccountID = &remoteID
 		member.RemoteAccountName = managed.TargetAccountName
 		member.BindingStatus = "verified"

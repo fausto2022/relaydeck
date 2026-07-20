@@ -649,6 +649,9 @@ func (s *Service) UpdateMember(ctx context.Context, poolID, memberID uint, in Me
 		member.AccountName = strings.TrimSpace(in.AccountName)
 	}
 	if in.SourceAPIKeyID != nil {
+		if !sameOptionalInt64(member.SourceAPIKeyID, in.SourceAPIKeyID) {
+			member.SourceAPIKeyManaged = false
+		}
 		member.SourceAPIKeyID = in.SourceAPIKeyID
 	}
 	if in.Enabled != nil {
@@ -1064,9 +1067,12 @@ func (s *Service) ensureManagedSourceAPIKey(ctx context.Context, pool *storage.M
 		if err == nil {
 			return secret, nil
 		}
+		if !member.SourceAPIKeyManaged {
+			return "", errors.New("selected source api key no longer exists")
+		}
 		member.SourceAPIKeyID = nil
 	}
-	name := s.managedAutomaticName(pool, member)
+	name := managedSourceAPIKeyName(member)
 	key, err := s.channelSvc.CreateAPIKey(ctx, member.SourceChannelID, connector.APIKeyCreateRequest{
 		Name:    name,
 		Group:   member.SourceGroupName,
@@ -1076,9 +1082,14 @@ func (s *Service) ensureManagedSourceAPIKey(ctx context.Context, pool *storage.M
 		return "", fmt.Errorf("create managed source api key: %w", err)
 	}
 	keyID := key.ID
-	member.AccountName = name
+	member.AccountName = s.managedAutomaticName(pool, member)
 	member.SourceAPIKeyID = &keyID
+	member.SourceAPIKeyManaged = true
 	if err := s.store.UpdateMember(member); err != nil {
+		cleanupErr := s.channelSvc.DeleteAPIKey(context.Background(), member.SourceChannelID, keyID)
+		if cleanupErr != nil && !missingRemoteResource(cleanupErr) {
+			return "", errors.Join(err, fmt.Errorf("cleanup untracked managed source api key: %w", cleanupErr))
+		}
 		return "", err
 	}
 	secret := strings.TrimSpace(key.Key)
@@ -1331,6 +1342,18 @@ func (s *Service) managedAutomaticName(pool *storage.MainAccountPool, member *st
 		}
 	}
 	return compactName(pool.Name+"-"+groupName, 120)
+}
+
+func managedSourceAPIKeyName(member *storage.MainAccountPoolMember) string {
+	if member != nil {
+		if groupName := strings.TrimSpace(member.SourceGroupName); groupName != "" {
+			return compactName(groupName, 120)
+		}
+		if member.SourceGroupID != nil {
+			return compactName(fmt.Sprintf("分组-%d", *member.SourceGroupID), 120)
+		}
+	}
+	return "默认分组"
 }
 
 func missingRemoteResource(err error) bool {

@@ -47,11 +47,12 @@ func TestAutoExpansionTestsAndAddsBestProfitableCandidateOnce(t *testing.T) {
 	if len(fixture.channels.createdKeys) != 2 || len(fixture.channels.deletedKeys) != 1 {
 		t.Fatalf("source keys: created=%#v deleted=%#v", fixture.channels.createdKeys, fixture.channels.deletedKeys)
 	}
-	expectedName := fixture.service.managedAutomaticName(fixture.pool, &members[0])
+	expectedName := managedSourceAPIKeyName(&members[0])
 	if fixture.channels.createdKeys[1].Name != expectedName {
 		t.Fatalf("managed source key name = %q, want %q", fixture.channels.createdKeys[1].Name, expectedName)
 	}
-	if len(fixture.admin.createRequests) != 1 || fixture.admin.createRequests[0].RateMultiplier != 0.2 || fixture.admin.createRequests[0].Name != expectedName {
+	expectedMainName := fixture.service.managedAutomaticName(fixture.pool, &members[0])
+	if len(fixture.admin.createRequests) != 1 || fixture.admin.createRequests[0].RateMultiplier != 0.2 || fixture.admin.createRequests[0].Name != expectedMainName {
 		t.Fatalf("main station account requests = %#v", fixture.admin.createRequests)
 	}
 	attempt, err := fixture.service.store.FindAutoExpansionAttempt(fixture.pool.ID, fixture.rate.ID)

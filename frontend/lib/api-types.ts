@@ -830,6 +830,7 @@ export interface MainStationMember {
   source_group_id?: number | null
   source_group_name?: string
   source_api_key_id?: number | null
+  source_api_key_managed: boolean
   remote_account_id?: number | null
   remote_account_name?: string
   ownership_mode: "managed" | "bound"
@@ -930,6 +931,8 @@ export interface MainStationSyncResult {
   source_bindings_checked: number
   source_bindings_updated: number
   source_bindings_missing: number
+  source_bindings_renamed: number
+  source_bindings_cleaned: number
   source_binding_warnings?: string[]
   synced_at: string
 }

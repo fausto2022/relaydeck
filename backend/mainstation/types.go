@@ -79,6 +79,8 @@ type SyncResult struct {
 	SourceBindingsChecked int       `json:"source_bindings_checked"`
 	SourceBindingsUpdated int       `json:"source_bindings_updated"`
 	SourceBindingsMissing int       `json:"source_bindings_missing"`
+	SourceBindingsRenamed int       `json:"source_bindings_renamed"`
+	SourceBindingsCleaned int       `json:"source_bindings_cleaned"`
 	SourceBindingWarnings []string  `json:"source_binding_warnings,omitempty"`
 	SyncedAt              time.Time `json:"synced_at"`
 }

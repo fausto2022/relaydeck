@@ -163,6 +163,7 @@ type fakeChannelService struct {
 	keys         []connector.APIKey
 	listKeysErr  error
 	createdKeys  []connector.APIKeyCreateRequest
+	updatedKeys  []connector.APIKeyUpdateRequest
 	createdKeyID int64
 	deletedKeys  []int64
 	deleteKeyErr error
@@ -182,6 +183,19 @@ func (f *fakeChannelService) CreateAPIKey(_ context.Context, _ uint, req connect
 		keyID = 77
 	}
 	return &connector.APIKey{ID: keyID, Key: f.secret, Name: req.Name}, nil
+}
+func (f *fakeChannelService) UpdateAPIKey(_ context.Context, _ uint, id int64, req connector.APIKeyUpdateRequest) (*connector.APIKey, error) {
+	f.updatedKeys = append(f.updatedKeys, req)
+	for i := range f.keys {
+		if f.keys[i].ID == id {
+			if req.Name != nil {
+				f.keys[i].Name = *req.Name
+			}
+			item := f.keys[i]
+			return &item, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
 }
 func (f *fakeChannelService) DeleteAPIKey(_ context.Context, _ uint, id int64) error {
 	f.deletedKeys = append(f.deletedKeys, id)
@@ -605,7 +619,7 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	if err != nil {
 		t.Fatalf("create managed member: %v", err)
 	}
-	if member.RemoteAccountID == nil || member.SourceAPIKeyID == nil || member.BindingStatus != "verified" {
+	if member.RemoteAccountID == nil || member.SourceAPIKeyID == nil || !member.SourceAPIKeyManaged || member.BindingStatus != "verified" {
 		t.Fatalf("managed member = %#v", member)
 	}
 	if len(channels.createdKeys) != 1 || len(admin.createRequests) != 1 {
@@ -617,7 +631,7 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		admin.accounts[0].Concurrency != originalAccount.Concurrency {
 		t.Fatalf("original duplicate account was modified: got=%#v want=%#v", admin.accounts[0], originalAccount)
 	}
-	if channels.createdKeys[0].Name != "source-source-group" {
+	if channels.createdKeys[0].Name != "source-group" {
 		t.Fatalf("managed source api key name = %q", channels.createdKeys[0].Name)
 	}
 	request := admin.createRequests[0]
@@ -703,7 +717,7 @@ func TestEnsureManagedSourceAPIKeyRecreatesMissingRemoteKey(t *testing.T) {
 	oldKeyID := int64(41)
 	member := &storage.MainAccountPoolMember{
 		PoolID: pool.ID, AccountName: "OpenAI-01", OwnershipMode: "managed",
-		SourceChannelID: channel.ID, SourceGroupName: "source-group", SourceAPIKeyID: &oldKeyID,
+		SourceChannelID: channel.ID, SourceGroupName: "source-group", SourceAPIKeyID: &oldKeyID, SourceAPIKeyManaged: true,
 	}
 	if err := service.store.CreateMember(member); err != nil {
 		t.Fatalf("create member: %v", err)
@@ -722,7 +736,7 @@ func TestEnsureManagedSourceAPIKeyRecreatesMissingRemoteKey(t *testing.T) {
 	if secret != channels.secret || member.SourceAPIKeyID == nil || *member.SourceAPIKeyID != 88 {
 		t.Fatalf("recreated key: secret=%q member=%#v", secret, member)
 	}
-	if len(channels.createdKeys) != 1 || channels.createdKeys[0].Name != "source-source-group" {
+	if len(channels.createdKeys) != 1 || channels.createdKeys[0].Name != "source-group" {
 		t.Fatalf("created keys = %#v", channels.createdKeys)
 	}
 	stored, err := service.store.FindMember(pool.ID, member.ID)
