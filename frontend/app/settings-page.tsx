@@ -30,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { CaptchaFormDialog } from "@/components/monitor/captcha-form-dialog";
 import { NotificationFormDialog } from "@/components/monitor/notification-form-dialog";
+import { RateRankingSettings } from "@/components/settings/rate-ranking-settings";
 import { apiFetch } from "@/lib/api";
 import { useTriggerRefresh } from "@/lib/refresh-context";
 import type {
@@ -313,7 +314,7 @@ export default function SettingsPage() {
           </Badge>
         </div>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          这里集中管理鉴权、调度、通知策略、通知渠道和验证码服务。保存只写入配置文件，应用会让鉴权、调度和通知策略立即生效；通知渠道和验证码服务本身是实时写库生效。
+          这里集中管理鉴权、调度、通知策略、倍率分类、通知渠道和验证码服务。系统配置保存到配置文件，倍率分类、通知渠道和验证码服务实时写入数据库。
         </p>
         <p className="text-xs text-muted-foreground">
           配置文件路径：{query.data?.config_path ?? "—"}
@@ -330,6 +331,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="captcha" className="px-4 py-2">
             验证码服务
+          </TabsTrigger>
+          <TabsTrigger value="rate-ranking" className="px-4 py-2">
+            倍率分类
           </TabsTrigger>
         </TabsList>
 
@@ -1390,6 +1394,10 @@ export default function SettingsPage() {
               </div>
             )}
           </SectionCard>
+        </TabsContent>
+
+        <TabsContent value="rate-ranking">
+          <RateRankingSettings />
         </TabsContent>
 
       </Tabs>

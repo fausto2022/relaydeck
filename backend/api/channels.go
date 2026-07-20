@@ -16,6 +16,7 @@ import (
 	"github.com/fausto2022/relaydeck/backend/connector"
 	"github.com/fausto2022/relaydeck/backend/mainstation"
 	"github.com/fausto2022/relaydeck/backend/progress"
+	"github.com/fausto2022/relaydeck/backend/rateranking"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"github.com/gin-gonic/gin"
 )
@@ -701,26 +702,51 @@ func channelRates(c *gin.Context, d *Deps) {
 			return
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"data": channelRateOutputs(list, connections)})
+	classifier := rateranking.DefaultClassifier()
+	if d.RateRanking != nil {
+		classifier, err = d.RateRanking.Classifier(c.Request.Context())
+		if err != nil {
+			fail(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": channelRateOutputs(list, connections, classifier)})
 }
 
 type channelRateOutput struct {
 	storage.RateSnapshot
 	MainStationConnected bool                         `json:"main_station_connected"`
 	MainStationGroups    []mainstation.RateConnection `json:"main_station_groups"`
+	RankingProvider      string                       `json:"ranking_provider"`
+	RankingCategory      string                       `json:"ranking_category"`
+	RankingCategoryOrder int                          `json:"ranking_category_order"`
+	RankingVisible       bool                         `json:"ranking_visible"`
 }
 
-func channelRateOutputs(list []storage.RateSnapshot, connections map[uint][]mainstation.RateConnection) []channelRateOutput {
+func channelRateOutputs(
+	list []storage.RateSnapshot,
+	connections map[uint][]mainstation.RateConnection,
+	classifiers ...*rateranking.Classifier,
+) []channelRateOutput {
+	classifier := rateranking.DefaultClassifier()
+	if len(classifiers) > 0 && classifiers[0] != nil {
+		classifier = classifiers[0]
+	}
 	result := make([]channelRateOutput, 0, len(list))
 	for i := range list {
 		groups := connections[list[i].ID]
 		if groups == nil {
 			groups = []mainstation.RateConnection{}
 		}
+		classification := classifier.Classify(list[i].ModelName, list[i].Description)
 		result = append(result, channelRateOutput{
 			RateSnapshot:         list[i],
 			MainStationConnected: len(groups) > 0,
 			MainStationGroups:    groups,
+			RankingProvider:      classification.Provider,
+			RankingCategory:      classification.Category,
+			RankingCategoryOrder: classification.CategoryOrder,
+			RankingVisible:       classification.Visible,
 		})
 	}
 	return result

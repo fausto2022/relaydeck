@@ -106,6 +106,8 @@ export interface CaptchaConfig {
   updated_at: string
 }
 
+export type RateProviderType = "openai" | "anthropic" | "gemini" | "grok" | "image" | "other"
+
 export interface RateSnapshot {
   id: number
   channel_id: number
@@ -118,6 +120,30 @@ export interface RateSnapshot {
   last_seen_at: string
   main_station_connected: boolean
   main_station_groups: MainStationRateGroup[]
+  ranking_provider: RateProviderType
+  ranking_category: string
+  ranking_category_order: number
+  ranking_visible: boolean
+}
+
+export interface RateRankingProviderSetting {
+  provider: RateProviderType
+  include_unmatched: boolean
+}
+
+export interface RateRankingRule {
+  id?: number
+  provider: RateProviderType
+  category_name: string
+  keywords: string[]
+  match_mode: "contains" | "word"
+  sort_order: number
+  enabled: boolean
+}
+
+export interface RateRankingConfig {
+  providers: RateRankingProviderSetting[]
+  rules: RateRankingRule[]
 }
 
 export interface MainStationRateGroup {

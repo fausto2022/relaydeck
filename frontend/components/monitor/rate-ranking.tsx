@@ -11,33 +11,27 @@ import {
   RATE_PROVIDERS,
   RateRankingDialog,
   quickTestUnavailableReason,
-  type RateProviderType,
 } from "@/components/monitor/rate-ranking-dialog"
-import { useChannels, useMultiChannelRates } from "@/lib/queries"
+import { useChannels, useMultiChannelRates, useRateRankingConfig } from "@/lib/queries"
 import { formatRatio } from "@/lib/format"
+import {
+  ALL_RATE_CATEGORY,
+  categoryRankingRates,
+  providerRankingRates,
+  rateCategoryOptions,
+} from "@/lib/rate-ranking"
 import { cn } from "@/lib/utils"
-import type { RateSnapshot } from "@/lib/api-types"
+import type { RateProviderType, RateSnapshot } from "@/lib/api-types"
 
 const DEFAULT_VISIBLE_COUNT = 5
-
-const PROVIDER_PATTERNS: Array<{ type: RateProviderType; pattern: RegExp }> = [
-  { type: "anthropic", pattern: /anthropic|claude|sonnet|opus|haiku|kiro|cc\s*max|ccmax|aws/i },
-  { type: "gemini", pattern: /gemini|google/i },
-  { type: "grok", pattern: /grok|xai/i },
-  { type: "image", pattern: /生图|绘图|画图|image|dall[ -]?e|midjourney|flux/i },
-  { type: "openai", pattern: /openai|gpt|codex|\bplus\b|\bpro\b|\bteam\b|快速稳定|散户|无限制|测试/i },
-]
-
-function classifyRate(rate: RateSnapshot): RateProviderType {
-  const text = `${rate.model_name} ${rate.description ?? ""}`
-  return PROVIDER_PATTERNS.find((item) => item.pattern.test(text))?.type ?? "other"
-}
 
 export function RateRanking() {
   const channels = useChannels()
   const channelIDs = useMemo(() => (channels.data ?? []).map((channel) => channel.id), [channels.data])
   const rates = useMultiChannelRates(channelIDs)
+  const rankingConfig = useRateRankingConfig()
   const [provider, setProvider] = useState<RateProviderType>("openai")
+  const [category, setCategory] = useState(ALL_RATE_CATEGORY)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [initialRateID, setInitialRateID] = useState<number | null>(null)
 
@@ -45,16 +39,24 @@ export function RateRanking() {
     () => new Map((channels.data ?? []).map((channel) => [channel.id, channel])),
     [channels.data],
   )
-  const ranked = useMemo(
-    () => (rates.data ?? [])
-      .filter((rate) => classifyRate(rate) === provider)
-      .sort((left, right) => left.ratio - right.ratio || left.model_name.localeCompare(right.model_name)),
+  const providerRates = useMemo(
+    () => providerRankingRates(rates.data ?? [], provider),
     [provider, rates.data],
+  )
+  const categoryOptions = useMemo(
+    () => rateCategoryOptions(providerRates, rankingConfig.data, provider),
+    [provider, providerRates, rankingConfig.data],
+  )
+  const activeCategory = categoryOptions.some((item) => item.value === category) ? category : ALL_RATE_CATEGORY
+  const ranked = useMemo(
+    () => categoryRankingRates(providerRates, activeCategory),
+    [activeCategory, providerRates],
   )
   const visible = ranked.slice(0, DEFAULT_VISIBLE_COUNT)
 
   function handleProviderChange(value: string) {
     setProvider(value as RateProviderType)
+    setCategory(ALL_RATE_CATEGORY)
   }
 
   function openRanking() {
@@ -94,6 +96,18 @@ export function RateRanking() {
         </Tabs>
       </div>
 
+      <div className="border-b border-border px-4 py-2 sm:px-5">
+        <Tabs value={activeCategory} onValueChange={setCategory}>
+          <TabsList className="h-auto max-w-full justify-start">
+            {categoryOptions.map((item) => (
+              <TabsTrigger key={item.value} value={item.value} className="gap-1.5 px-2.5">
+                {item.label}<span className="text-[10px] tabular-nums text-muted-foreground">{item.count}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
+
       {rates.loading ? (
         <div className="px-5 py-10 text-center text-sm text-muted-foreground">加载倍率排行中…</div>
       ) : visible.length === 0 ? (
@@ -109,6 +123,7 @@ export function RateRanking() {
                   <div className="min-w-0">
                     <div className="truncate text-xs text-muted-foreground" title={channel?.name}>{channel?.name ?? `渠道 #${rate.channel_id}`}</div>
                     <div className="truncate text-sm font-medium" title={rate.model_name}>{rate.model_name}</div>
+                    <RateCategoryBadge rate={rate} />
                     <MainStationConnection rate={rate} compact />
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -145,7 +160,10 @@ export function RateRanking() {
                       <td className="px-3 py-2.5 font-medium">{channel?.name ?? `渠道 #${rate.channel_id}`}</td>
                       <td className="max-w-0 px-3 py-2.5">
                         <div className="truncate font-medium" title={rate.model_name}>{rate.model_name}</div>
-                        {rate.description ? <div className="truncate text-xs text-muted-foreground" title={rate.description}>{rate.description}</div> : null}
+                        <div className="mt-1 flex min-w-0 items-center gap-2">
+                          <RateCategoryBadge rate={rate} />
+                          {rate.description ? <div className="min-w-0 truncate text-xs text-muted-foreground" title={rate.description}>{rate.description}</div> : null}
+                        </div>
                       </td>
                       <td className="px-3 py-2.5"><MainStationConnection rate={rate} /></td>
                       <td className="px-4 py-2.5 text-right font-semibold tabular-nums">{formatRatio(rate.ratio)}</td>
@@ -167,13 +185,24 @@ export function RateRanking() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         provider={provider}
-        onProviderChange={setProvider}
-        rates={ranked}
+        onProviderChange={handleProviderChange}
+        category={activeCategory}
+        onCategoryChange={setCategory}
+        categoryOptions={categoryOptions}
+        rates={providerRates}
         channels={channels.data ?? []}
         initialRateID={initialRateID}
         onAdded={() => void rates.refetch()}
       />
     </Card>
+  )
+}
+
+export function RateCategoryBadge({ rate }: { rate: RateSnapshot }) {
+  return (
+    <Badge variant="outline" className="mt-1 h-5 max-w-full truncate border-border bg-muted/40 px-1.5 text-[10px] font-normal">
+      {rate.ranking_category}
+    </Badge>
   )
 }
 

@@ -14,6 +14,7 @@ import type {
   NotificationChannel,
   NotificationLogPage,
   RateChangeLogPage,
+  RateRankingConfig,
   RateSnapshot,
   SystemConfigResponse,
   UpstreamAnnouncementPage,
@@ -232,4 +233,8 @@ export function useCaptchaConfigs(enabled = true) {
 
 export function useSystemConfig() {
   return useApi<SystemConfigResponse>("/settings/config")
+}
+
+export function useRateRankingConfig() {
+  return useApi<RateRankingConfig>("/settings/rate-ranking", false)
 }

@@ -140,6 +140,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&CaptchaConfig{},
 		&RateSnapshot{},
 		&RateChangeLog{},
+		&RateRankingProviderSetting{},
+		&RateRankingCategoryRule{},
 		&UpstreamAnnouncement{},
 		&BalanceSnapshot{},
 		&CostSnapshot{},

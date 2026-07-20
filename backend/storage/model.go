@@ -144,6 +144,30 @@ type RateChangeLog struct {
 
 func (RateChangeLog) TableName() string { return "rate_change_logs" }
 
+// RateRankingProviderSetting 保存倍率排行一级类型的兜底展示策略。
+type RateRankingProviderSetting struct {
+	Provider         string    `gorm:"primaryKey;size:32" json:"provider"`
+	IncludeUnmatched bool      `gorm:"not null" json:"include_unmatched"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+func (RateRankingProviderSetting) TableName() string { return "rate_ranking_provider_settings" }
+
+// RateRankingCategoryRule 保存倍率排行的二级自定义分类规则。
+type RateRankingCategoryRule struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	Provider     string    `gorm:"size:32;not null;index" json:"provider"`
+	CategoryName string    `gorm:"size:64;not null" json:"category_name"`
+	KeywordsJSON string    `gorm:"type:text;not null" json:"-"`
+	MatchMode    string    `gorm:"size:16;not null" json:"match_mode"`
+	SortOrder    int       `gorm:"not null;default:10;index" json:"sort_order"`
+	Enabled      bool      `gorm:"not null" json:"enabled"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func (RateRankingCategoryRule) TableName() string { return "rate_ranking_category_rules" }
+
 // UpstreamAnnouncement 保存从上游渠道同步到的公告。
 type UpstreamAnnouncement struct {
 	ID              uint       `gorm:"primaryKey" json:"id"`

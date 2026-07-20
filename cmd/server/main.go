@@ -21,6 +21,7 @@ import (
 	"github.com/fausto2022/relaydeck/backend/mainstation"
 	"github.com/fausto2022/relaydeck/backend/monitor"
 	"github.com/fausto2022/relaydeck/backend/notify"
+	"github.com/fausto2022/relaydeck/backend/rateranking"
 	"github.com/fausto2022/relaydeck/backend/runtimeconfig"
 	"github.com/fausto2022/relaydeck/backend/scheduler"
 	"github.com/fausto2022/relaydeck/backend/storage"
@@ -100,6 +101,7 @@ func main() {
 	notifies := storage.NewNotifications(db)
 	announcements := storage.NewUpstreamAnnouncements(db)
 	rates := storage.NewRates(db)
+	rateRankingSvc := rateranking.New(storage.NewRateRankingConfigs(db))
 	monLogs := storage.NewMonitorLogs(db)
 	syncTargets := storage.NewUpstreamSyncTargets(db)
 	syncGroups := storage.NewUpstreamSyncTargetGroups(db)
@@ -191,6 +193,7 @@ func main() {
 		Notifies:      notifies,
 		Announcements: announcements,
 		Rates:         rates,
+		RateRanking:   rateRankingSvc,
 		MonLogs:       monLogs,
 		ChannelSvc:    channelSvc,
 		Monitor:       monitorSvc,

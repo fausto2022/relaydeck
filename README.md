@@ -89,7 +89,7 @@ RelayDeck focuses on these problems:
 ### Rate Monitoring
 
 - Syncs upstream model or group rates.
-- Adds a dashboard rate ranking grouped by OpenAI, Anthropic, Gemini, Grok, image generation, and other categories.
+- Adds a dashboard rate ranking grouped by OpenAI, Anthropic, Gemini, Grok, image generation, and other providers, with configurable keyword-based subcategories and unmatched-item fallback policies.
 - Compares converted rates across every channel and sorts groups from lowest to highest cost.
 - Stores current rate snapshots.
 - Records rate change history.

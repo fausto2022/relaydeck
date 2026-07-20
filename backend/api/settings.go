@@ -1,9 +1,11 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/fausto2022/relaydeck/backend/config"
+	"github.com/fausto2022/relaydeck/backend/rateranking"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,6 +31,39 @@ func registerSettings(g *gin.RouterGroup, d *Deps) {
 	gs.PUT("/config", func(c *gin.Context) { saveSettingsConfig(c, d) })
 	gs.POST("/apply", func(c *gin.Context) { applySettingsConfig(c, d) })
 	gs.POST("/proxy/test", func(c *gin.Context) { testProxy(c) })
+	gs.GET("/rate-ranking", func(c *gin.Context) { getRateRankingConfig(c, d) })
+	gs.PUT("/rate-ranking", func(c *gin.Context) { saveRateRankingConfig(c, d) })
+}
+
+func getRateRankingConfig(c *gin.Context, d *Deps) {
+	if d.RateRanking == nil {
+		fail(c, http.StatusServiceUnavailable, errors.New("倍率排行分类服务尚未初始化"))
+		return
+	}
+	config, err := d.RateRanking.Get(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": config})
+}
+
+func saveRateRankingConfig(c *gin.Context, d *Deps) {
+	if d.RateRanking == nil {
+		fail(c, http.StatusServiceUnavailable, errors.New("倍率排行分类服务尚未初始化"))
+		return
+	}
+	var input rateranking.Config
+	if err := c.ShouldBindJSON(&input); err != nil {
+		fail(c, http.StatusBadRequest, errors.New("倍率排行分类配置格式不正确"))
+		return
+	}
+	config, err := d.RateRanking.Save(c.Request.Context(), input)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": config})
 }
 
 func getSettingsConfig(c *gin.Context, d *Deps) {

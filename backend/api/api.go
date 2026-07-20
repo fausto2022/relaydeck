@@ -15,6 +15,7 @@ import (
 	"github.com/fausto2022/relaydeck/backend/crypto"
 	"github.com/fausto2022/relaydeck/backend/mainstation"
 	"github.com/fausto2022/relaydeck/backend/notify"
+	"github.com/fausto2022/relaydeck/backend/rateranking"
 	"github.com/fausto2022/relaydeck/backend/runtimeconfig"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"github.com/fausto2022/relaydeck/backend/syncer"
@@ -60,6 +61,7 @@ type Deps struct {
 	Notifies      *storage.Notifications
 	Announcements *storage.UpstreamAnnouncements
 	Rates         *storage.Rates
+	RateRanking   *rateranking.Service
 	MonLogs       *storage.MonitorLogs
 	ChannelSvc    channelService
 	Monitor       monitorService

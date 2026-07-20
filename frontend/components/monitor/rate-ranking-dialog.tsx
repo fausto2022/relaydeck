@@ -31,12 +31,16 @@ import type {
   MainStationHealthModelCatalog,
   MainStationMember,
   RateQuickTestResult,
+  RateProviderType,
   RateSnapshot,
 } from "@/lib/api-types"
 import { formatRatio } from "@/lib/format"
+import {
+  ALL_RATE_CATEGORY,
+  categoryRankingRates,
+  type RateCategoryOption,
+} from "@/lib/rate-ranking"
 import { cn } from "@/lib/utils"
-
-export type RateProviderType = "openai" | "anthropic" | "gemini" | "grok" | "image" | "other"
 
 export const RATE_PROVIDERS: Array<{ value: RateProviderType; label: string }> = [
   { value: "openai", label: "OpenAI" },
@@ -52,13 +56,16 @@ interface Props {
   onOpenChange: (open: boolean) => void
   provider: RateProviderType
   onProviderChange: (provider: RateProviderType) => void
+  category: string
+  onCategoryChange: (category: string) => void
+  categoryOptions: RateCategoryOption[]
   rates: RateSnapshot[]
   channels: Channel[]
   initialRateID: number | null
   onAdded: () => void
 }
 
-export function RateRankingDialog({ open, onOpenChange, provider, onProviderChange, rates, channels, initialRateID, onAdded }: Props) {
+export function RateRankingDialog({ open, onOpenChange, provider, onProviderChange, category, onCategoryChange, categoryOptions, rates, channels, initialRateID, onAdded }: Props) {
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [view, setView] = useState<"list" | "test">("list")
   const [selectedRateID, setSelectedRateID] = useState<number | null>(null)
@@ -75,6 +82,8 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
   const [addedGroupName, setAddedGroupName] = useState("")
 
   const channelMap = useMemo(() => new Map(channels.map((channel) => [channel.id, channel])), [channels])
+  const activeCategory = categoryOptions.some((item) => item.value === category) ? category : ALL_RATE_CATEGORY
+  const visibleRates = useMemo(() => categoryRankingRates(rates, activeCategory), [activeCategory, rates])
   const selectedRate = rates.find((rate) => rate.id === selectedRateID) ?? null
   const providerModels = useMemo(() => {
     const values = [config?.health_models?.[provider] ?? "", ...(catalogs.find((item) => item.platform === provider)?.models ?? [])]
@@ -142,6 +151,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
 
   function changeProvider(value: string) {
     onProviderChange(value as RateProviderType)
+    onCategoryChange(ALL_RATE_CATEGORY)
     setView("list")
     setSelectedRateID(null)
     setResult(null)
@@ -245,7 +255,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
               <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-6">
                 <div className="flex flex-wrap items-center gap-2">
                   <DialogTitle>倍率排行榜</DialogTitle>
-                  <Badge variant="outline" className="tabular-nums">{rates.length} 个分组</Badge>
+                  <Badge variant="outline" className="tabular-nums">{visibleRates.length} 个分组</Badge>
                 </div>
                 <DialogDescription id="rate-ranking-dialog-description">按换算后倍率从低到高排列</DialogDescription>
               </DialogHeader>
@@ -256,11 +266,22 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                   </TabsList>
                 </Tabs>
               </div>
+              <div className="border-b border-border px-4 py-2 sm:px-6">
+                <Tabs value={activeCategory} onValueChange={onCategoryChange}>
+                  <TabsList className="h-auto max-w-full justify-start">
+                    {categoryOptions.map((item) => (
+                      <TabsTrigger key={item.value} value={item.value} className="gap-1.5 px-2.5">
+                        {item.label}<span className="text-[10px] tabular-nums text-muted-foreground">{item.count}</span>
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </div>
               <ScrollArea className="h-[min(70dvh,640px)]">
-                {rates.length === 0 ? (
+                {visibleRates.length === 0 ? (
                   <div className="px-6 py-16 text-center text-sm text-muted-foreground">该类型暂无已采集分组</div>
                 ) : (
-                  <RankingList rates={rates} channelMap={channelMap} provider={provider} onTest={openTest} />
+                  <RankingList rates={visibleRates} channelMap={channelMap} provider={provider} onTest={openTest} />
                 )}
               </ScrollArea>
             </>
@@ -350,6 +371,7 @@ function RankingList({ rates, channelMap, provider, onTest }: { rates: RateSnaps
               <div className="min-w-0">
                 <div className="truncate text-xs text-muted-foreground">{channel?.name ?? `渠道 #${rate.channel_id}`}</div>
                 <div className="truncate text-sm font-medium" title={rate.model_name}>{rate.model_name}</div>
+                <RankingCategoryBadge rate={rate} />
                 <Connection rate={rate} compact />
               </div>
               <div className="flex flex-col items-end gap-2">
@@ -382,7 +404,10 @@ function RankingList({ rates, channelMap, provider, onTest }: { rates: RateSnaps
                   <td className="px-3 py-2.5 font-medium">{channel?.name ?? `渠道 #${rate.channel_id}`}</td>
                   <td className="max-w-0 px-3 py-2.5">
                     <div className="truncate font-medium" title={rate.model_name}>{rate.model_name}</div>
-                    {rate.description ? <div className="truncate text-xs text-muted-foreground" title={rate.description}>{rate.description}</div> : null}
+                    <div className="mt-1 flex min-w-0 items-center gap-2">
+                      <RankingCategoryBadge rate={rate} />
+                      {rate.description ? <div className="min-w-0 truncate text-xs text-muted-foreground" title={rate.description}>{rate.description}</div> : null}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5"><Connection rate={rate} /></td>
                   <td className="px-3 py-2.5 text-right font-semibold tabular-nums">{formatRatio(rate.ratio)}</td>
@@ -394,6 +419,14 @@ function RankingList({ rates, channelMap, provider, onTest }: { rates: RateSnaps
         </table>
       </div>
     </>
+  )
+}
+
+function RankingCategoryBadge({ rate }: { rate: RateSnapshot }) {
+  return (
+    <Badge variant="outline" className="mt-1 h-5 max-w-full truncate border-border bg-muted/40 px-1.5 text-[10px] font-normal">
+      {rate.ranking_category}
+    </Badge>
   )
 }
 
