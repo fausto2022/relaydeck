@@ -158,6 +158,7 @@ function InlineRates({ channelID }: { channelID: number }) {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
             className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground hover:text-foreground"
           >
             {expanded ? "收起" : "展开"}
@@ -175,9 +176,11 @@ function InlineRates({ channelID }: { channelID: number }) {
         <div
           ref={chipBoxRef}
           className={cn(
-            "flex flex-wrap gap-1 overflow-hidden transition-[max-height] duration-300 ease-out",
-            // 收起：max-h-12 (~48px) 约 2 行；展开：足够大的上限，留点缓冲让 transition 不立即消失。
-            expanded ? "max-h-150" : "max-h-12",
+            "flex flex-wrap gap-1",
+            // 移动端完整展开；桌面端限制卡片高度并允许滚动查看所有分组。
+            expanded
+              ? "overflow-visible sm:max-h-80 sm:overflow-y-auto sm:overscroll-contain sm:pr-1 sm:[scrollbar-gutter:stable]"
+              : "max-h-12 overflow-hidden",
           )}
         >
           {rates.map((r) => (
