@@ -66,6 +66,7 @@ func TestEmptyDatabaseCreatesMainStationSchemaWithoutConfiguration(t *testing.T)
 		&MainAccountGuardLock{},
 		&MainAccountAuditLog{},
 		&MainStationTemporaryAPIKey{},
+		&MainStationAutoExpansionAttempt{},
 	}
 	for _, model := range models {
 		if !db.Migrator().HasTable(model) {
@@ -112,6 +113,14 @@ func TestMainStationModelsUseMySQLCompatibleUpsertAndIndexes(t *testing.T) {
 	index := lockStatement.Schema.LookIndex("idx_main_account_lock")
 	if index == nil || index.Class != "UNIQUE" || index.Where != "" || len(index.Fields) != 2 {
 		t.Fatalf("guard lock unique index = %#v", index)
+	}
+	autoExpansionStatement := &gorm.Statement{DB: db}
+	if err := autoExpansionStatement.Parse(&MainStationAutoExpansionAttempt{}); err != nil {
+		t.Fatalf("parse auto expansion schema: %v", err)
+	}
+	autoExpansionIndex := autoExpansionStatement.Schema.LookIndex("idx_main_auto_expand_pool_rate")
+	if autoExpansionIndex == nil || autoExpansionIndex.Class != "UNIQUE" || autoExpansionIndex.Where != "" || len(autoExpansionIndex.Fields) != 2 {
+		t.Fatalf("auto expansion unique index = %#v", autoExpansionIndex)
 	}
 }
 

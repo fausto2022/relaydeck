@@ -128,21 +128,25 @@ type AccountMemberDTO struct {
 }
 
 type GroupWorkspaceDTO struct {
-	Group                       storage.UpstreamSyncTargetGroup `json:"group"`
-	Enabled                     bool                            `json:"enabled"`
-	MinimumHealthyAccounts      int                             `json:"minimum_healthy_accounts"`
-	MinimumEffectiveConcurrency int                             `json:"minimum_effective_concurrency"`
-	RateSortDirection           string                          `json:"rate_sort_direction"`
-	HealthPolicy                string                          `json:"health_policy"`
-	MarginPolicy                string                          `json:"margin_policy"`
-	LastStatus                  string                          `json:"last_status"`
-	LastEvaluatedAt             *time.Time                      `json:"last_evaluated_at,omitempty"`
-	RankingIntervalSeconds      int                             `json:"ranking_interval_seconds"`
-	RankingDirtyAt              *time.Time                      `json:"ranking_dirty_at,omitempty"`
-	LastRankingAt               *time.Time                      `json:"last_ranking_at,omitempty"`
-	LastRankingError            string                          `json:"last_ranking_error,omitempty"`
-	AccountCount                int                             `json:"account_count"`
-	ManagedAccountCount         int                             `json:"managed_account_count"`
+	Group                          storage.UpstreamSyncTargetGroup `json:"group"`
+	Enabled                        bool                            `json:"enabled"`
+	MinimumHealthyAccounts         int                             `json:"minimum_healthy_accounts"`
+	MinimumEffectiveConcurrency    int                             `json:"minimum_effective_concurrency"`
+	RateSortDirection              string                          `json:"rate_sort_direction"`
+	HealthPolicy                   string                          `json:"health_policy"`
+	MarginPolicy                   string                          `json:"margin_policy"`
+	LastStatus                     string                          `json:"last_status"`
+	LastEvaluatedAt                *time.Time                      `json:"last_evaluated_at,omitempty"`
+	RankingIntervalSeconds         int                             `json:"ranking_interval_seconds"`
+	RankingDirtyAt                 *time.Time                      `json:"ranking_dirty_at,omitempty"`
+	LastRankingAt                  *time.Time                      `json:"last_ranking_at,omitempty"`
+	LastRankingError               string                          `json:"last_ranking_error,omitempty"`
+	AutoExpandEnabled              bool                            `json:"auto_expand_enabled"`
+	AutoExpandMinMarginBasisPoints int64                           `json:"auto_expand_min_margin_basis_points"`
+	LastAutoExpandAt               *time.Time                      `json:"last_auto_expand_at,omitempty"`
+	LastAutoExpandError            string                          `json:"last_auto_expand_error,omitempty"`
+	AccountCount                   int                             `json:"account_count"`
+	ManagedAccountCount            int                             `json:"managed_account_count"`
 }
 
 type RateConnection struct {
@@ -192,13 +196,15 @@ type RateQuickTestResult struct {
 }
 
 type GroupSettingsInput struct {
-	Enabled                     *bool  `json:"enabled,omitempty"`
-	MinimumHealthyAccounts      int    `json:"minimum_healthy_accounts"`
-	MinimumEffectiveConcurrency int    `json:"minimum_effective_concurrency"`
-	RateSortDirection           string `json:"rate_sort_direction"`
-	HealthPolicy                string `json:"health_policy"`
-	MarginPolicy                string `json:"margin_policy"`
-	RankingIntervalSeconds      int    `json:"ranking_interval_seconds"`
+	Enabled                        *bool  `json:"enabled,omitempty"`
+	MinimumHealthyAccounts         int    `json:"minimum_healthy_accounts"`
+	MinimumEffectiveConcurrency    int    `json:"minimum_effective_concurrency"`
+	RateSortDirection              string `json:"rate_sort_direction"`
+	HealthPolicy                   string `json:"health_policy"`
+	MarginPolicy                   string `json:"margin_policy"`
+	RankingIntervalSeconds         int    `json:"ranking_interval_seconds"`
+	AutoExpandEnabled              bool   `json:"auto_expand_enabled"`
+	AutoExpandMinMarginBasisPoints int64  `json:"auto_expand_min_margin_basis_points"`
 }
 
 type Page[T any] struct {
@@ -210,17 +216,19 @@ type Page[T any] struct {
 }
 
 type PoolInput struct {
-	Name                        string `json:"name"`
-	Description                 string `json:"description"`
-	Platform                    string `json:"platform"`
-	Enabled                     *bool  `json:"enabled,omitempty"`
-	MinimumHealthyMembers       int    `json:"minimum_healthy_members"`
-	MinimumEffectiveConcurrency int    `json:"minimum_effective_concurrency"`
-	RateSortDirection           string `json:"rate_sort_direction"`
-	HealthPolicy                string `json:"health_policy"`
-	MarginPolicy                string `json:"margin_policy"`
-	RankingIntervalSeconds      int    `json:"ranking_interval_seconds"`
-	TargetGroupIDs              []uint `json:"target_group_ids"`
+	Name                           string `json:"name"`
+	Description                    string `json:"description"`
+	Platform                       string `json:"platform"`
+	Enabled                        *bool  `json:"enabled,omitempty"`
+	MinimumHealthyMembers          int    `json:"minimum_healthy_members"`
+	MinimumEffectiveConcurrency    int    `json:"minimum_effective_concurrency"`
+	RateSortDirection              string `json:"rate_sort_direction"`
+	HealthPolicy                   string `json:"health_policy"`
+	MarginPolicy                   string `json:"margin_policy"`
+	RankingIntervalSeconds         int    `json:"ranking_interval_seconds"`
+	AutoExpandEnabled              bool   `json:"auto_expand_enabled"`
+	AutoExpandMinMarginBasisPoints int64  `json:"auto_expand_min_margin_basis_points"`
+	TargetGroupIDs                 []uint `json:"target_group_ids"`
 }
 
 type PoolDTO struct {

@@ -940,6 +940,8 @@ function actionLabel(action: string) {
     protection_policy_update: "更新保护策略",
     main_station_update: "更新主站配置",
     rate_quick_test: "快速测试上游分组",
+    auto_expand_test: "自动扩池测试",
+    auto_expand_member_add: "自动扩池添加账号",
   }
   return labels[action] ?? action
 }

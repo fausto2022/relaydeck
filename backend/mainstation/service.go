@@ -87,6 +87,7 @@ type Service struct {
 	syncScheduleMu   sync.Mutex
 	rateTestMu       sync.Mutex
 	rateTests        map[string]struct{}
+	autoExpandMu     sync.Mutex
 	tempCleanupMu    sync.Mutex
 	tempCleanupAt    time.Time
 	probeConfigMu    sync.RWMutex

@@ -166,6 +166,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&MainAccountAuditLog{},
 		&MainStationNotificationCooldown{},
 		&MainStationTemporaryAPIKey{},
+		&MainStationAutoExpansionAttempt{},
 	); err != nil {
 		return err
 	}

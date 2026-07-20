@@ -33,6 +33,7 @@ func (f *blockingMainStation) SyncForScheduler(context.Context)           {}
 func (f *blockingMainStation) RunDueSchedulingReconciles(context.Context) {}
 func (f *blockingMainStation) RunDueRankings(context.Context)             {}
 func (f *blockingMainStation) RunProfitEvaluation(context.Context)        {}
+func (f *blockingMainStation) RunAutoExpansion(context.Context)           {}
 
 func openTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

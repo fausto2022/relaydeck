@@ -20,8 +20,15 @@ const (
 )
 
 func (s *Service) QuickTestRate(ctx context.Context, channelID, rateID uint, in RateQuickTestInput) (*RateQuickTestResult, error) {
+	return s.quickTestRate(ctx, channelID, rateID, in, "manual")
+}
+
+func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in RateQuickTestInput, source string) (*RateQuickTestResult, error) {
 	if channelID == 0 || rateID == 0 {
 		return nil, errors.New("渠道或倍率分组参数不正确")
+	}
+	if strings.TrimSpace(source) == "" {
+		source = "manual"
 	}
 	testKey := fmt.Sprintf("%d:%d", channelID, rateID)
 	if !s.beginRateTest(testKey) {
@@ -97,7 +104,7 @@ func (s *Service) QuickTestRate(ctx context.Context, channelID, rateID uint, in 
 	}
 	cleanupErr := s.cleanupTemporaryAPIKey(record)
 	result := quickTestResult(executions, keyName, cleanupErr, s.now())
-	_ = s.appendAudit(nil, nil, nil, "rate_quick_test", "manual", result.Usable, nil, result, map[string]any{
+	_ = s.appendAudit(nil, nil, nil, "rate_quick_test", source, result.Usable, nil, result, map[string]any{
 		"channel_id": channelID,
 		"rate_id":    rateID,
 		"group":      rate.ModelName,

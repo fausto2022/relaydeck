@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -393,6 +394,13 @@ func refreshRates(c *gin.Context, d *Deps) {
 	if err := d.Monitor.RefreshRates(c.Request.Context(), ch); err != nil {
 		c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
 		return
+	}
+	if d.MainStation != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			d.MainStation.RunAutoExpansion(ctx)
+		}()
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

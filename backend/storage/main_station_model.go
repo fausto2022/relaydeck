@@ -88,25 +88,29 @@ func (MainStationProfitSnapshot) TableName() string { return "main_station_profi
 
 // MainAccountPool 是 RelayDeck 的逻辑账号池，不对应单条远端 Account。
 type MainAccountPool struct {
-	ID                          uint       `gorm:"primaryKey" json:"id"`
-	LegacySyncGroupID           *uint      `gorm:"uniqueIndex" json:"legacy_sync_group_id,omitempty"`
-	Name                        string     `gorm:"size:256;not null;uniqueIndex" json:"name"`
-	Description                 string     `gorm:"type:text" json:"description,omitempty"`
-	Platform                    string     `gorm:"size:64" json:"platform,omitempty"`
-	Enabled                     bool       `gorm:"not null;default:true" json:"enabled"`
-	MinimumHealthyMembers       int        `gorm:"not null;default:1" json:"minimum_healthy_members"`
-	MinimumEffectiveConcurrency int        `gorm:"not null;default:1" json:"minimum_effective_concurrency"`
-	RateSortDirection           string     `gorm:"size:16;not null;default:'asc'" json:"rate_sort_direction"`
-	HealthPolicyJSON            string     `gorm:"type:text;not null" json:"health_policy"`
-	MarginPolicyJSON            string     `gorm:"type:text;not null" json:"margin_policy"`
-	RankingIntervalSeconds      int        `gorm:"not null;default:0" json:"ranking_interval_seconds"`
-	RankingDirtyAt              *time.Time `json:"ranking_dirty_at,omitempty"`
-	LastRankingAt               *time.Time `json:"last_ranking_at,omitempty"`
-	LastRankingError            string     `gorm:"type:text" json:"last_ranking_error,omitempty"`
-	LastStatus                  string     `gorm:"size:32;not null;default:'unknown';index" json:"last_status"`
-	LastEvaluatedAt             *time.Time `json:"last_evaluated_at,omitempty"`
-	CreatedAt                   time.Time  `json:"created_at"`
-	UpdatedAt                   time.Time  `json:"updated_at"`
+	ID                             uint       `gorm:"primaryKey" json:"id"`
+	LegacySyncGroupID              *uint      `gorm:"uniqueIndex" json:"legacy_sync_group_id,omitempty"`
+	Name                           string     `gorm:"size:256;not null;uniqueIndex" json:"name"`
+	Description                    string     `gorm:"type:text" json:"description,omitempty"`
+	Platform                       string     `gorm:"size:64" json:"platform,omitempty"`
+	Enabled                        bool       `gorm:"not null;default:true" json:"enabled"`
+	MinimumHealthyMembers          int        `gorm:"not null;default:1" json:"minimum_healthy_members"`
+	MinimumEffectiveConcurrency    int        `gorm:"not null;default:1" json:"minimum_effective_concurrency"`
+	RateSortDirection              string     `gorm:"size:16;not null;default:'asc'" json:"rate_sort_direction"`
+	HealthPolicyJSON               string     `gorm:"type:text;not null" json:"health_policy"`
+	MarginPolicyJSON               string     `gorm:"type:text;not null" json:"margin_policy"`
+	RankingIntervalSeconds         int        `gorm:"not null;default:0" json:"ranking_interval_seconds"`
+	RankingDirtyAt                 *time.Time `json:"ranking_dirty_at,omitempty"`
+	LastRankingAt                  *time.Time `json:"last_ranking_at,omitempty"`
+	LastRankingError               string     `gorm:"type:text" json:"last_ranking_error,omitempty"`
+	AutoExpandEnabled              bool       `gorm:"not null;default:false;index" json:"auto_expand_enabled"`
+	AutoExpandMinMarginBasisPoints int64      `gorm:"not null;default:0" json:"auto_expand_min_margin_basis_points"`
+	LastAutoExpandAt               *time.Time `json:"last_auto_expand_at,omitempty"`
+	LastAutoExpandError            string     `gorm:"type:text" json:"last_auto_expand_error,omitempty"`
+	LastStatus                     string     `gorm:"size:32;not null;default:'unknown';index" json:"last_status"`
+	LastEvaluatedAt                *time.Time `json:"last_evaluated_at,omitempty"`
+	CreatedAt                      time.Time  `json:"created_at"`
+	UpdatedAt                      time.Time  `json:"updated_at"`
 }
 
 func (MainAccountPool) TableName() string { return "main_account_pools" }
@@ -278,4 +282,25 @@ type MainStationTemporaryAPIKey struct {
 
 func (MainStationTemporaryAPIKey) TableName() string {
 	return "main_station_temporary_api_keys"
+}
+
+// MainStationAutoExpansionAttempt 保存自动扩池候选的最近测试状态和冷却时间。
+type MainStationAutoExpansionAttempt struct {
+	ID                   uint       `gorm:"primaryKey" json:"id"`
+	PoolID               uint       `gorm:"not null;uniqueIndex:idx_main_auto_expand_pool_rate;index" json:"pool_id"`
+	TargetGroupID        uint       `gorm:"not null;index" json:"target_group_id"`
+	RateID               uint       `gorm:"not null;uniqueIndex:idx_main_auto_expand_pool_rate;index" json:"rate_id"`
+	ChannelID            uint       `gorm:"not null;index" json:"channel_id"`
+	Status               string     `gorm:"size:32;not null;index" json:"status"`
+	CostMultiplierMicros int64      `gorm:"not null;default:0" json:"cost_multiplier_micros"`
+	MarginBasisPoints    int64      `gorm:"not null;default:0" json:"margin_basis_points"`
+	LastAttemptAt        time.Time  `gorm:"not null;index" json:"last_attempt_at"`
+	NextAttemptAt        *time.Time `gorm:"index" json:"next_attempt_at,omitempty"`
+	Message              string     `gorm:"type:text" json:"message,omitempty"`
+	CreatedAt            time.Time  `gorm:"not null" json:"created_at"`
+	UpdatedAt            time.Time  `gorm:"not null" json:"updated_at"`
+}
+
+func (MainStationAutoExpansionAttempt) TableName() string {
+	return "main_station_auto_expansion_attempts"
 }

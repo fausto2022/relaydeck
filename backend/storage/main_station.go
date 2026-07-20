@@ -356,6 +356,14 @@ func (r *MainStationStore) UpdatePool(item *MainAccountPool, targetGroupIDs []ui
 	})
 }
 
+func (r *MainStationStore) UpdatePoolAutoExpansionStatus(poolID uint, at time.Time, errText string) error {
+	return r.db.Model(&MainAccountPool{}).Where("id = ?", poolID).Updates(map[string]any{
+		"last_auto_expand_at":    at,
+		"last_auto_expand_error": strings.TrimSpace(errText),
+		"updated_at":             at,
+	}).Error
+}
+
 func (r *MainStationStore) DeletePool(id uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var count int64
@@ -861,6 +869,29 @@ func (r *MainStationStore) ListTemporaryAPIKeysForCleanup(now, retryBefore time.
 	return list, err
 }
 
+func (r *MainStationStore) FindAutoExpansionAttempt(poolID, rateID uint) (*MainStationAutoExpansionAttempt, error) {
+	var item MainStationAutoExpansionAttempt
+	if err := r.db.First(&item, "pool_id = ? AND rate_id = ?", poolID, rateID).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *MainStationStore) UpsertAutoExpansionAttempt(item *MainStationAutoExpansionAttempt) error {
+	now := time.Now()
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = now
+	}
+	item.UpdatedAt = now
+	return r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "pool_id"}, {Name: "rate_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"target_group_id", "channel_id", "status", "cost_multiplier_micros", "margin_basis_points",
+			"last_attempt_at", "next_attempt_at", "message", "updated_at",
+		}),
+	}).Create(item).Error
+}
+
 func normalizeStoragePage(page, pageSize int) (int, int) {
 	if page < 1 {
 		page = 1
@@ -886,6 +917,9 @@ func applyPoolDefaults(item *MainAccountPool) {
 	}
 	if item.RankingIntervalSeconds < 0 {
 		item.RankingIntervalSeconds = 0
+	}
+	if item.AutoExpandMinMarginBasisPoints < 0 {
+		item.AutoExpandMinMarginBasisPoints = 0
 	}
 	if item.RateSortDirection != "desc" && item.RateSortDirection != "stability" {
 		item.RateSortDirection = "asc"

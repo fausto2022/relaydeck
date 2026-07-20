@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Save } from "lucide-react"
+import { Save, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -40,6 +40,8 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
   const [healthPolicy, setHealthPolicy] = useState("")
   const [marginPolicy, setMarginPolicy] = useState("")
   const [rankingIntervalSeconds, setRankingIntervalSeconds] = useState(0)
+  const [autoExpandEnabled, setAutoExpandEnabled] = useState(false)
+  const [autoExpandMinMarginPercent, setAutoExpandMinMarginPercent] = useState(0)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -52,6 +54,8 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
     setHealthPolicy(workspace.health_policy)
     setMarginPolicy(workspace.margin_policy)
     setRankingIntervalSeconds(workspace.ranking_interval_seconds ?? 0)
+    setAutoExpandEnabled(workspace.auto_expand_enabled ?? false)
+    setAutoExpandMinMarginPercent((workspace.auto_expand_min_margin_basis_points ?? 0) / 100)
     setAdvancedOpen(false)
   }, [open, workspace])
 
@@ -59,6 +63,10 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
     if (!workspace) return
     if (rankingIntervalSeconds !== 0 && (rankingIntervalSeconds < 5 || rankingIntervalSeconds > 86400)) {
       toast.error("分组重排间隔必须为 0，或在 5 到 86400 秒之间")
+      return
+    }
+    if (!Number.isFinite(autoExpandMinMarginPercent) || autoExpandMinMarginPercent < 0 || autoExpandMinMarginPercent > 99) {
+      toast.error("自动扩池最低利润率必须在 0% 到 99% 之间")
       return
     }
     setBusy(true)
@@ -73,6 +81,8 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
           health_policy: healthPolicy,
           margin_policy: marginPolicy,
           ranking_interval_seconds: rankingIntervalSeconds,
+          auto_expand_enabled: autoExpandEnabled,
+          auto_expand_min_margin_basis_points: Math.round(autoExpandMinMarginPercent * 100),
         }),
       })
       onSaved(saved)
@@ -128,6 +138,37 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, onSaved }: 
               onChange={(event) => setRankingIntervalSeconds(Number(event.target.value))}
             />
             <p className="text-xs text-muted-foreground">填 0 继承主站全局设置；最小自定义间隔为 5 秒。</p>
+          </div>
+          <div className="space-y-4 border-t pt-4 sm:col-span-2">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <Label htmlFor="group-auto-expand" className="flex items-center gap-2">
+                  <Sparkles className="size-4" />自动扩池
+                </Label>
+                <p className="mt-1 text-xs text-muted-foreground">倍率同步后自动筛选同类型上游分组。</p>
+              </div>
+              <Switch id="group-auto-expand" checked={autoExpandEnabled} onCheckedChange={setAutoExpandEnabled} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="group-auto-expand-margin">最低利润率（%）</Label>
+              <Input
+                id="group-auto-expand-margin"
+                type="number"
+                min={0}
+                max={99}
+                step={0.1}
+                value={autoExpandMinMarginPercent}
+                disabled={!autoExpandEnabled}
+                onChange={(event) => setAutoExpandMinMarginPercent(Number(event.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">利润率必须严格高于该值；每轮最多测试 3 个候选，连续 3 次通过后最多新增 1 个账号。</p>
+            </div>
+            {workspace?.last_auto_expand_at || workspace?.last_auto_expand_error ? (
+              <div className="text-xs text-muted-foreground">
+                {workspace.last_auto_expand_at ? `最近执行：${new Date(workspace.last_auto_expand_at).toLocaleString("zh-CN")}` : "尚未执行"}
+                {workspace.last_auto_expand_error ? <p className="mt-1 text-destructive">最近错误：{workspace.last_auto_expand_error}</p> : null}
+              </div>
+            ) : null}
           </div>
         </div>
 

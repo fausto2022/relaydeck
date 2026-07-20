@@ -783,6 +783,10 @@ export interface MainStationGroupWorkspace {
   ranking_dirty_at?: string | null
   last_ranking_at?: string | null
   last_ranking_error?: string
+  auto_expand_enabled: boolean
+  auto_expand_min_margin_basis_points: number
+  last_auto_expand_at?: string | null
+  last_auto_expand_error?: string
   last_status: "healthy" | "degraded" | "critical" | "unknown" | string
   last_evaluated_at?: string | null
   account_count: number

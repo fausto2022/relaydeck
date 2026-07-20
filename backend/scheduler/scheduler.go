@@ -43,6 +43,7 @@ type mainStationHealthService interface {
 	RunDueSchedulingReconciles(ctx context.Context)
 	RunDueRankings(ctx context.Context)
 	RunProfitEvaluation(ctx context.Context)
+	RunAutoExpansion(ctx context.Context)
 }
 
 type mainStationRetentionService interface {
@@ -165,6 +166,7 @@ func (s *Scheduler) runRates() {
 	if s.mainStation != nil {
 		s.mainStation.SyncForScheduler(ctx)
 		s.mainStation.RunProfitEvaluation(ctx)
+		s.mainStation.RunAutoExpansion(ctx)
 	}
 }
 

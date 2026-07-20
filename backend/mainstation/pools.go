@@ -116,21 +116,25 @@ func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO,
 			}
 		}
 		result = append(result, GroupWorkspaceDTO{
-			Group:                       groups[i],
-			Enabled:                     pool.Enabled,
-			MinimumHealthyAccounts:      pool.MinimumHealthyMembers,
-			MinimumEffectiveConcurrency: pool.MinimumEffectiveConcurrency,
-			RateSortDirection:           pool.RateSortDirection,
-			HealthPolicy:                pool.HealthPolicyJSON,
-			MarginPolicy:                pool.MarginPolicyJSON,
-			LastStatus:                  pool.LastStatus,
-			LastEvaluatedAt:             pool.LastEvaluatedAt,
-			RankingIntervalSeconds:      pool.RankingIntervalSeconds,
-			RankingDirtyAt:              pool.RankingDirtyAt,
-			LastRankingAt:               pool.LastRankingAt,
-			LastRankingError:            pool.LastRankingError,
-			AccountCount:                accountCount,
-			ManagedAccountCount:         len(members),
+			Group:                          groups[i],
+			Enabled:                        pool.Enabled,
+			MinimumHealthyAccounts:         pool.MinimumHealthyMembers,
+			MinimumEffectiveConcurrency:    pool.MinimumEffectiveConcurrency,
+			RateSortDirection:              pool.RateSortDirection,
+			HealthPolicy:                   pool.HealthPolicyJSON,
+			MarginPolicy:                   pool.MarginPolicyJSON,
+			LastStatus:                     pool.LastStatus,
+			LastEvaluatedAt:                pool.LastEvaluatedAt,
+			RankingIntervalSeconds:         pool.RankingIntervalSeconds,
+			RankingDirtyAt:                 pool.RankingDirtyAt,
+			LastRankingAt:                  pool.LastRankingAt,
+			LastRankingError:               pool.LastRankingError,
+			AutoExpandEnabled:              pool.AutoExpandEnabled,
+			AutoExpandMinMarginBasisPoints: pool.AutoExpandMinMarginBasisPoints,
+			LastAutoExpandAt:               pool.LastAutoExpandAt,
+			LastAutoExpandError:            pool.LastAutoExpandError,
+			AccountCount:                   accountCount,
+			ManagedAccountCount:            len(members),
 		})
 	}
 	return result, nil
@@ -211,7 +215,21 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	if err := validatePoolRankingInterval(in.RankingIntervalSeconds); err != nil {
 		return nil, err
 	}
+	if err := validateAutoExpandMarginBasisPoints(in.AutoExpandMinMarginBasisPoints); err != nil {
+		return nil, err
+	}
+	if in.AutoExpandEnabled {
+		platform := normalizeHealthPlatform(pool.Platform)
+		if _, err := quickTestAPIMode(platform); err != nil {
+			return nil, errors.New("当前主站分组类型不支持自动扩池测试")
+		}
+		if strings.TrimSpace(s.configuredHealthModels()[platform]) == "" {
+			return nil, fmt.Errorf("请先在主站配置中设置 %s 类型的全局探活模型", platform)
+		}
+	}
 	pool.RankingIntervalSeconds = in.RankingIntervalSeconds
+	pool.AutoExpandEnabled = in.AutoExpandEnabled
+	pool.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
 	pool.HealthPolicyJSON = strings.TrimSpace(in.HealthPolicy)
 	pool.MarginPolicyJSON = strings.TrimSpace(in.MarginPolicy)
 	if err := s.store.UpdatePool(pool, []uint{group.ID}); err != nil {
@@ -420,6 +438,20 @@ func (s *Service) poolFromInput(existing *storage.MainAccountPool, in PoolInput)
 		return nil, nil, err
 	}
 	item.RankingIntervalSeconds = in.RankingIntervalSeconds
+	if err := validateAutoExpandMarginBasisPoints(in.AutoExpandMinMarginBasisPoints); err != nil {
+		return nil, nil, err
+	}
+	item.AutoExpandEnabled = in.AutoExpandEnabled
+	item.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
+	if item.AutoExpandEnabled {
+		platform := normalizeHealthPlatform(item.Platform)
+		if _, err := quickTestAPIMode(platform); err != nil {
+			return nil, nil, errors.New("当前账号池类型不支持自动扩池测试")
+		}
+		if strings.TrimSpace(s.configuredHealthModels()[platform]) == "" {
+			return nil, nil, fmt.Errorf("请先在主站配置中设置 %s 类型的全局探活模型", platform)
+		}
+	}
 	if existing == nil {
 		item.Enabled = true
 	}
