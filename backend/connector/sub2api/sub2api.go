@@ -75,6 +75,41 @@ func (c *Client) GetTurnstileSiteKey(ctx context.Context, ch *connector.Channel)
 	return settings.TurnstileSiteKey, nil
 }
 
+func (c *Client) GetImageCaptcha(ctx context.Context, ch *connector.Channel) (*connector.ImageCaptchaChallenge, error) {
+	site := strings.TrimRight(ch.SiteURL, "/")
+	body, err := c.getJSON(ctx, site+"/api/v1/settings/public", nil)
+	if err != nil {
+		return nil, fmt.Errorf("sub2api public settings: %w", err)
+	}
+	var settings struct {
+		LocalCaptchaEnabled bool `json:"local_captcha_enabled"`
+	}
+	if err := json.Unmarshal(body, &settings); err != nil {
+		return nil, fmt.Errorf("sub2api public settings decode: %w", err)
+	}
+	if !settings.LocalCaptchaEnabled {
+		return nil, nil
+	}
+	body, err = c.getJSON(ctx, site+"/api/v1/auth/captcha", nil)
+	if err != nil {
+		return nil, fmt.Errorf("sub2api image captcha: %w", err)
+	}
+	var challenge struct {
+		ID        string `json:"captcha_id"`
+		ImageData string `json:"image_data"`
+	}
+	if err := json.Unmarshal(body, &challenge); err != nil {
+		return nil, fmt.Errorf("sub2api image captcha decode: %w", err)
+	}
+	if strings.TrimSpace(challenge.ID) == "" || strings.TrimSpace(challenge.ImageData) == "" {
+		return nil, errors.New("sub2api image captcha response is incomplete")
+	}
+	return &connector.ImageCaptchaChallenge{
+		ID:          challenge.ID,
+		ImageBase64: challenge.ImageData,
+	}, nil
+}
+
 func (c *Client) Login(ctx context.Context, ch *connector.Channel) (*connector.AuthSession, error) {
 	site := strings.TrimRight(ch.SiteURL, "/")
 	body := map[string]any{
@@ -87,6 +122,10 @@ func (c *Client) Login(ctx context.Context, ch *connector.Channel) (*connector.A
 	if ch.TurnstileToken != "" {
 		body["turnstile_token"] = ch.TurnstileToken
 	}
+	if ch.ImageCaptchaID != "" && ch.ImageCaptchaCode != "" {
+		body["captcha_id"] = ch.ImageCaptchaID
+		body["captcha_code"] = ch.ImageCaptchaCode
+	}
 
 	resp, err := c.http.R().
 		SetContext(ctx).
@@ -97,6 +136,10 @@ func (c *Client) Login(ctx context.Context, ch *connector.Channel) (*connector.A
 		return nil, fmt.Errorf("sub2api login http: %w", err)
 	}
 	if resp.IsError() {
+		var failed sub2Resp
+		if json.Unmarshal(resp.Body(), &failed) == nil && isCaptchaMessage(failed.Message) {
+			return nil, &connector.CaptchaRejectedError{Message: "sub2api login: " + failed.Message}
+		}
 		return nil, fmt.Errorf("sub2api login: %w", connector.HTTPStatusError(resp.StatusCode(), resp.Body()))
 	}
 	var wrapped sub2Resp
@@ -104,6 +147,9 @@ func (c *Client) Login(ctx context.Context, ch *connector.Channel) (*connector.A
 		return nil, fmt.Errorf("sub2api login decode: %w", err)
 	}
 	if wrapped.Code != 0 {
+		if isCaptchaMessage(wrapped.Message) {
+			return nil, &connector.CaptchaRejectedError{Message: "sub2api login: " + wrapped.Message}
+		}
 		return nil, fmt.Errorf("sub2api login: %s", wrapped.Message)
 	}
 
@@ -132,6 +178,11 @@ func (c *Client) Login(ctx context.Context, ch *connector.Channel) (*connector.A
 		RefreshToken: data.RefreshToken,
 		ExpiresAt:    expires,
 	}, nil
+}
+
+func isCaptchaMessage(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	return strings.Contains(message, "captcha") || strings.Contains(message, "验证码")
 }
 
 func (c *Client) RefreshSession(ctx context.Context, ch *connector.Channel, session *connector.AuthSession) (*connector.AuthSession, error) {

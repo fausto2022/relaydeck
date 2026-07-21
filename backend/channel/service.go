@@ -29,6 +29,8 @@ const tokenSessionTTL = 365 * 24 * time.Hour
 
 const loginRateLimitBackoff = 30 * time.Second
 
+const imageCaptchaLoginAttempts = 3
+
 // Service 渠道领域服务。
 type Service struct {
 	Channels     *storage.Channels
@@ -605,30 +607,82 @@ func (s *Service) prepareTurnstile(
 }
 
 func (s *Service) solveCaptcha(ctx context.Context, captchaID uint, siteKey, pageURL string) (string, error) {
-	cfg, err := s.Captchas.FindByID(captchaID)
+	provider, err := s.buildCaptchaProvider(captchaID)
 	if err != nil {
 		return "", err
 	}
+	return provider.SolveTurnstile(ctx, siteKey, pageURL)
+}
+
+func (s *Service) buildCaptchaProvider(captchaID uint) (captcha.Provider, error) {
+	cfg, err := s.Captchas.FindByID(captchaID)
+	if err != nil {
+		return nil, err
+	}
 	if !cfg.Enabled {
-		return "", errors.New("captcha config disabled")
+		return nil, errors.New("captcha config disabled")
 	}
 	apiKey, err := s.Cipher.Decrypt(cfg.APIKeyCipher)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	proxyURL := ""
 	if cfg.ProxyEnabled {
 		var proxyErr error
 		proxyURL, proxyErr = s.proxyURL()
 		if proxyErr != nil {
-			return "", proxyErr
+			return nil, proxyErr
 		}
 	}
 	provider, err := captcha.BuildWithProxy(cfg, apiKey, proxyURL)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return provider.SolveTurnstile(ctx, siteKey, pageURL)
+	return provider, nil
+}
+
+func (s *Service) prepareImageCaptcha(
+	ctx context.Context,
+	c *storage.Channel,
+	resolved *connector.Channel,
+	conn connector.Connector,
+) (bool, error) {
+	if !c.TurnstileEnabled || c.CaptchaConfigID == nil {
+		return false, nil
+	}
+	fetcher, ok := conn.(connector.ImageCaptchaProvider)
+	if !ok {
+		return false, nil
+	}
+	challenge, err := fetcher.GetImageCaptcha(ctx, resolved)
+	if err != nil {
+		return false, fmt.Errorf("获取字符验证码失败：%w", err)
+	}
+	if challenge == nil {
+		resolved.ImageCaptchaID = ""
+		resolved.ImageCaptchaCode = ""
+		return false, nil
+	}
+	progress.Start(ctx, progress.StageCaptcha, "识别字符验证码…")
+	provider, err := s.buildCaptchaProvider(*c.CaptchaConfigID)
+	if err != nil {
+		progress.Fail(ctx, progress.StageCaptcha, err.Error())
+		return true, err
+	}
+	code, err := provider.SolveImageToText(ctx, challenge.ImageBase64)
+	if err != nil {
+		progress.Fail(ctx, progress.StageCaptcha, err.Error())
+		return true, fmt.Errorf("识别字符验证码失败：%w", err)
+	}
+	resolved.ImageCaptchaID = strings.TrimSpace(challenge.ID)
+	resolved.ImageCaptchaCode = strings.ToUpper(strings.TrimSpace(code))
+	if resolved.ImageCaptchaCode == "" {
+		err := errors.New("打码平台返回了空的字符验证码")
+		progress.Fail(ctx, progress.StageCaptcha, err.Error())
+		return true, err
+	}
+	progress.OK(ctx, progress.StageCaptcha, "字符验证码识别完成")
+	return true, nil
 }
 
 // EnsureSession 优先复用未过期的 session，否则重新登录并加密回写。
@@ -853,12 +907,25 @@ func (s *Service) loginLocked(
 	if err := s.loginBackoffError(c.ID); err != nil {
 		return nil, err
 	}
-	if err := s.prepareTurnstile(ctx, c, resolved, conn); err != nil {
-		return nil, err
-	}
 	progress.Start(ctx, progress.StageLogin, "登录上游…")
 	started := time.Now()
-	session, err := conn.Login(ctx, resolved)
+	var session *connector.AuthSession
+	var err error
+	for attempt := 1; attempt <= imageCaptchaLoginAttempts; attempt++ {
+		if err = s.prepareTurnstile(ctx, c, resolved, conn); err != nil {
+			break
+		}
+		var imageCaptchaEnabled bool
+		imageCaptchaEnabled, err = s.prepareImageCaptcha(ctx, c, resolved, conn)
+		if err != nil {
+			break
+		}
+		session, err = conn.Login(ctx, resolved)
+		if err == nil || !imageCaptchaEnabled || !connector.IsCaptchaRejected(err) || attempt == imageCaptchaLoginAttempts {
+			break
+		}
+		progress.Start(ctx, progress.StageCaptcha, fmt.Sprintf("字符验证码未通过，重新识别（%d/%d）…", attempt+1, imageCaptchaLoginAttempts))
+	}
 	if err == nil {
 		progress.Start(ctx, progress.StageSession, "验证登录会话…")
 		if checkErr := conn.CheckAuth(ctx, resolved, session); checkErr != nil {

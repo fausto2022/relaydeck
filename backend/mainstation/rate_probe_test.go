@@ -111,8 +111,8 @@ func TestQuickTestRateGeneratesAndReturnsImagePreview(t *testing.T) {
 	if !result.Usable || result.Protocol != "openai_image" || result.ImageURL != "data:image/png;base64,aW1hZ2U=" {
 		t.Fatalf("image quick test result = %#v", result)
 	}
-	if requestCount.Load() != rateQuickTestAttempts {
-		t.Fatalf("image request count = %d, want %d", requestCount.Load(), rateQuickTestAttempts)
+	if result.AttemptCount != 1 || result.SuccessCount != 1 || requestCount.Load() != 1 {
+		t.Fatalf("image attempts = %#v request_count=%d", result.Attempts, requestCount.Load())
 	}
 }
 

@@ -457,7 +457,7 @@ function TestingProgress({ image }: { image: boolean }) {
       <Loader2 className="mt-0.5 size-5 animate-spin text-primary" />
       <div>
         <p className="text-sm font-medium">正在测试上游分组</p>
-        <p className="mt-1 text-xs text-muted-foreground">创建临时 Key、连续发送 3 次{image ? "生图" : "最小"}请求并清理 Key，请勿关闭窗口。</p>
+        <p className="mt-1 text-xs text-muted-foreground">创建临时 Key、{image ? "发送 1 次生图请求" : "连续发送 3 次最小请求"}并清理 Key，请勿关闭窗口。</p>
       </div>
     </div>
   )

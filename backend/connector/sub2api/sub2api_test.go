@@ -67,6 +67,56 @@ func TestLoginAddsExtraParams(t *testing.T) {
 	}
 }
 
+func TestImageCaptchaChallengeAndLoginPayload(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/settings/public", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"local_captcha_enabled":true}}`))
+	})
+	mux.HandleFunc("/api/v1/auth/captcha", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"captcha_id":"challenge-1","image_data":"data:image/png;base64,aW1hZ2U="}}`))
+	})
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["captcha_id"] != "challenge-1" || body["captcha_code"] != "ZTVHD" {
+			t.Fatalf("captcha body = %#v", body)
+		}
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"access_token":"token","expires_in":3600}}`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := New()
+	channel := &connector.Channel{SiteURL: server.URL, Username: "u", Password: "p"}
+	challenge, err := client.GetImageCaptcha(context.Background(), channel)
+	if err != nil {
+		t.Fatalf("GetImageCaptcha: %v", err)
+	}
+	if challenge == nil || challenge.ID != "challenge-1" || challenge.ImageBase64 == "" {
+		t.Fatalf("challenge = %#v", challenge)
+	}
+	channel.ImageCaptchaID = challenge.ID
+	channel.ImageCaptchaCode = "ZTVHD"
+	if _, err := client.Login(context.Background(), channel); err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+}
+
+func TestLoginMarksCaptchaRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":400,"message":"验证码错误","data":null}`))
+	}))
+	defer server.Close()
+
+	_, err := New().Login(context.Background(), &connector.Channel{SiteURL: server.URL})
+	if !connector.IsCaptchaRejected(err) {
+		t.Fatalf("error = %v, want captcha rejection", err)
+	}
+}
+
 func TestRefreshSession(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/auth/refresh", func(w http.ResponseWriter, r *http.Request) {

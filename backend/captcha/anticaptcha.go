@@ -101,6 +101,10 @@ func (p *antiCaptcha) SolveTurnstile(ctx context.Context, siteKey, pageURL strin
 	}
 }
 
+func (p *antiCaptcha) SolveImageToText(ctx context.Context, imageBase64 string) (string, error) {
+	return solveImageTask(ctx, p.http, p.base, p.cfg.APIKey, "anticaptcha", imageBase64, false)
+}
+
 func (p *antiCaptcha) createTask(ctx context.Context, siteKey, pageURL string) (string, error) {
 	body := map[string]any{
 		"clientKey": p.cfg.APIKey,

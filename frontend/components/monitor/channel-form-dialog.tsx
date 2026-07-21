@@ -718,13 +718,13 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
             />
           </div>
 
-          {/* Turnstile / 打码：token 模式下整段不展示 */}
+          {/* 登录验证码：token 模式下整段不展示 */}
           {!isTokenMode ? (
             <>
               <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
                 <div>
-                  <p className="text-sm font-medium">Turnstile 人机校验</p>
-                  <p className="text-xs text-muted-foreground">站点开启 Cloudflare Turnstile 时打开</p>
+                  <p className="text-sm font-medium">自动处理登录验证码</p>
+                  <p className="text-xs text-muted-foreground">支持 Turnstile 和 Sub2API 字符图片验证码</p>
                 </div>
                 <Switch
                   checked={form.turnstile_enabled}
@@ -735,7 +735,7 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
 
               {form.turnstile_enabled ? (
                 <div className="space-y-1.5">
-                  <Label htmlFor="captcha-config">打码 provider</Label>
+                  <Label htmlFor="captcha-config">打码平台</Label>
                   <Select
                     value={form.captcha_config_id}
                     onValueChange={(v) => setForm({ ...form, captcha_config_id: v })}
@@ -745,7 +745,7 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
                       <SelectValue
                         placeholder={
                           captchas.data && captchas.data.length > 0
-                            ? "选择 provider"
+                            ? "选择打码平台"
                             : "先到底部 [验证码服务] 卡片新增"
                         }
                       />
@@ -761,7 +761,7 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
                     </SelectContent>
                   </Select>
                   <p className="text-[11px] text-muted-foreground">
-                    {"siteKey 会自动从上游公开接口拉取，无需在此填写。"}
+                    {"验证码类型和图片会自动从上游获取，无需手动填写。"}
                   </p>
                 </div>
               ) : null}

@@ -98,8 +98,9 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 		return nil, errors.Join(errors.New("临时测试 Key 内容为空"), cleanupErr)
 	}
 
-	executions := make([]probeExecution, 0, rateQuickTestAttempts)
-	for range rateQuickTestAttempts {
+	attemptCount := quickTestAttemptCount(platform)
+	executions := make([]probeExecution, 0, attemptCount)
+	for range attemptCount {
 		executions = append(executions, s.performProbeRequest(ctx, channel, secret, request))
 	}
 	cleanupErr := s.cleanupTemporaryAPIKey(record)
@@ -114,6 +115,13 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 		"model":      model,
 	}, result.Message, result.CleanupError)
 	return result, nil
+}
+
+func quickTestAttemptCount(platform string) int {
+	if normalizeHealthPlatform(platform) == "image" {
+		return 1
+	}
+	return rateQuickTestAttempts
 }
 
 func (s *Service) CleanupTemporaryAPIKeys(ctx context.Context) {
@@ -305,6 +313,9 @@ func quickTestAggregateMessage(executions []probeExecution, successCount int, fi
 		return "快速测试没有执行"
 	}
 	if successCount == len(executions) {
+		if len(executions) == 1 && executions[0].Protocol == "openai_image" {
+			return "生图测试成功，当前上游分组可以生成图片"
+		}
 		return fmt.Sprintf("连续测试 %d 次全部成功，当前上游分组可以使用", len(executions))
 	}
 	if successCount > 0 {

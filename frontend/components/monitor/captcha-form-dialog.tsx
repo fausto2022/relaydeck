@@ -120,7 +120,7 @@ export function CaptchaFormDialog({ open, onOpenChange, config }: CaptchaFormDia
         <DialogHeader>
           <DialogTitle>{isEdit ? "编辑打码平台" : "新增打码平台"}</DialogTitle>
           <DialogDescription>
-            上游站点开启 Turnstile 时，会用此打码 provider 拿 token。siteKey 由 RelayDeck 自动从上游公开接口拉，无需手填。
+            用于自动处理上游登录时的 Turnstile 或字符图片验证码，RelayDeck 会按站点公开配置自动判断类型。
           </DialogDescription>
         </DialogHeader>
 
@@ -186,7 +186,7 @@ export function CaptchaFormDialog({ open, onOpenChange, config }: CaptchaFormDia
           <div className="flex items-start justify-between gap-3 rounded-lg border border-border px-3 py-2">
             <div>
               <p className="text-sm font-medium">启用</p>
-              <p className="text-xs text-muted-foreground">关闭后渠道无法使用此 provider 求解</p>
+              <p className="text-xs text-muted-foreground">关闭后渠道无法使用此 provider 处理登录验证码</p>
             </div>
             <Switch
               checked={form.enabled}

@@ -100,6 +100,10 @@ func (p *capSolver) SolveTurnstile(ctx context.Context, siteKey, pageURL string)
 	}
 }
 
+func (p *capSolver) SolveImageToText(ctx context.Context, imageBase64 string) (string, error) {
+	return solveImageTask(ctx, p.http, p.base, p.cfg.APIKey, "capsolver", imageBase64, true)
+}
+
 func (p *capSolver) createTask(ctx context.Context, siteKey, pageURL string) (string, error) {
 	body := map[string]any{
 		"clientKey": p.cfg.APIKey,

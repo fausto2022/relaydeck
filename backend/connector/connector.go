@@ -11,6 +11,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -40,7 +41,14 @@ type Channel struct {
 	RechargeMultiplier     *float64
 	RechargeMultiplierMode string
 	// TurnstileToken 由调用方在 Login 前预先求解打码后填入；为空则直接发起登录。
-	TurnstileToken string
+	TurnstileToken   string
+	ImageCaptchaID   string
+	ImageCaptchaCode string
+}
+
+type ImageCaptchaChallenge struct {
+	ID          string
+	ImageBase64 string
 }
 
 const (
@@ -362,6 +370,22 @@ type Connector interface {
 // SessionRefresher 是支持 refresh_token 续期的 connector 可选能力。
 type SessionRefresher interface {
 	RefreshSession(ctx context.Context, channel *Channel, session *AuthSession) (*AuthSession, error)
+}
+
+// ImageCaptchaProvider 是支持登录字符验证码的 connector 可选能力。
+type ImageCaptchaProvider interface {
+	GetImageCaptcha(ctx context.Context, channel *Channel) (*ImageCaptchaChallenge, error)
+}
+
+type CaptchaRejectedError struct {
+	Message string
+}
+
+func (e *CaptchaRejectedError) Error() string { return e.Message }
+
+func IsCaptchaRejected(err error) bool {
+	var target *CaptchaRejectedError
+	return errors.As(err, &target)
 }
 
 // AccountLimitsProvider 由能够读取当前用户限制的 connector 可选实现。

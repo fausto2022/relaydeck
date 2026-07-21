@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/fausto2022/relaydeck/backend/config"
 	"github.com/fausto2022/relaydeck/backend/connector"
 	_ "github.com/fausto2022/relaydeck/backend/connector/newapi"
+	_ "github.com/fausto2022/relaydeck/backend/connector/sub2api"
 	"github.com/fausto2022/relaydeck/backend/crypto"
 	"github.com/fausto2022/relaydeck/backend/storage"
 )
@@ -420,6 +422,75 @@ func TestTestLoginFailsWhenSessionAuthFails(t *testing.T) {
 	}
 	if saved != nil {
 		t.Fatalf("saved session = %#v, want nil", saved)
+	}
+}
+
+func TestTestLoginRetriesRejectedImageCaptcha(t *testing.T) {
+	var loginCalls atomic.Int32
+	var captchaCalls atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/settings/public", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"turnstile_enabled":false,"local_captcha_enabled":true}}`))
+	})
+	mux.HandleFunc("/api/v1/auth/captcha", func(w http.ResponseWriter, r *http.Request) {
+		call := captchaCalls.Add(1)
+		_, _ = fmt.Fprintf(w, `{"code":0,"message":"success","data":{"captcha_id":"challenge-%d","image_data":"data:image/png;base64,aW1hZ2U="}}`, call)
+	})
+	mux.HandleFunc("/createTask", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"errorId":0,"status":"ready","solution":{"text":"ZTVHD"}}`))
+	})
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		call := loginCalls.Add(1)
+		if call == 1 {
+			_, _ = w.Write([]byte(`{"code":400,"message":"验证码错误","data":null}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"access_token":"token","expires_in":3600}}`))
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"id":7}}`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	svc, cipher := testService(t)
+	apiKeyCipher, err := cipher.Encrypt("captcha-key")
+	if err != nil {
+		t.Fatalf("encrypt captcha key: %v", err)
+	}
+	captchaConfig := &storage.CaptchaConfig{
+		Name:         "image-captcha",
+		Type:         storage.CaptchaTwoCaptcha,
+		APIKeyCipher: apiKeyCipher,
+		Endpoint:     server.URL,
+		Enabled:      true,
+	}
+	if err := svc.Captchas.Create(captchaConfig); err != nil {
+		t.Fatalf("create captcha config: %v", err)
+	}
+	passwordCipher, err := cipher.Encrypt("password")
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	channel := &storage.Channel{
+		Name:             "image-captcha-channel",
+		Type:             storage.ChannelTypeSub2API,
+		SiteURL:          server.URL,
+		Username:         "user@example.com",
+		PasswordCipher:   passwordCipher,
+		CredentialMode:   storage.CredentialModePassword,
+		TurnstileEnabled: true,
+		CaptchaConfigID:  &captchaConfig.ID,
+	}
+	if err := svc.Channels.Create(channel); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+
+	if err := svc.TestLogin(context.Background(), channel.ID); err != nil {
+		t.Fatalf("TestLogin: %v", err)
+	}
+	if loginCalls.Load() != 2 || captchaCalls.Load() != 2 {
+		t.Fatalf("login calls = %d, captcha calls = %d", loginCalls.Load(), captchaCalls.Load())
 	}
 }
 

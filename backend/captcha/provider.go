@@ -12,13 +12,10 @@ import (
 	"github.com/fausto2022/relaydeck/backend/storage"
 )
 
-// Provider 打码平台抽象。所有实现都返回可作为 Turnstile token 的字符串。
-//
-// 字段含义与 CLAUDE.md 中给出的接口一致：
-//
-//	SolveTurnstile(siteKey, pageURL) (token, error)
+// Provider 打码平台抽象，同时支持 Turnstile token 和字符图片识别。
 type Provider interface {
 	SolveTurnstile(ctx context.Context, siteKey, pageURL string) (string, error)
+	SolveImageToText(ctx context.Context, imageBase64 string) (string, error)
 }
 
 type ProxySetter interface {
