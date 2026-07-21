@@ -785,6 +785,7 @@ export interface MainStationAccountMember {
   concurrency: number
   health_enabled: boolean
   health_model?: string
+  health_api_mode: string
   health_interval_seconds: number
   health_failure_threshold: number
   health_recovery_threshold: number

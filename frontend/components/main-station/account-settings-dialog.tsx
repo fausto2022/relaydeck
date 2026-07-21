@@ -44,6 +44,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
   const [preferred, setPreferred] = useState(false)
   const [healthEnabled, setHealthEnabled] = useState(true)
   const [healthModel, setHealthModel] = useState("")
+  const [healthAPIMode, setHealthAPIMode] = useState("openai_chat")
   const [healthInterval, setHealthInterval] = useState("")
   const [healthFailureThreshold, setHealthFailureThreshold] = useState("")
   const [healthRecoveryThreshold, setHealthRecoveryThreshold] = useState("")
@@ -58,6 +59,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
     setPreferred(account.member.preferred)
     setHealthEnabled(account.member.health_enabled)
     setHealthModel(account.member.health_model ?? "")
+    setHealthAPIMode(account.member.health_api_mode || "openai_chat")
     setHealthInterval(account.member.health_interval_seconds > 0 ? String(account.member.health_interval_seconds) : "")
     setHealthFailureThreshold(account.member.health_failure_threshold > 0 ? String(account.member.health_failure_threshold) : "")
     setHealthRecoveryThreshold(account.member.health_recovery_threshold > 0 ? String(account.member.health_recovery_threshold) : "")
@@ -113,7 +115,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
           health_interval_seconds: healthIntervalSeconds,
           health_failure_threshold: failureThreshold,
           health_recovery_threshold: recoveryThreshold,
-          health_api_mode: "openai_chat",
+          health_api_mode: healthAPIMode,
         }),
       })
       onSaved(saved)
@@ -169,6 +171,16 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
               </SelectContent>
             </Select>
             {catalog?.error ? <p className="text-xs text-destructive">{catalog.error}</p> : null}
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="edit-account-health-api-mode">L1 探活接口</Label>
+            <Select value={healthAPIMode} onValueChange={setHealthAPIMode}>
+              <SelectTrigger id="edit-account-health-api-mode"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="openai_chat">Chat Completions</SelectItem>
+                <SelectItem value="openai_responses">Responses API</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="edit-account-health-interval">账号探活间隔（秒）</Label>

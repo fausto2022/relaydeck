@@ -60,6 +60,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
   const [preferred, setPreferred] = useState(false)
   const [healthEnabled, setHealthEnabled] = useState(true)
   const [healthModel, setHealthModel] = useState("")
+  const [healthAPIMode, setHealthAPIMode] = useState("openai_chat")
   const [priority, setPriority] = useState(1)
   const [concurrency, setConcurrency] = useState(0)
   const [concurrencyDetected, setConcurrencyDetected] = useState(false)
@@ -89,6 +90,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
     setPreferred(false)
     setHealthEnabled(true)
     setHealthModel("")
+    setHealthAPIMode("openai_chat")
     setPriority(1)
     setConcurrency(0)
     setConcurrencyDetected(false)
@@ -216,7 +218,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
             cost_adjustment: 1,
             health_enabled: healthEnabled,
             health_model: healthModel.trim(),
-            health_api_mode: "openai_chat",
+            health_api_mode: healthAPIMode,
           }),
         })
         setBusy(false)
@@ -341,6 +343,16 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="account-health-model">账号探活模型（可选）</Label>
                 <Input id="account-health-model" value={healthModel} onChange={(event) => setHealthModel(event.target.value)} placeholder="留空继承平台全局模型" />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="account-health-api-mode">L1 探活接口</Label>
+                <Select value={healthAPIMode} onValueChange={setHealthAPIMode}>
+                  <SelectTrigger id="account-health-api-mode"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="openai_chat">Chat Completions</SelectItem>
+                    <SelectItem value="openai_responses">Responses API</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
