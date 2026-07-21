@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -790,6 +791,111 @@ func TestSyncAllChannelsEmitsChannelMetadata(t *testing.T) {
 	}
 }
 
+func TestSyncAllChannelsRefreshesRatesForEveryChannel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := openTestDB(t)
+	channels := storage.NewChannels(db)
+	for _, name := range []string{"a", "b"} {
+		if err := channels.Create(&storage.Channel{
+			Name:           name,
+			Type:           storage.ChannelTypeNewAPI,
+			SiteURL:        "https://" + name + ".example.com",
+			Username:       name,
+			PasswordCipher: "x",
+			MonitorEnabled: true,
+		}); err != nil {
+			t.Fatalf("create channel %s: %v", name, err)
+		}
+	}
+
+	monitor := &stubMonitor{}
+	r := gin.New()
+	registerChannels(r.Group("/api"), &Deps{
+		Channels: channels,
+		Rates:    storage.NewRates(db),
+		Notifies: storage.NewNotifications(db),
+		Monitor:  monitor,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/channels/sync-all", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if len(monitor.rateCalls) != 2 || monitor.rateCalls[0] != 1 || monitor.rateCalls[1] != 2 {
+		t.Fatalf("rate refresh calls = %#v, want [1 2]", monitor.rateCalls)
+	}
+}
+
+func TestSyncAllChannelsContinuesAfterStageError(t *testing.T) {
+	tests := []struct {
+		name                  string
+		balanceErr            error
+		rateErr               error
+		wantSubscriptionCalls int
+	}{
+		{name: "balance error", balanceErr: errors.New("balance failed")},
+		{name: "rate error", rateErr: errors.New("rate failed"), wantSubscriptionCalls: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+
+			db := openTestDB(t)
+			channels := storage.NewChannels(db)
+			if err := channels.Create(&storage.Channel{
+				Name:           "a",
+				Type:           storage.ChannelTypeNewAPI,
+				SiteURL:        "https://a.example.com",
+				Username:       "a",
+				PasswordCipher: "x",
+				MonitorEnabled: true,
+			}); err != nil {
+				t.Fatalf("create channel: %v", err)
+			}
+
+			monitor := &stubMonitor{balanceErr: tt.balanceErr, rateErr: tt.rateErr}
+			r := gin.New()
+			registerChannels(r.Group("/api"), &Deps{
+				Channels: channels,
+				Rates:    storage.NewRates(db),
+				Notifies: storage.NewNotifications(db),
+				Monitor:  monitor,
+			})
+
+			req := httptest.NewRequest(http.MethodPost, "/api/channels/sync-all", nil)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			if len(monitor.balanceCalls) != 1 ||
+				len(monitor.subscriptionCalls) != tt.wantSubscriptionCalls ||
+				len(monitor.rateCalls) != 1 {
+				t.Fatalf(
+					"stage calls: balance=%#v subscription=%#v rates=%#v",
+					monitor.balanceCalls,
+					monitor.subscriptionCalls,
+					monitor.rateCalls,
+				)
+			}
+			events := decodeSSEEvents(t, rec.Body.String())
+			if len(events) == 0 {
+				t.Fatal("expected SSE events")
+			}
+			final := events[len(events)-1]
+			if final.Stage != progress.StageError || final.ChannelID != 0 {
+				t.Fatalf("final event = %#v, want global error", final)
+			}
+		})
+	}
+}
+
 func TestSyncChannelChecksSubscriptionAlerts(t *testing.T) {
 	syncSubscriptionAlertTest(t, "/api/channels/1/sync")
 }
@@ -898,19 +1004,38 @@ func syncSubscriptionAlertTest(t *testing.T, path string) {
 	}
 }
 
-type stubMonitor struct{}
+type stubMonitor struct {
+	balanceErr        error
+	rateErr           error
+	subscriptionErr   error
+	balanceCalls      []uint
+	rateCalls         []uint
+	subscriptionCalls []uint
+}
 
 func (s *stubMonitor) RefreshBalance(ctx context.Context, c *storage.Channel) error {
+	s.balanceCalls = append(s.balanceCalls, c.ID)
+	if s.balanceErr != nil {
+		progress.Fail(ctx, progress.StageBalance, s.balanceErr.Error())
+		return s.balanceErr
+	}
 	progress.OK(ctx, progress.StageBalance, "ok")
 	return nil
 }
 
 func (s *stubMonitor) RefreshRates(ctx context.Context, c *storage.Channel) error {
+	s.rateCalls = append(s.rateCalls, c.ID)
+	if s.rateErr != nil {
+		progress.Fail(ctx, progress.StageRates, s.rateErr.Error())
+		return s.rateErr
+	}
+	progress.OK(ctx, progress.StageRates, "ok")
 	return nil
 }
 
 func (s *stubMonitor) CheckSubscriptionUsageAlerts(ctx context.Context, c *storage.Channel) error {
-	return nil
+	s.subscriptionCalls = append(s.subscriptionCalls, c.ID)
+	return s.subscriptionErr
 }
 
 func mustEncryptAPI(t *testing.T, cipher *crypto.Cipher, plain string) string {
@@ -948,6 +1073,25 @@ func findFirstJSONBody(s string) string {
 		}
 	}
 	return ""
+}
+
+func decodeSSEEvents(t *testing.T, body string) []progress.Event {
+	t.Helper()
+	var events []progress.Event
+	for _, block := range strings.Split(body, "\n\n") {
+		for _, line := range strings.Split(block, "\n") {
+			payload, ok := strings.CutPrefix(line, "data: ")
+			if !ok {
+				continue
+			}
+			var event progress.Event
+			if err := json.Unmarshal([]byte(payload), &event); err != nil {
+				t.Fatalf("decode SSE event %q: %v", payload, err)
+			}
+			events = append(events, event)
+		}
+	}
+	return events
 }
 
 func TestDeleteChannelCleansHistories(t *testing.T) {

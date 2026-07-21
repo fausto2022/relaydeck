@@ -48,7 +48,7 @@ function cacheKey(path: string, tick: number, bump: number) {
   return `${path}#${tick}#${bump}`
 }
 
-function fetchShared<T>(path: string, key: string): Promise<T> {
+export function fetchShared<T>(path: string, key: string): Promise<T> {
   const now = Date.now()
 
   const cached = cache.get(key)
@@ -59,9 +59,13 @@ function fetchShared<T>(path: string, key: string): Promise<T> {
   const existing = inflight.get(key) as Promise<T> | undefined
   if (existing) return existing
 
-  const p = apiFetch<T>(path)
+  const p = apiFetch<T>(path, { cache: "no-store" })
     .then((d) => {
-      cache.set(key, { data: d, expiresAt: Date.now() + CACHE_TTL_MS })
+      const entry = { data: d, expiresAt: Date.now() + CACHE_TTL_MS }
+      cache.set(key, entry)
+      globalThis.setTimeout(() => {
+        if (cache.get(key) === entry) cache.delete(key)
+      }, CACHE_TTL_MS)
       return d
     })
     .finally(() => {
@@ -158,13 +162,40 @@ export function useChannelRates(channelID: number | null) {
   return useApi<RateSnapshot[]>(channelID == null ? null : `/channels/${channelID}/rates`)
 }
 
+export function mergeSettledChannelRates(
+  previous: RateSnapshot[] | null,
+  channelIDs: number[],
+  results: PromiseSettledResult<RateSnapshot[]>[],
+) {
+  const latest: RateSnapshot[] = []
+  const failedChannelIDs = new Set<number>()
+  let fulfilledCount = 0
+
+  results.forEach((result, index) => {
+    const channelID = channelIDs[index]
+    if (result.status === "fulfilled") {
+      fulfilledCount += 1
+      latest.push(...result.value)
+      return
+    }
+    if (channelID != null) failedChannelIDs.add(channelID)
+  })
+
+  if (fulfilledCount === 0 && previous === null) return null
+
+  const retained = (previous ?? []).filter((rate) => failedChannelIDs.has(rate.channel_id))
+  return [...latest, ...retained]
+}
+
 // useMultiChannelRates 把多个上游渠道的倍率分组拉回来合并去重，
 // 供订阅规则"多选渠道 + 指定分组"场景使用。复用 fetchShared 缓存，
 // 单渠道请求仍与 useChannelRates 共享，不会重复打接口。
 export function useMultiChannelRates(channelIDs: number[]) {
   const [data, setData] = useState<RateSnapshot[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [bump, setBump] = useState(0)
+  const hasDataRef = useRef(false)
   const refreshTick = useRefreshTick()
   const key = channelIDs.slice().sort((a, b) => a - b).join(",")
 
@@ -172,11 +203,14 @@ export function useMultiChannelRates(channelIDs: number[]) {
     if (channelIDs.length === 0) {
       setData(null)
       setLoading(false)
+      setError(null)
+      hasDataRef.current = false
       return
     }
     let cancelled = false
-    setLoading(true)
-    Promise.all(
+    if (!hasDataRef.current) setLoading(true)
+    setError(null)
+    Promise.allSettled(
       channelIDs.map((id) =>
         fetchShared<RateSnapshot[]>(
           `/channels/${id}/rates`,
@@ -186,10 +220,15 @@ export function useMultiChannelRates(channelIDs: number[]) {
     )
       .then((results) => {
         if (cancelled) return
-        setData(results.flat())
-      })
-      .catch(() => {
-        if (!cancelled) setData(null)
+        const failedCount = results.filter((result) => result.status === "rejected").length
+        setData((previous) => {
+          const next = mergeSettledChannelRates(previous, channelIDs, results)
+          if (next !== null) hasDataRef.current = true
+          return next
+        })
+        if (failedCount > 0) {
+          setError(`${failedCount} 个渠道的倍率加载失败，已保留上次数据`)
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -200,7 +239,7 @@ export function useMultiChannelRates(channelIDs: number[]) {
     // channelIDs 是数组引用，用排序后的 key 字符串做依赖避免每次渲染都触发
   }, [key, refreshTick, bump])
 
-  return { data, loading, refetch: () => setBump((b) => b + 1) }
+  return { data, loading, error, refetch: () => setBump((b) => b + 1) }
 }
 
 export function useRateChanges(page = 1, pageSize = 20, channelID?: number) {

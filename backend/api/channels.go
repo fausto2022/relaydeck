@@ -1004,20 +1004,19 @@ func syncAllChannels(c *gin.Context, d *Deps) {
 		}
 		ctx := progress.WithObserver(baseCtx, scoped)
 
-		if err := d.Monitor.RefreshBalance(ctx, &ch); err != nil {
-			failedCount++
-			scoped.Emit(progress.Event{
-				Stage:   progress.StageError,
-				Message: fmt.Sprintf("同步失败：%v", err),
-				Time:    time.Now(),
-			})
-			continue
+		// 与单渠道同步保持一致：余额或订阅检查失败时仍继续采集倍率，
+		// 避免一个非倍率阶段失败导致排行榜长期停留在旧快照。
+		balanceErr := d.Monitor.RefreshBalance(ctx, &ch)
+		var subscriptionErr error
+		if balanceErr == nil {
+			subscriptionErr = d.Monitor.CheckSubscriptionUsageAlerts(ctx, &ch)
 		}
-		if err := d.Monitor.CheckSubscriptionUsageAlerts(ctx, &ch); err != nil {
+		rateErr := d.Monitor.RefreshRates(ctx, &ch)
+		if balanceErr != nil || subscriptionErr != nil || rateErr != nil {
 			failedCount++
 			scoped.Emit(progress.Event{
 				Stage:   progress.StageError,
-				Message: fmt.Sprintf("订阅检查失败：%v", err),
+				Message: fmt.Sprintf("同步失败：%s", joinErrorMessages(balanceErr, subscriptionErr, rateErr)),
 				Time:    time.Now(),
 			})
 			continue
