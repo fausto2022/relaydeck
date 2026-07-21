@@ -204,6 +204,7 @@ type RateQuickTestResult struct {
 	InputTokens        *int64                 `json:"input_tokens,omitempty"`
 	OutputTokens       *int64                 `json:"output_tokens,omitempty"`
 	TotalTokens        *int64                 `json:"total_tokens,omitempty"`
+	ImageURL           string                 `json:"image_url,omitempty"`
 	TemporaryKeyName   string                 `json:"temporary_key_name"`
 	TemporaryKeyStatus string                 `json:"temporary_key_status"`
 	CleanupError       string                 `json:"cleanup_error,omitempty"`

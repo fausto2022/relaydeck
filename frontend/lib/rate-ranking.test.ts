@@ -3,6 +3,7 @@ import type { RateSnapshot } from "@/lib/api-types"
 import {
   ALL_RATE_CATEGORY,
   categoryRankingRates,
+  latestRateSeenAt,
   providerRankingRates,
   rateCategoryOptions,
 } from "@/lib/rate-ranking"
@@ -68,5 +69,15 @@ describe("rate ranking categories", () => {
       { value: ALL_RATE_CATEGORY, label: "全部", count: 0 },
       { value: "Pro", label: "Pro", count: 0 },
     ])
+  })
+})
+
+describe("latestRateSeenAt", () => {
+  it("returns the newest valid collection time", () => {
+    expect(latestRateSeenAt([
+      rate({ last_seen_at: "2026-07-21T10:00:00Z" }),
+      rate({ id: 2, last_seen_at: "invalid" }),
+      rate({ id: 3, last_seen_at: "2026-07-21T10:05:00Z" }),
+    ])).toBe("2026-07-21T10:05:00Z")
   })
 })

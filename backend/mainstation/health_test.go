@@ -229,6 +229,36 @@ func TestHealthModelCatalogHasBuiltinsWithoutAccounts(t *testing.T) {
 	if grok == nil || grok.Error != "" || !containsString(grok.Models, "grok-4.5") || normalizeHealthPlatform("xai") != "grok" {
 		t.Fatalf("builtin grok catalog = %#v", grok)
 	}
+	var image *HealthModelCatalog
+	for i := range catalogs {
+		if catalogs[i].Platform == "image" {
+			image = &catalogs[i]
+			break
+		}
+	}
+	if image == nil || image.Error != "" || !containsString(image.Models, "gpt-image-1") {
+		t.Fatalf("builtin image catalog = %#v", image)
+	}
+}
+
+func TestEffectiveHealthCheckIntervalUsesFastRetryAfterFailure(t *testing.T) {
+	member := &storage.MainAccountPoolMember{HealthIntervalSeconds: 30}
+	if interval := effectiveHealthCheckInterval(member, 60, 10); interval != 30*time.Second {
+		t.Fatalf("healthy interval = %s, want 30s", interval)
+	}
+	member.ConsecutiveHealthFailure = 1
+	if interval := effectiveHealthCheckInterval(member, 60, 10); interval != healthFailureRetryInterval {
+		t.Fatalf("failure retry interval = %s, want %s", interval, healthFailureRetryInterval)
+	}
+	member.HealthIntervalSeconds = 1
+	if interval := effectiveHealthCheckInterval(member, 60, 10); interval != time.Second {
+		t.Fatalf("member one-second interval = %s, want 1s", interval)
+	}
+	member.HealthIntervalSeconds = 30
+	member.ConsecutiveHealthFailure = 10
+	if interval := effectiveHealthCheckInterval(member, 60, 10); interval != 30*time.Second {
+		t.Fatalf("quarantined interval = %s, want 30s", interval)
+	}
 }
 
 func containsString(values []string, expected string) bool {

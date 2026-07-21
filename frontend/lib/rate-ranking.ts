@@ -2,6 +2,19 @@ import type { RateProviderType, RateRankingConfig, RateSnapshot } from "@/lib/ap
 
 export const ALL_RATE_CATEGORY = "__all__"
 
+export function latestRateSeenAt(rates: RateSnapshot[]) {
+  let latest: string | null = null
+  let latestTime = -Infinity
+  for (const rate of rates) {
+    const current = new Date(rate.last_seen_at).getTime()
+    if (Number.isFinite(current) && current > latestTime) {
+      latest = rate.last_seen_at
+      latestTime = current
+    }
+  }
+  return latest
+}
+
 export interface RateCategoryOption {
   value: string
   label: string

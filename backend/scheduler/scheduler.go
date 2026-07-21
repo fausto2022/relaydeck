@@ -33,7 +33,8 @@ type Scheduler struct {
 	balanceMu     sync.Mutex
 	ratesMu       sync.Mutex
 	retentionMu   sync.Mutex
-	mainStationMu sync.Mutex
+	mainHealthMu  sync.Mutex
+	mainOpsMu     sync.Mutex
 }
 
 type mainStationHealthService interface {
@@ -107,6 +108,9 @@ func (s *Scheduler) Start() error {
 		if _, err := s.cron.AddFunc("@every 1s", s.runMainStationHealth); err != nil {
 			return err
 		}
+		if _, err := s.cron.AddFunc("@every 1s", s.runMainStationMaintenance); err != nil {
+			return err
+		}
 	}
 	s.cron.Start()
 	s.log.Info("scheduler started",
@@ -119,13 +123,22 @@ func (s *Scheduler) Start() error {
 }
 
 func (s *Scheduler) runMainStationHealth() {
-	if !s.mainStationMu.TryLock() {
+	if !s.mainHealthMu.TryLock() {
 		return
 	}
-	defer s.mainStationMu.Unlock()
+	defer s.mainHealthMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	s.mainStation.RunDueHealthChecks(ctx)
+}
+
+func (s *Scheduler) runMainStationMaintenance() {
+	if !s.mainOpsMu.TryLock() {
+		return
+	}
+	defer s.mainOpsMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 	s.mainStation.CleanupTemporaryAPIKeys(ctx)
 	if s.mainStation.SyncForScheduler(ctx) {
 		s.mainStation.RunProfitEvaluation(ctx)

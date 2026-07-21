@@ -16,9 +16,10 @@ import (
 )
 
 type blockingMainStation struct {
-	started chan struct{}
-	release chan struct{}
-	calls   atomic.Int32
+	started          chan struct{}
+	release          chan struct{}
+	calls            atomic.Int32
+	maintenanceCalls atomic.Int32
 }
 
 type pricingSyncMainStation struct {
@@ -41,7 +42,7 @@ func (f *blockingMainStation) RunDueHealthChecks(context.Context) {
 	<-f.release
 }
 
-func (f *blockingMainStation) CleanupTemporaryAPIKeys(context.Context)    {}
+func (f *blockingMainStation) CleanupTemporaryAPIKeys(context.Context)    { f.maintenanceCalls.Add(1) }
 func (f *blockingMainStation) SyncForScheduler(context.Context) bool      { return false }
 func (f *blockingMainStation) RunDueSchedulingReconciles(context.Context) {}
 func (f *blockingMainStation) RunDueRankings(context.Context)             {}
@@ -196,18 +197,38 @@ func TestRunMainStationHealthSkipsOverlappingTick(t *testing.T) {
 	}
 }
 
-func TestRunMainStationHealthEvaluatesProfitOnlyAfterPricingChange(t *testing.T) {
+func TestMainStationMaintenanceRunsWhileHealthChecksAreBlocked(t *testing.T) {
+	mainStation := &blockingMainStation{started: make(chan struct{}), release: make(chan struct{})}
+	s := New(
+		config.SchedulerConfig{}, nil, nil, nil, nil, nil, nil, nil, nil,
+		mainStation, nil, config.ProxyConfig{}, slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	done := make(chan struct{})
+	go func() {
+		s.runMainStationHealth()
+		close(done)
+	}()
+	<-mainStation.started
+	s.runMainStationMaintenance()
+	close(mainStation.release)
+	<-done
+	if calls := mainStation.maintenanceCalls.Load(); calls != 1 {
+		t.Fatalf("maintenance calls while health blocked = %d, want 1", calls)
+	}
+}
+
+func TestRunMainStationMaintenanceEvaluatesProfitOnlyAfterPricingChange(t *testing.T) {
 	mainStation := &pricingSyncMainStation{}
 	s := New(
 		config.SchedulerConfig{}, nil, nil, nil, nil, nil, nil, nil, nil,
 		mainStation, nil, config.ProxyConfig{}, slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
-	s.runMainStationHealth()
+	s.runMainStationMaintenance()
 	if calls := mainStation.profitCalls.Load(); calls != 0 {
 		t.Fatalf("unchanged pricing profit evaluations = %d, want 0", calls)
 	}
 	mainStation.pricingChanged = true
-	s.runMainStationHealth()
+	s.runMainStationMaintenance()
 	if calls := mainStation.profitCalls.Load(); calls != 1 {
 		t.Fatalf("changed pricing profit evaluations = %d, want 1", calls)
 	}

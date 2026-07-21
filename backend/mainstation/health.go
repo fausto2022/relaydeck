@@ -27,8 +27,10 @@ import (
 )
 
 const (
-	probeResponseBodyLimit    int64 = 64 << 10
-	healthSchedulerBatchLimit       = 20
+	probeResponseBodyLimit      int64 = 64 << 10
+	imageProbeResponseBodyLimit int64 = 16 << 20
+	healthSchedulerBatchLimit         = 20
+	healthFailureRetryInterval        = time.Second
 )
 
 type healthPolicy struct {
@@ -58,16 +60,18 @@ type probeExecution struct {
 	InputTokens  *int64
 	OutputTokens *int64
 	TotalTokens  *int64
+	ImageURL     string
 	Message      string
 }
 
 type probeRequest struct {
-	Method   string
-	Path     string
-	Protocol string
-	Model    string
-	Headers  map[string]string
-	Body     any
+	Method            string
+	Path              string
+	Protocol          string
+	Model             string
+	Headers           map[string]string
+	Body              any
+	ResponseBodyLimit int64
 }
 
 func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in HealthCheckInput) (*HealthCheckResult, error) {
@@ -91,11 +95,11 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 	}
 	settings := s.configuredHealthSettings()
 	model := effectiveHealthModel(pool.Platform, member.HealthModel, settings.Models)
-	healthInterval := effectiveHealthInterval(member.HealthIntervalSeconds, settings.IntervalSeconds)
 	policy := parseHealthPolicy(pool.HealthPolicyJSON)
 	policy.TransientFailureThreshold = effectiveHealthThreshold(member.HealthFailureThreshold, settings.FailureThreshold, defaultHealthFailureThreshold)
 	policy.EmptyFailureThreshold = policy.TransientFailureThreshold
 	policy.RecoverySuccessThreshold = effectiveHealthThreshold(member.HealthRecoveryThreshold, settings.RecoveryThreshold, defaultHealthRecoveryThreshold)
+	healthInterval := effectiveHealthCheckInterval(member, settings.IntervalSeconds, policy.TransientFailureThreshold)
 	release, err := s.acquireHealthSlot(ctx, member.ID, member.SourceChannelID, level)
 	if err != nil {
 		return nil, err
@@ -322,6 +326,13 @@ func buildL1ProbeRequest(mode, model string) (probeRequest, error) {
 			"contents":         []map[string]any{{"parts": []map[string]string{{"text": "Reply OK"}}}},
 			"generationConfig": map[string]any{"maxOutputTokens": 8},
 		}
+	case "openai_image":
+		request.Path = "/v1/images/generations"
+		request.Protocol = "openai_image"
+		request.ResponseBodyLimit = imageProbeResponseBodyLimit
+		request.Body = map[string]any{
+			"model": model, "prompt": "A simple red circle centered on a white background", "n": 1,
+		}
 	default:
 		return probeRequest{}, errors.New("unsupported health api mode")
 	}
@@ -423,12 +434,16 @@ func (s *Service) performProbeRequest(ctx context.Context, channel *storage.Chan
 		}
 	}
 	defer response.Body.Close()
-	raw, readErr := io.ReadAll(io.LimitReader(response.Body, probeResponseBodyLimit+1))
+	responseBodyLimit := request.ResponseBodyLimit
+	if responseBodyLimit <= 0 {
+		responseBodyLimit = probeResponseBodyLimit
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(response.Body, responseBodyLimit+1))
 	if readErr != nil {
 		return probeExecution{Status: "failure", ErrorClass: "response_read", HTTPStatus: response.StatusCode, Protocol: request.Protocol, Model: request.Model, Endpoint: request.Path, LatencyMS: latency, TTFBMS: ttfb, Message: readErr.Error()}
 	}
-	if int64(len(raw)) > probeResponseBodyLimit {
-		return probeExecution{Status: "failure", ErrorClass: "response_too_large", HTTPStatus: response.StatusCode, Protocol: request.Protocol, Model: request.Model, Endpoint: request.Path, LatencyMS: latency, TTFBMS: ttfb, Message: "response exceeded 64 KiB limit"}
+	if int64(len(raw)) > responseBodyLimit {
+		return probeExecution{Status: "failure", ErrorClass: "response_too_large", HTTPStatus: response.StatusCode, Protocol: request.Protocol, Model: request.Model, Endpoint: request.Path, LatencyMS: latency, TTFBMS: ttfb, Message: fmt.Sprintf("response exceeded %d byte limit", responseBodyLimit)}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		message := redactSecretError(connector.HTTPStatusError(response.StatusCode, raw), secret).Error()
@@ -438,12 +453,40 @@ func (s *Service) performProbeRequest(ctx context.Context, channel *storage.Chan
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return probeExecution{Status: "failure", ErrorClass: "empty_response", HTTPStatus: response.StatusCode, Protocol: request.Protocol, Model: request.Model, Endpoint: request.Path, LatencyMS: latency, TTFBMS: ttfb, Message: "upstream returned an empty response"}
 	}
+	imageURL := ""
+	if request.Protocol == "openai_image" {
+		imageURL = parseProbeImageURL(raw)
+		if imageURL == "" {
+			return probeExecution{Status: "failure", ErrorClass: "image_missing", HTTPStatus: response.StatusCode, Protocol: request.Protocol, Model: request.Model, Endpoint: request.Path, LatencyMS: latency, TTFBMS: ttfb, Message: "upstream response did not contain a generated image"}
+		}
+	}
 	input, output, total := parseProbeUsage(raw)
 	return probeExecution{
 		Status: "success", HTTPStatus: response.StatusCode, Protocol: request.Protocol, Model: request.Model,
-		Endpoint: request.Path, LatencyMS: latency, TTFBMS: ttfb, InputTokens: input, OutputTokens: output, TotalTokens: total,
+		Endpoint: request.Path, LatencyMS: latency, TTFBMS: ttfb, InputTokens: input, OutputTokens: output, TotalTokens: total, ImageURL: imageURL,
 		Message: "probe succeeded",
 	}
+}
+
+func parseProbeImageURL(raw []byte) string {
+	var response struct {
+		Data []struct {
+			URL     string `json:"url"`
+			B64JSON string `json:"b64_json"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil || len(response.Data) == 0 {
+		return ""
+	}
+	if encoded := strings.TrimSpace(response.Data[0].B64JSON); encoded != "" {
+		return "data:image/png;base64," + encoded
+	}
+	value := strings.TrimSpace(response.Data[0].URL)
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return ""
+	}
+	return parsed.String()
 }
 
 func (s *Service) probeHTTPClient(channel *storage.Channel) *http.Client {
@@ -838,7 +881,8 @@ func (s *Service) RunDueHealthChecks(ctx context.Context) {
 		if model != "" {
 			level = "L1"
 		}
-		interval := effectiveHealthInterval(member.HealthIntervalSeconds, settings.IntervalSeconds)
+		failureThreshold := effectiveHealthThreshold(member.HealthFailureThreshold, settings.FailureThreshold, defaultHealthFailureThreshold)
+		interval := effectiveHealthCheckInterval(&member, settings.IntervalSeconds, failureThreshold)
 		if s.healthLevelDue(&member, level, now, interval) {
 			tasks = append(tasks, task{poolID: member.PoolID, memberID: member.ID, level: level})
 		}
@@ -855,6 +899,17 @@ func (s *Service) RunDueHealthChecks(ctx context.Context) {
 		}()
 	}
 	wait.Wait()
+}
+
+func effectiveHealthCheckInterval(member *storage.MainAccountPoolMember, globalSeconds, failureThreshold int) time.Duration {
+	if member == nil {
+		return 0
+	}
+	interval := effectiveHealthInterval(member.HealthIntervalSeconds, globalSeconds)
+	if member.ConsecutiveHealthFailure > 0 && member.ConsecutiveHealthFailure < failureThreshold && interval > healthFailureRetryInterval {
+		return healthFailureRetryInterval
+	}
+	return interval
 }
 
 func (s *Service) healthLevelDue(member *storage.MainAccountPoolMember, level string, now time.Time, interval time.Duration) bool {

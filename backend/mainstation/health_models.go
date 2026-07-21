@@ -38,6 +38,10 @@ var builtinHealthModels = map[string][]string{
 		"grok-4.20-reasoning", "grok-4.20-non-reasoning", "grok-imagine", "grok-imagine-image-quality",
 		"grok-imagine-image", "grok-imagine-edit", "grok-imagine-video", "grok-imagine-video-1.5",
 	},
+	"image": {
+		"gpt-image-1", "gpt-image-1.5", "gpt-image-2", "dall-e-3", "dall-e-2",
+		"gemini-3.1-flash-image", "gemini-2.5-flash-image", "grok-imagine-image",
+	},
 }
 
 func decodeHealthModels(raw string) map[string]string {
@@ -106,7 +110,7 @@ func (s *Service) ListHealthModelCatalogs(ctx context.Context) ([]HealthModelCat
 	}
 	candidates := make(map[string][]storage.MainAccountPoolMember)
 	platforms := map[string]struct{}{
-		"openai": {}, "anthropic": {}, "gemini": {}, "grok": {},
+		"openai": {}, "anthropic": {}, "gemini": {}, "grok": {}, "image": {},
 	}
 	for platform := range s.configuredHealthModels() {
 		platforms[platform] = struct{}{}

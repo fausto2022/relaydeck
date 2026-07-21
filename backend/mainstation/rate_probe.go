@@ -104,7 +104,9 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 	}
 	cleanupErr := s.cleanupTemporaryAPIKey(record)
 	result := quickTestResult(executions, keyName, cleanupErr, s.now())
-	_ = s.appendAudit(nil, nil, nil, "rate_quick_test", source, result.Usable, nil, result, map[string]any{
+	auditResult := *result
+	auditResult.ImageURL = ""
+	_ = s.appendAudit(nil, nil, nil, "rate_quick_test", source, result.Usable, nil, &auditResult, map[string]any{
 		"channel_id": channelID,
 		"rate_id":    rateID,
 		"group":      rate.ModelName,
@@ -223,6 +225,8 @@ func quickTestAPIMode(platform string) (string, error) {
 		return "anthropic", nil
 	case "gemini":
 		return "gemini", nil
+	case "image":
+		return "openai_image", nil
 	default:
 		return "", errors.New("当前分组类型暂不支持快速测试")
 	}
@@ -283,8 +287,17 @@ func quickTestResult(executions []probeExecution, keyName string, cleanupErr err
 		InputTokens:  sumProbeTokens(executions, func(item probeExecution) *int64 { return item.InputTokens }),
 		OutputTokens: sumProbeTokens(executions, func(item probeExecution) *int64 { return item.OutputTokens }),
 		TotalTokens:  sumProbeTokens(executions, func(item probeExecution) *int64 { return item.TotalTokens }), TemporaryKeyName: keyName,
-		TemporaryKeyStatus: cleanupStatus, CleanupError: cleanupMessage, TestedAt: testedAt,
+		ImageURL: imageResultURL(executions), TemporaryKeyStatus: cleanupStatus, CleanupError: cleanupMessage, TestedAt: testedAt,
 	}
+}
+
+func imageResultURL(executions []probeExecution) string {
+	for i := range executions {
+		if executions[i].Status == "success" && executions[i].ImageURL != "" {
+			return executions[i].ImageURL
+		}
+	}
+	return ""
 }
 
 func quickTestAggregateMessage(executions []probeExecution, successCount int, firstFailure *probeExecution) string {
@@ -358,6 +371,7 @@ func quickTestMessage(execution probeExecution) string {
 		"connection_error":          "无法连接上游服务",
 		"empty_response":            "上游返回了空响应",
 		"response_read":             "读取上游响应失败",
+		"image_missing":             "上游返回成功，但响应中没有生成图片",
 	}
 	if message := messages[execution.ErrorClass]; message != "" {
 		return message

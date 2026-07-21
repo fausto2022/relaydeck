@@ -169,6 +169,7 @@ export interface RateQuickTestResult {
   input_tokens?: number
   output_tokens?: number
   total_tokens?: number
+  image_url?: string
   temporary_key_name: string
   temporary_key_status: "deleted" | "pending"
   cleanup_error?: string

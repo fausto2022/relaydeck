@@ -372,7 +372,7 @@ export function StationConfigDialog({
                   />
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">账号未单独设置时继承以上策略；达到失败次数后停用，恢复达标后解除健康停用。</p>
+              <p className="text-xs text-muted-foreground">账号未单独设置时继承以上策略；首次失败后每 1 秒复测，达到失败次数后停用，恢复达标后解除健康停用。</p>
             </div>
           ) : null}
           <div className="flex items-center justify-between gap-4 border-t pt-4">

@@ -195,6 +195,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
               onChange={(event) => setHealthFailureThreshold(event.target.value)}
               placeholder={`继承全局（${config?.health_failure_threshold ?? 10} 次）`}
             />
+            <p className="text-xs text-muted-foreground">首次失败后每 1 秒复测。</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="edit-account-health-recovery">连续成功恢复</Label>

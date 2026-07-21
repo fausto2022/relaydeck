@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Select,
@@ -34,10 +35,11 @@ import type {
   RateProviderType,
   RateSnapshot,
 } from "@/lib/api-types"
-import { formatRatio } from "@/lib/format"
+import { dateTime, formatRatio, relativeTime } from "@/lib/format"
 import {
   ALL_RATE_CATEGORY,
   categoryRankingRates,
+  latestRateSeenAt,
   type RateCategoryOption,
 } from "@/lib/rate-ranking"
 import { cn } from "@/lib/utils"
@@ -85,6 +87,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
   const activeCategory = categoryOptions.some((item) => item.value === category) ? category : ALL_RATE_CATEGORY
   const visibleRates = useMemo(() => categoryRankingRates(rates, activeCategory), [activeCategory, rates])
   const selectedRate = rates.find((rate) => rate.id === selectedRateID) ?? null
+  const refreshedAt = useMemo(() => latestRateSeenAt(visibleRates), [visibleRates])
   const providerModels = useMemo(() => {
     const values = [config?.health_models?.[provider] ?? "", ...(catalogs.find((item) => item.platform === provider)?.models ?? [])]
     return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)))
@@ -257,7 +260,9 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                   <DialogTitle>倍率排行榜</DialogTitle>
                   <Badge variant="outline" className="tabular-nums">{visibleRates.length} 个分组</Badge>
                 </div>
-                <DialogDescription id="rate-ranking-dialog-description">按换算后倍率从低到高排列</DialogDescription>
+                <DialogDescription id="rate-ranking-dialog-description">
+                  按换算后倍率从低到高排列 · 上次采集 <span title={dateTime(refreshedAt)}>{relativeTime(refreshedAt)}</span>
+                </DialogDescription>
               </DialogHeader>
               <div className="border-b border-border px-4 py-2 sm:px-6">
                 <Tabs value={provider} onValueChange={changeProvider}>
@@ -299,12 +304,28 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                   <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                     <div className="space-y-2">
                       <Label htmlFor="rate-quick-test-model">测试模型</Label>
-                      <Select value={model} onValueChange={setModel} disabled={testing || providerModels.length === 0}>
-                        <SelectTrigger id="rate-quick-test-model" className="w-full"><SelectValue placeholder={metadataLoading ? "加载模型中" : "选择测试模型"} /></SelectTrigger>
-                        <SelectContent>
-                          {providerModels.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      {provider === "image" ? (
+                        <>
+                          <Input
+                            id="rate-quick-test-model"
+                            list="rate-image-test-models"
+                            value={model}
+                            onChange={(event) => setModel(event.target.value)}
+                            disabled={testing}
+                            placeholder={metadataLoading ? "加载模型中" : "例如 gpt-image-1"}
+                          />
+                          <datalist id="rate-image-test-models">
+                            {providerModels.map((item) => <option key={item} value={item} />)}
+                          </datalist>
+                        </>
+                      ) : (
+                        <Select value={model} onValueChange={setModel} disabled={testing || providerModels.length === 0}>
+                          <SelectTrigger id="rate-quick-test-model" className="w-full"><SelectValue placeholder={metadataLoading ? "加载模型中" : "选择测试模型"} /></SelectTrigger>
+                          <SelectContent>
+                            {providerModels.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
                       {metadataError ? <p className="text-xs text-amber-700 dark:text-amber-300">{metadataError}</p> : null}
                     </div>
                     <Button onClick={() => void runTest()} disabled={testing || !model.trim() || quickTestUnavailableReason(selectedRate, channelMap.get(selectedRate.channel_id), provider) !== ""}>
@@ -312,7 +333,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                     </Button>
                   </div>
 
-                  {testing ? <TestingProgress /> : null}
+                  {testing ? <TestingProgress image={provider === "image"} /> : null}
                   {result ? <TestResult result={result} /> : null}
 
                   {result?.usable ? (
@@ -430,13 +451,13 @@ function RankingCategoryBadge({ rate }: { rate: RateSnapshot }) {
   )
 }
 
-function TestingProgress() {
+function TestingProgress({ image }: { image: boolean }) {
   return (
     <div className="flex items-start gap-3 border-y border-border py-4">
       <Loader2 className="mt-0.5 size-5 animate-spin text-primary" />
       <div>
         <p className="text-sm font-medium">正在测试上游分组</p>
-        <p className="mt-1 text-xs text-muted-foreground">创建临时 Key、连续发送 3 次最小请求并清理 Key，请勿关闭窗口。</p>
+        <p className="mt-1 text-xs text-muted-foreground">创建临时 Key、连续发送 3 次{image ? "生图" : "最小"}请求并清理 Key，请勿关闭窗口。</p>
       </div>
     </div>
   )
@@ -466,6 +487,11 @@ function TestResult({ result }: { result: RateQuickTestResult }) {
         <Metric icon={Server} label="成功次数" value={`${result.success_count}/${result.attempt_count}`} />
         <Metric icon={TestTubeDiagonal} label="测试模型" value={result.model} />
       </div>
+      {result.image_url ? (
+        <div className="overflow-hidden rounded-md border border-border bg-muted/30">
+          <img src={result.image_url} alt="快速测试生成结果" className="mx-auto max-h-96 w-auto max-w-full object-contain" />
+        </div>
+      ) : null}
       <div className="divide-y divide-border rounded-md border border-border">
         {result.attempts.map((attempt) => (
           <div key={attempt.attempt} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-3 py-2 text-xs sm:grid-cols-[auto_minmax(0,1fr)_auto]">
@@ -518,7 +544,7 @@ function Connection({ rate, compact = false }: { rate: RateSnapshot; compact?: b
 
 export function quickTestUnavailableReason(rate: RateSnapshot, channel: Channel | undefined, provider: RateProviderType) {
   if (!channel) return "渠道信息尚未加载"
-  if (provider === "image" || provider === "other") return "当前分组类型暂不支持快速测试"
+  if (provider === "other") return "当前分组类型暂不支持快速测试"
   if (channel.type === "sub2api" && rate.remote_group_id == null) return "缺少远端分组 ID，请先同步倍率"
   return ""
 }
@@ -526,6 +552,7 @@ export function quickTestUnavailableReason(rate: RateSnapshot, channel: Channel 
 function healthAPIMode(provider: RateProviderType) {
   if (provider === "anthropic") return "anthropic"
   if (provider === "gemini") return "gemini"
+  if (provider === "image") return "openai_image"
   return "openai_chat"
 }
 

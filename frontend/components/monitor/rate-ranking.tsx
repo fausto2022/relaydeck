@@ -13,10 +13,11 @@ import {
   quickTestUnavailableReason,
 } from "@/components/monitor/rate-ranking-dialog"
 import { useChannels, useMultiChannelRates, useRateRankingConfig } from "@/lib/queries"
-import { formatRatio } from "@/lib/format"
+import { dateTime, formatRatio, relativeTime } from "@/lib/format"
 import {
   ALL_RATE_CATEGORY,
   categoryRankingRates,
+  latestRateSeenAt,
   providerRankingRates,
   rateCategoryOptions,
 } from "@/lib/rate-ranking"
@@ -53,6 +54,7 @@ export function RateRanking() {
     [activeCategory, providerRates],
   )
   const visible = ranked.slice(0, DEFAULT_VISIBLE_COUNT)
+  const refreshedAt = useMemo(() => latestRateSeenAt(rates.data ?? []), [rates.data])
 
   function handleProviderChange(value: string) {
     setProvider(value as RateProviderType)
@@ -77,7 +79,9 @@ export function RateRanking() {
             <h2 className="text-sm font-semibold">倍率排行</h2>
             <Badge variant="outline" className="tabular-nums">{ranked.length} 个分组</Badge>
           </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">按换算后倍率从低到高排列</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            按换算后倍率从低到高排列 · 上次采集 <span className="font-medium text-foreground" title={dateTime(refreshedAt)}>{relativeTime(refreshedAt)}</span>
+          </p>
         </div>
         {ranked.length > DEFAULT_VISIBLE_COUNT ? (
           <Button variant="ghost" size="sm" onClick={openRanking}>
