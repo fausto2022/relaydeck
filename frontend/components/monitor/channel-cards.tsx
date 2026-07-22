@@ -226,10 +226,10 @@ function InlineRates({ channelID }: { channelID: number }) {
 
 function rateProviderTone(provider: RateSnapshot["ranking_provider"]): string {
   switch (provider) {
-    case "openai": return "bg-emerald-500/10 text-emerald-700 ring-emerald-500/25 dark:text-emerald-300"
-    case "anthropic": return "bg-amber-500/10 text-amber-700 ring-amber-500/25 dark:text-amber-300"
-    case "gemini": return "bg-blue-500/10 text-blue-700 ring-blue-500/25 dark:text-blue-300"
-    case "antigravity": return "bg-violet-500/10 text-violet-700 ring-violet-500/25 dark:text-violet-300"
+    case "openai": return "bg-green-500/10 text-green-600 ring-green-500/30 dark:text-green-400"
+    case "anthropic": return "bg-orange-500/10 text-orange-600 ring-orange-500/30 dark:text-orange-400"
+    case "gemini": return "bg-blue-500/10 text-blue-600 ring-blue-500/30 dark:text-blue-400"
+    case "antigravity": return "bg-purple-500/10 text-purple-600 ring-purple-500/30 dark:text-purple-400"
     case "grok": return "bg-slate-500/10 text-slate-700 ring-slate-500/25 dark:text-slate-300"
     default: return "bg-muted text-muted-foreground ring-border"
   }
