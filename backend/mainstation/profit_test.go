@@ -178,6 +178,43 @@ func TestProfitEvaluationContinuesAfterMemberSchedulingFailure(t *testing.T) {
 	}
 }
 
+func TestProfitEvaluationSkipsOrphanedMemberScheduling(t *testing.T) {
+	service, db, admin, _ := newTestService(t)
+	current := time.Date(2026, 7, 23, 1, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	service.now = func() time.Time { return current }
+	pool, member, _ := createProfitMember(
+		t, service, db, admin, current, 1.2,
+		`{"mode":"observe","minimum_margin_basis_points":0,"risk_confirmations":1,"cost_max_age_minutes":60}`,
+	)
+	member.BindingStatus = "orphaned"
+	member.Status = "orphaned"
+	if err := service.store.UpdateMember(member); err != nil {
+		t.Fatalf("mark member orphaned: %v", err)
+	}
+	config, err := service.store.GetConfig()
+	if err != nil {
+		t.Fatalf("get config: %v", err)
+	}
+	config.AutoMarginProtection = true
+	config.MarginObservedAt = &current
+	if err := service.store.SaveConfig(config); err != nil {
+		t.Fatalf("enable margin protection: %v", err)
+	}
+	admin.accounts = nil
+
+	result, err := service.EvaluatePool(context.Background(), pool.ID, "manual")
+	if err != nil {
+		t.Fatalf("evaluate orphaned member: %v", err)
+	}
+	if len(result.Checks) != 1 || result.Checks[0].Status != "unknown" ||
+		result.Checks[0].Reason != "main station account binding is unavailable" {
+		t.Fatalf("orphaned evaluation = %#v", result)
+	}
+	if len(admin.schedulableCalls) != 0 {
+		t.Fatalf("orphaned member scheduling calls = %#v", admin.schedulableCalls)
+	}
+}
+
 func TestProfitEvaluationPrefersBoundSourceGroupRate(t *testing.T) {
 	service, db, admin, _ := newTestService(t)
 	current := time.Date(2026, 7, 21, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))

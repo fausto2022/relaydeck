@@ -373,6 +373,11 @@ func (s *Service) buildProfitCheck(pool *storage.MainAccountPool, member *storag
 		CostMultiplierMicros: cost.Micros, CostAdjustmentMicros: costAdjustment,
 		CostSource: cost.Source, ObservedAt: now, CreatedAt: now,
 	}
+	if member.BindingStatus == "orphaned" || member.BindingStatus == "invalid" || member.Status == "orphaned" {
+		check.Status = "unknown"
+		check.Reason = "main station account binding is unavailable"
+		return check
+	}
 	if !pool.Enabled || !member.Enabled || group.Missing || !strings.EqualFold(group.Status, "active") {
 		check.Status = "unknown"
 		check.Reason = "pool, member or main station group is not active"
