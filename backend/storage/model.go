@@ -121,6 +121,7 @@ type RateSnapshot struct {
 	RemoteGroupID   *int64  `json:"remote_group_id,omitempty"`
 	ModelName       string  `gorm:"size:256;not null;uniqueIndex:idx_rate_chan_model" json:"model_name"`
 	Description     string  `gorm:"size:512" json:"description,omitempty"`
+	Platform        string  `gorm:"size:32;index" json:"platform,omitempty"`
 	Ratio           float64 `gorm:"not null" json:"ratio"`
 	CompletionRatio float64 `json:"completion_ratio"`
 

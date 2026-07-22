@@ -189,7 +189,7 @@ function InlineRates({ channelID }: { channelID: number }) {
                 <span
                   className={cn(
                     "inline-flex cursor-default items-center gap-1 rounded px-1.5 py-0.5 text-[11px] ring-1 ring-inset transition-colors hover:bg-muted/60",
-                    ratioTone(r.ratio),
+                    rateProviderTone(r.ranking_provider),
                   )}
                 >
                   <span className="font-medium">{r.model_name}</span>
@@ -206,6 +206,8 @@ function InlineRates({ channelID }: { channelID: number }) {
                   <p className="mt-0.5 italic text-muted-foreground">{"(无描述)"}</p>
                 )}
                 <p className="mt-0.5 text-muted-foreground">
+                  {rateProviderLabel(r.ranking_provider)}
+                  {" · "}
                   {"最近更新："}
                   {relativeTime(r.last_seen_at)}
                 </p>
@@ -220,6 +222,28 @@ function InlineRates({ channelID }: { channelID: number }) {
       </div>
     </div>
   )
+}
+
+function rateProviderTone(provider: RateSnapshot["ranking_provider"]): string {
+  switch (provider) {
+    case "openai": return "bg-emerald-500/10 text-emerald-700 ring-emerald-500/25 dark:text-emerald-300"
+    case "anthropic": return "bg-amber-500/10 text-amber-700 ring-amber-500/25 dark:text-amber-300"
+    case "gemini": return "bg-blue-500/10 text-blue-700 ring-blue-500/25 dark:text-blue-300"
+    case "antigravity": return "bg-violet-500/10 text-violet-700 ring-violet-500/25 dark:text-violet-300"
+    case "grok": return "bg-slate-500/10 text-slate-700 ring-slate-500/25 dark:text-slate-300"
+    default: return "bg-muted text-muted-foreground ring-border"
+  }
+}
+
+function rateProviderLabel(provider: RateSnapshot["ranking_provider"]): string {
+  switch (provider) {
+    case "openai": return "OpenAI"
+    case "anthropic": return "Anthropic"
+    case "gemini": return "Gemini"
+    case "antigravity": return "Antigravity"
+    case "grok": return "Grok"
+    default: return "其他"
+  }
 }
 
 interface ChannelGroupRow {

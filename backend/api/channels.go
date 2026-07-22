@@ -739,7 +739,7 @@ func channelRateOutputs(
 		if groups == nil {
 			groups = []mainstation.RateConnection{}
 		}
-		classification := classifier.Classify(list[i].ModelName, list[i].Description)
+		classification := classifier.ClassifyWithProvider(list[i].Platform, list[i].ModelName, list[i].Description)
 		result = append(result, channelRateOutput{
 			RateSnapshot:         list[i],
 			MainStationConnected: len(groups) > 0,

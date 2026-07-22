@@ -12,6 +12,25 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestRatesUpsertRefreshesPlatform(t *testing.T) {
+	db := openTestDB(t)
+	rates := NewRates(db)
+	now := time.Now()
+	if _, err := rates.Upsert(&RateSnapshot{ChannelID: 1, ModelName: "狂欢", Platform: "", Ratio: 0.01, LastSeenAt: now}); err != nil {
+		t.Fatalf("initial upsert: %v", err)
+	}
+	if _, err := rates.Upsert(&RateSnapshot{ChannelID: 1, ModelName: "狂欢", Platform: "openai", Ratio: 0.01, LastSeenAt: now.Add(time.Second)}); err != nil {
+		t.Fatalf("refresh upsert: %v", err)
+	}
+	var snapshot RateSnapshot
+	if err := db.Where("channel_id = ? AND model_name = ?", 1, "狂欢").First(&snapshot).Error; err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if snapshot.Platform != "openai" {
+		t.Fatalf("platform = %q, want openai", snapshot.Platform)
+	}
+}
+
 func TestResolveSQLitePathUsesLegacyDatabaseDuringRenameUpgrade(t *testing.T) {
 	dir := t.TempDir()
 	legacyPath := filepath.Join(dir, "upstream-ops.db")

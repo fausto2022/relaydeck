@@ -334,6 +334,9 @@ func (c *Client) GetRates(ctx context.Context, ch *connector.Channel, session *c
 		ID             uint64  `json:"id"`
 		Name           string  `json:"name"`
 		Description    string  `json:"description"`
+		Platform       string  `json:"platform"`
+		Type           string  `json:"type"`
+		Provider       string  `json:"provider"`
 		RateMultiplier float64 `json:"rate_multiplier"`
 	}
 	if err := json.Unmarshal(availBody, &groups); err != nil {
@@ -355,6 +358,7 @@ func (c *Client) GetRates(ctx context.Context, ch *connector.Channel, session *c
 			GroupID:     ptrInt64(g.ID),
 			ModelName:   g.Name,
 			Description: g.Description,
+			Platform:    firstNonEmpty(g.Platform, g.Type, g.Provider),
 			Ratio:       rate,
 		})
 	}
@@ -364,6 +368,15 @@ func (c *Client) GetRates(ctx context.Context, ch *connector.Channel, session *c
 func ptrInt64(v uint64) *int64 {
 	id := int64(v)
 	return &id
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (c *Client) GetAnnouncements(ctx context.Context, ch *connector.Channel, session *connector.AuthSession) ([]connector.AnnouncementResult, error) {

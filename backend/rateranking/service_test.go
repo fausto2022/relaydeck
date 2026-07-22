@@ -52,6 +52,31 @@ func TestClassifierUsesRulePriorityAndFallback(t *testing.T) {
 	}
 }
 
+func TestClassifierUsesUpstreamPlatformBeforeNameInference(t *testing.T) {
+	config := DefaultConfig()
+	config.Rules = []Rule{{
+		Provider: "openai", CategoryName: "生图", Keywords: []string{"生图"}, MatchMode: MatchModeContains, SortOrder: 10, Enabled: true,
+	}}
+	classifier := NewClassifier(config)
+
+	generic := classifier.ClassifyWithProvider("openai", "狂欢", "")
+	if generic.Provider != "openai" || generic.Category != GeneralCategory || !generic.Visible {
+		t.Fatalf("generic classification = %#v", generic)
+	}
+	misleading := classifier.ClassifyWithProvider("anthropic", "OpenAI Pro", "")
+	if misleading.Provider != "anthropic" {
+		t.Fatalf("upstream platform was overridden by name: %#v", misleading)
+	}
+	image := classifier.ClassifyWithProvider("openai", "高速生图套餐", "")
+	if image.Provider != "openai" || image.Category != "生图" {
+		t.Fatalf("custom image category = %#v", image)
+	}
+	xai := classifier.ClassifyWithProvider("xai", "普通套餐", "")
+	if xai.Provider != "grok" {
+		t.Fatalf("xai alias classification = %#v", xai)
+	}
+}
+
 func TestServiceSaveNormalizesAndPersistsRules(t *testing.T) {
 	store := &memoryStore{}
 	service := New(store)

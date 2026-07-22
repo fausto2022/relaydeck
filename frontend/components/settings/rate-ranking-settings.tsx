@@ -28,9 +28,8 @@ const PROVIDERS: Array<{ value: RateProviderType; label: string }> = [
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "gemini", label: "Gemini" },
+  { value: "antigravity", label: "Antigravity" },
   { value: "grok", label: "Grok" },
-  { value: "image", label: "生图" },
-  { value: "other", label: "其他" },
 ]
 
 type EditableRule = RateRankingRule & { clientKey: string }
@@ -193,7 +192,7 @@ export function RateRankingSettings() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Tags className="size-4 text-sky-600" />倍率排行分类</div>
-          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">按上游分组名称匹配关键词，忽略大小写。规则从上到下按优先级匹配，同时命中时使用排在前面的分类。</p>
+          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">先按上游分组类型归入主分类，再按分组名称匹配关键词，忽略大小写。例如可在 OpenAI 下新增“生图”分类。</p>
         </div>
         <Button size="sm" variant="outline" onClick={openNewRule}><Plus className="size-3.5" />新增分类</Button>
       </div>

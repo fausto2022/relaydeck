@@ -794,6 +794,26 @@ func TestListAPIKeyGroups(t *testing.T) {
 	}
 }
 
+func TestGetRatesIncludesUpstreamPlatform(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/groups/available", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":[{"id":67,"name":"狂欢","platform":"openai","rate_multiplier":0.01}]}`))
+	})
+	mux.HandleFunc("/api/v1/groups/rates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	rates, err := New().GetRates(context.Background(), &connector.Channel{SiteURL: srv.URL}, &connector.AuthSession{AccessToken: "token"})
+	if err != nil {
+		t.Fatalf("GetRates: %v", err)
+	}
+	if len(rates) != 1 || rates[0].Platform != "openai" || rates[0].Ratio != 0.01 {
+		t.Fatalf("rates = %#v", rates)
+	}
+}
+
 func TestGetAnnouncements(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/announcements", func(w http.ResponseWriter, r *http.Request) {

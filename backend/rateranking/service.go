@@ -18,7 +18,7 @@ const (
 	GeneralCategory   = "通用"
 )
 
-var Providers = []string{"openai", "anthropic", "gemini", "grok", "image", "other"}
+var Providers = []string{"openai", "anthropic", "gemini", "antigravity", "grok", "image", "other"}
 
 var providerPatterns = []struct {
 	provider string
@@ -173,7 +173,14 @@ func DefaultClassifier() *Classifier {
 }
 
 func (c *Classifier) Classify(modelName, description string) Classification {
-	provider := classifyProvider(modelName + " " + description)
+	return c.ClassifyWithProvider("", modelName, description)
+}
+
+func (c *Classifier) ClassifyWithProvider(platform, modelName, description string) Classification {
+	provider := normalizeProvider(platform)
+	if provider == "" {
+		provider = classifyProvider(modelName + " " + description)
+	}
 	for _, rule := range c.rules[provider] {
 		if ruleMatches(rule, modelName) {
 			return Classification{
@@ -184,6 +191,22 @@ func (c *Classifier) Classify(modelName, description string) Classification {
 	setting, ok := c.providers[provider]
 	includeUnmatched := !ok || setting.IncludeUnmatched
 	return Classification{Provider: provider, Category: GeneralCategory, CategoryOrder: 1_000_000, Visible: includeUnmatched}
+}
+
+func normalizeProvider(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case "openai", "anthropic", "gemini", "antigravity", "grok", "image", "other":
+		return normalized
+	case "claude":
+		return "anthropic"
+	case "google", "google-gemini":
+		return "gemini"
+	case "xai", "x-ai":
+		return "grok"
+	default:
+		return ""
+	}
 }
 
 func normalizeConfig(config Config) (Config, error) {

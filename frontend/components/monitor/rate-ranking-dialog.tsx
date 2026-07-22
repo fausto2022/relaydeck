@@ -48,9 +48,8 @@ export const RATE_PROVIDERS: Array<{ value: RateProviderType; label: string }> =
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "gemini", label: "Gemini" },
+  { value: "antigravity", label: "Antigravity" },
   { value: "grok", label: "Grok" },
-  { value: "image", label: "生图" },
-  { value: "other", label: "其他" },
 ]
 
 interface Props {

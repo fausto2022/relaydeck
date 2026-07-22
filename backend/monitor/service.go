@@ -361,6 +361,7 @@ func (s *Service) RefreshRates(ctx context.Context, c *storage.Channel) error {
 			RemoteGroupID:   r.GroupID,
 			ModelName:       r.ModelName,
 			Description:     r.Description,
+			Platform:        r.Platform,
 			Ratio:           r.Ratio,
 			CompletionRatio: r.CompletionRatio,
 			LastSeenAt:      now,

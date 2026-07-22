@@ -113,6 +113,7 @@ type RateResult struct {
 	GroupID         *int64
 	ModelName       string
 	Description     string
+	Platform        string
 	Ratio           float64
 	CompletionRatio float64
 }

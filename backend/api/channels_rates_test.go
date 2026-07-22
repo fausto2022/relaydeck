@@ -38,3 +38,12 @@ func TestChannelRateOutputsIncludeRankingClassification(t *testing.T) {
 		t.Fatalf("classification output = %#v", output)
 	}
 }
+
+func TestChannelRateOutputsPreferStoredPlatform(t *testing.T) {
+	output := channelRateOutputs([]storage.RateSnapshot{{
+		ID: 1, Platform: "anthropic", ModelName: "OpenAI Pro",
+	}}, nil)
+	if len(output) != 1 || output[0].RankingProvider != "anthropic" {
+		t.Fatalf("classification output = %#v", output)
+	}
+}

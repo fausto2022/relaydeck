@@ -285,8 +285,11 @@ func (c *Client) GetRates(ctx context.Context, ch *connector.Channel, session *c
 	}
 	// data: { "default": { "ratio": 1, "desc": "..." }, "auto": { "ratio": "自动", ... } }
 	raw := map[string]struct {
-		Ratio json.RawMessage `json:"ratio"`
-		Desc  string          `json:"desc"`
+		Ratio    json.RawMessage `json:"ratio"`
+		Desc     string          `json:"desc"`
+		Platform string          `json:"platform"`
+		Type     string          `json:"type"`
+		Provider string          `json:"provider"`
 	}{}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("newapi groups decode: %w", err)
@@ -301,6 +304,7 @@ func (c *Client) GetRates(ctx context.Context, ch *connector.Channel, session *c
 		out = append(out, connector.RateResult{
 			ModelName:   name,
 			Description: v.Desc,
+			Platform:    firstNonEmpty(v.Platform, v.Type, v.Provider),
 			Ratio:       ratio,
 		})
 	}

@@ -106,7 +106,7 @@ export interface CaptchaConfig {
   updated_at: string
 }
 
-export type RateProviderType = "openai" | "anthropic" | "gemini" | "grok" | "image" | "other"
+export type RateProviderType = "openai" | "anthropic" | "gemini" | "antigravity" | "grok" | "image" | "other"
 
 export interface RateSnapshot {
   id: number
@@ -114,6 +114,7 @@ export interface RateSnapshot {
   remote_group_id?: number | null
   model_name: string
   description?: string
+  platform?: string
   ratio: number
   completion_ratio: number
   first_seen_at: string

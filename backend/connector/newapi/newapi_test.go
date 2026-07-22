@@ -355,6 +355,23 @@ func TestListAPIKeyGroups(t *testing.T) {
 	}
 }
 
+func TestGetRatesIncludesOptionalUpstreamPlatform(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user/self/groups", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"message":"","data":{"default":{"ratio":0.2,"desc":"默认分组","platform":"anthropic"}}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	rates, err := New().GetRates(context.Background(), &connector.Channel{SiteURL: srv.URL}, &connector.AuthSession{Cookie: "session=1", UserID: "7"})
+	if err != nil {
+		t.Fatalf("GetRates: %v", err)
+	}
+	if len(rates) != 1 || rates[0].Platform != "anthropic" || rates[0].Ratio != 0.2 {
+		t.Fatalf("rates = %#v", rates)
+	}
+}
+
 func TestGetAnnouncements(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
