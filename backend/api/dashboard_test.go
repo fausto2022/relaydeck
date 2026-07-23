@@ -680,8 +680,12 @@ func TestDashboardCostTrend(t *testing.T) {
 		t.Fatalf("create channel2: %v", err)
 	}
 
-	now := time.Now()
-	day0 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load timezone: %v", err)
+	}
+	now := time.Now().In(location)
+	day0 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	day1 := day0.AddDate(0, 0, -1)
 	if err := rates.AppendCost(&storage.CostSnapshot{ChannelID: 1, TodayCost: 1.2, SampledAt: day1.Add(10 * time.Hour)}); err != nil {
 		t.Fatalf("append cost1: %v", err)
