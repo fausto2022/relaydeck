@@ -24,6 +24,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { apiFetch, type ApiError } from "@/lib/api"
 import { formatRatio } from "@/lib/format"
+import { mainStationHealthAPIMode } from "@/lib/main-station-platform"
 import type {
   Channel,
   ChannelAccountLimits,
@@ -216,7 +217,7 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
             cost_adjustment: 1,
             health_enabled: healthEnabled,
             health_model: healthModel.trim(),
-            health_api_mode: "openai_chat",
+            health_api_mode: mainStationHealthAPIMode(workspace.group.platform),
           }),
         })
         setBusy(false)

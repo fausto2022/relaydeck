@@ -474,8 +474,17 @@ func (a *AdminClient) UpdateAccountModelMapping(ctx context.Context, t AdminTarg
 	if len(mapping) == 0 {
 		return errors.New("update account model mapping: no valid models")
 	}
+	account, err := a.GetAccount(ctx, t, id)
+	if err != nil {
+		return fmt.Errorf("load account before updating model mapping: %w", err)
+	}
+	credentials := make(map[string]any, len(account.Credentials)+1)
+	for key, value := range account.Credentials {
+		credentials[key] = value
+	}
+	credentials["model_mapping"] = mapping
 	payload := map[string]any{
-		"credentials": map[string]any{"model_mapping": mapping},
+		"credentials": credentials,
 	}
 	resp, err := a.client.http.R().
 		SetContext(ctx).

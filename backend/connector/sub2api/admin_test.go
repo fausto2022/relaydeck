@@ -61,7 +61,15 @@ func TestAdminClientUsesAPIKeyAndDecodesAccountWrites(t *testing.T) {
 		case http.MethodGet:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"code": 0,
-				"data": map[string]any{"id": 8, "name": "existing", "status": "active"},
+				"data": map[string]any{
+					"id": 8, "name": "existing", "status": "active",
+					"credentials": map[string]any{
+						"base_url":                     "https://anthropic.example.com",
+						"pool_mode":                    true,
+						"pool_mode_retry_count":        10,
+						"pool_mode_retry_status_codes": []int{400, 401, 403, 429, 502, 503, 524},
+					},
+				},
 			})
 		case http.MethodPut:
 			var raw map[string]any
@@ -86,6 +94,13 @@ func TestAdminClientUsesAPIKeyAndDecodesAccountWrites(t *testing.T) {
 				mapping, ok := credentials["model_mapping"].(map[string]any)
 				if !ok || mapping["gpt-a"] != "gpt-a" || mapping["gpt-b"] != "gpt-b" {
 					t.Fatalf("model mapping body = %#v", raw)
+				}
+				if credentials["base_url"] != "https://anthropic.example.com" || credentials["pool_mode"] != true || credentials["pool_mode_retry_count"] != float64(10) {
+					t.Fatalf("model mapping update lost account credentials: %#v", credentials)
+				}
+				retryCodes, ok := credentials["pool_mode_retry_status_codes"].([]any)
+				if !ok || len(retryCodes) != 7 || retryCodes[0] != float64(400) || retryCodes[6] != float64(524) {
+					t.Fatalf("model mapping update lost retry status codes: %#v", credentials["pool_mode_retry_status_codes"])
 				}
 				modelMappingWritten = true
 				_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"id": 8}})

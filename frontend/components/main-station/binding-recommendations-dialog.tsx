@@ -30,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { mainStationHealthAPIMode } from "@/lib/main-station-platform"
 import type {
   MainStationBindingBatchResult,
   MainStationBindingCandidate,
@@ -118,7 +119,7 @@ export function BindingRecommendationsDialog({ open, onOpenChange, workspace, on
         rate_convert_mode: "raw",
         rate_convert_value: 1,
         cost_adjustment: 1,
-        health_api_mode: "openai_chat",
+        health_api_mode: mainStationHealthAPIMode(item.platform || workspace.group.platform),
       }]
     })
     if (payload.length !== selectedItems.length) {

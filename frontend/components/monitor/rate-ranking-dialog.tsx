@@ -42,6 +42,7 @@ import {
   latestRateSeenAt,
   type RateCategoryOption,
 } from "@/lib/rate-ranking"
+import { mainStationHealthAPIMode, normalizeMainStationPlatform } from "@/lib/main-station-platform"
 import { cn } from "@/lib/utils"
 
 export const RATE_PROVIDERS: Array<{ value: RateProviderType; label: string }> = [
@@ -97,8 +98,8 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
     return workspaces
       .filter((workspace) => !workspace.group.missing && !connected.has(workspace.group.id))
       .sort((left, right) => {
-        const leftMatch = normalizePlatform(left.group.platform) === provider ? 0 : 1
-        const rightMatch = normalizePlatform(right.group.platform) === provider ? 0 : 1
+        const leftMatch = normalizeMainStationPlatform(left.group.platform) === provider ? 0 : 1
+        const rightMatch = normalizeMainStationPlatform(right.group.platform) === provider ? 0 : 1
         return leftMatch - rightMatch || left.group.sort - right.group.sort || left.group.id - right.group.id
       })
   }, [provider, selectedRate, workspaces])
@@ -221,7 +222,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
             cost_adjustment: 1,
             health_enabled: true,
             health_model: model.trim(),
-            health_api_mode: healthAPIMode(provider),
+            health_api_mode: mainStationHealthAPIMode(workspace.group.platform),
           }),
         })
         setAddedGroupName(workspace.group.name)
@@ -354,7 +355,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                               <SelectContent>
                                 {availableWorkspaces.map((workspace) => (
                                   <SelectItem key={workspace.group.id} value={String(workspace.group.id)}>
-                                    {workspace.group.name}{normalizePlatform(workspace.group.platform) === provider ? " · 推荐" : ""}
+                                    {workspace.group.name}{normalizeMainStationPlatform(workspace.group.platform) === provider ? " · 推荐" : ""}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -546,21 +547,6 @@ export function quickTestUnavailableReason(rate: RateSnapshot, channel: Channel 
   if (provider === "other") return "当前分组类型暂不支持快速测试"
   if (channel.type === "sub2api" && rate.remote_group_id == null) return "缺少远端分组 ID，请先同步倍率"
   return ""
-}
-
-function healthAPIMode(provider: RateProviderType) {
-  if (provider === "anthropic") return "anthropic"
-  if (provider === "gemini") return "gemini"
-  if (provider === "image") return "openai_image"
-  return "openai_chat"
-}
-
-function normalizePlatform(value?: string) {
-  const normalized = value?.trim().toLowerCase() ?? ""
-  if (normalized === "claude") return "anthropic"
-  if (normalized === "google") return "gemini"
-  if (normalized === "xai") return "grok"
-  return normalized
 }
 
 function isManagedAccountNameConflict(error: unknown) {

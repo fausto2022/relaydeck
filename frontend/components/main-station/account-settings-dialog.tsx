@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { apiFetch } from "@/lib/api"
+import { mainStationHealthAPIMode, normalizeMainStationPlatform } from "@/lib/main-station-platform"
 import type {
   MainStationAccount,
   MainStationConfig,
@@ -113,7 +114,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
           health_interval_seconds: healthIntervalSeconds,
           health_failure_threshold: failureThreshold,
           health_recovery_threshold: recoveryThreshold,
-          health_api_mode: "openai_chat",
+          health_api_mode: mainStationHealthAPIMode(account.platform || workspace.group.platform),
         }),
       })
       onSaved(saved)
@@ -128,7 +129,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
     }
   }
 
-  const platform = healthPlatformKey(account?.platform)
+  const platform = normalizeMainStationPlatform(account?.platform)
   const globalModel = config?.health_models?.[platform] ?? ""
   const catalog = modelCatalogs.find((item) => item.platform === platform)
   const modelOptions = Array.from(new Set([...(catalog?.models ?? []), healthModel].filter(Boolean)))
@@ -232,12 +233,4 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
       </DialogContent>
     </Dialog>
   )
-}
-
-function healthPlatformKey(platform?: string) {
-  const normalized = (platform ?? "").trim().toLowerCase()
-  if (normalized === "claude") return "anthropic"
-  if (normalized === "google") return "gemini"
-  if (normalized === "xai") return "grok"
-  return normalized
 }
