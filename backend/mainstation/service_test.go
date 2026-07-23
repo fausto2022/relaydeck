@@ -312,23 +312,31 @@ func TestConfigIsSingletonAndConnectionErrorIsRedacted(t *testing.T) {
 	if config.MinimumMarginBasisPoints != 0 {
 		t.Fatalf("default minimum margin = %d", config.MinimumMarginBasisPoints)
 	}
+	if config.GuaranteedRevenueRatioBP != defaultGuaranteedRevenueRatioBP {
+		t.Fatalf("default guaranteed revenue ratio = %d", config.GuaranteedRevenueRatioBP)
+	}
 	interval := 60
 	failureThreshold := 20
 	recoveryThreshold := 5
 	minimumMargin := int64(2000)
+	guaranteedRevenueRatio := int64(8333)
 	updated, err := service.UpdateConfig(context.Background(), ConfigInput{
 		HealthIntervalSeconds: &interval, HealthFailureThreshold: &failureThreshold, HealthRecoveryThreshold: &recoveryThreshold,
-		MinimumMarginBasisPoints: &minimumMargin,
+		MinimumMarginBasisPoints: &minimumMargin, GuaranteedRevenueRatioBP: &guaranteedRevenueRatio,
 	})
 	if err != nil {
 		t.Fatalf("update health interval: %v", err)
 	}
-	if updated.HealthIntervalSeconds != interval || updated.HealthFailureThreshold != failureThreshold || updated.HealthRecoveryThreshold != recoveryThreshold || updated.MinimumMarginBasisPoints != minimumMargin {
+	if updated.HealthIntervalSeconds != interval || updated.HealthFailureThreshold != failureThreshold || updated.HealthRecoveryThreshold != recoveryThreshold || updated.MinimumMarginBasisPoints != minimumMargin || updated.GuaranteedRevenueRatioBP != guaranteedRevenueRatio {
 		t.Fatalf("updated health strategy = %#v", updated)
 	}
 	invalidMargin := int64(10000)
 	if _, err := service.UpdateConfig(context.Background(), ConfigInput{MinimumMarginBasisPoints: &invalidMargin}); err == nil {
 		t.Fatal("invalid minimum margin was accepted")
+	}
+	invalidRevenueRatio := int64(0)
+	if _, err := service.UpdateConfig(context.Background(), ConfigInput{GuaranteedRevenueRatioBP: &invalidRevenueRatio}); err == nil {
+		t.Fatal("invalid guaranteed revenue ratio was accepted")
 	}
 	invalidInterval := 29
 	if _, err := service.UpdateConfig(context.Background(), ConfigInput{HealthIntervalSeconds: &invalidInterval}); err == nil {

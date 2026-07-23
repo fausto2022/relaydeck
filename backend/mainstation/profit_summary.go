@@ -2,26 +2,31 @@ package mainstation
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
 	"github.com/fausto2022/relaydeck/backend/storage"
+	"gorm.io/gorm"
 )
 
 const mainStationProfitDays = 7
 
 type ProfitSummary struct {
-	Available       bool       `json:"available"`
-	TodayAvailable  bool       `json:"today_available"`
-	TodayRevenue    float64    `json:"today_revenue"`
-	TodayCost       float64    `json:"today_cost"`
-	TodayProfit     float64    `json:"today_profit"`
-	SevenDayRevenue float64    `json:"seven_day_revenue"`
-	SevenDayCost    float64    `json:"seven_day_cost"`
-	SevenDayProfit  float64    `json:"seven_day_profit"`
-	SampledDays     int        `json:"sampled_days"`
-	Complete        bool       `json:"complete"`
-	LastSampledAt   *time.Time `json:"last_sampled_at,omitempty"`
+	Available                 bool       `json:"available"`
+	TodayAvailable            bool       `json:"today_available"`
+	TodayRevenue              float64    `json:"today_revenue"`
+	TodayGuaranteedRevenue    float64    `json:"today_guaranteed_revenue"`
+	TodayCost                 float64    `json:"today_cost"`
+	TodayProfit               float64    `json:"today_profit"`
+	SevenDayRevenue           float64    `json:"seven_day_revenue"`
+	SevenDayGuaranteedRevenue float64    `json:"seven_day_guaranteed_revenue"`
+	SevenDayCost              float64    `json:"seven_day_cost"`
+	SevenDayProfit            float64    `json:"seven_day_profit"`
+	SampledDays               int        `json:"sampled_days"`
+	Complete                  bool       `json:"complete"`
+	GuaranteedRevenueRatioBP  int64      `json:"guaranteed_revenue_ratio_basis_points"`
+	LastSampledAt             *time.Time `json:"last_sampled_at,omitempty"`
 }
 
 type groupUsageStatsClient interface {
@@ -85,7 +90,17 @@ func (s *Service) ProfitSummary(days int) (*ProfitSummary, error) {
 	if err != nil {
 		return nil, err
 	}
-	summary := &ProfitSummary{SampledDays: len(items), Complete: len(items) == days}
+	ratioBasisPoints := defaultGuaranteedRevenueRatioBP
+	config, configErr := s.store.GetConfig()
+	if configErr == nil {
+		ratioBasisPoints = normalizedGuaranteedRevenueRatioBP(config.GuaranteedRevenueRatioBP)
+	} else if !errors.Is(configErr, gorm.ErrRecordNotFound) {
+		return nil, configErr
+	}
+	summary := &ProfitSummary{
+		SampledDays: len(items), Complete: len(items) == days,
+		GuaranteedRevenueRatioBP: ratioBasisPoints,
+	}
 	todayKey := today.Format("2006-01-02")
 	for i := range items {
 		item := items[i]
@@ -100,12 +115,18 @@ func (s *Service) ProfitSummary(days int) (*ProfitSummary, error) {
 		}
 	}
 	summary.Available = len(items) > 0
+	summary.TodayGuaranteedRevenue = applyRevenueRatio(summary.TodayRevenue, ratioBasisPoints)
+	summary.SevenDayGuaranteedRevenue = applyRevenueRatio(summary.SevenDayRevenue, ratioBasisPoints)
 	if err := s.applyUpstreamCosts(summary, days, todayKey); err != nil {
 		return nil, err
 	}
 	summary.TodayProfit = summary.TodayRevenue - summary.TodayCost
 	summary.SevenDayProfit = summary.SevenDayRevenue - summary.SevenDayCost
 	return summary, nil
+}
+
+func applyRevenueRatio(revenue float64, ratioBasisPoints int64) float64 {
+	return revenue * float64(normalizedGuaranteedRevenueRatioBP(ratioBasisPoints)) / float64(defaultGuaranteedRevenueRatioBP)
 }
 
 func (s *Service) applyUpstreamCosts(summary *ProfitSummary, days int, todayKey string) error {

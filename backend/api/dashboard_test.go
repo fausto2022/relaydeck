@@ -168,9 +168,11 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 			} `json:"channels"`
 			RecentRateChanges []rateChangeOutput `json:"recent_rate_changes"`
 			Profit            struct {
-				TodayProfit    float64 `json:"today_profit"`
-				SevenDayProfit float64 `json:"seven_day_profit"`
-				SampledDays    int     `json:"sampled_days"`
+				TodayProfit              float64 `json:"today_profit"`
+				TodayGuaranteedRevenue   float64 `json:"today_guaranteed_revenue"`
+				GuaranteedRevenueRatioBP int64   `json:"guaranteed_revenue_ratio_basis_points"`
+				SevenDayProfit           float64 `json:"seven_day_profit"`
+				SampledDays              int     `json:"sampled_days"`
 			} `json:"profit"`
 		} `json:"data"`
 	}
@@ -191,6 +193,9 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 	}
 	if resp.Data.Profit.TodayProfit != 6 || resp.Data.Profit.SevenDayProfit != 13 || resp.Data.Profit.SampledDays != 2 {
 		t.Fatalf("profit summary = %#v", resp.Data.Profit)
+	}
+	if resp.Data.Profit.TodayGuaranteedRevenue != 10 || resp.Data.Profit.GuaranteedRevenueRatioBP != 10000 {
+		t.Fatalf("default guaranteed revenue = %#v", resp.Data.Profit)
 	}
 	change := resp.Data.RecentRateChanges[0]
 	if change.OldRatio == nil || *change.OldRatio != 0.0692 || change.NewRatio != 0.04 {

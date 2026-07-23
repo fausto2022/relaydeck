@@ -50,6 +50,7 @@ export function StationConfigDialog({
   const [autoMarginProtection, setAutoMarginProtection] = useState(false)
   const [autoRecovery, setAutoRecovery] = useState(false)
   const [minimumMarginPercent, setMinimumMarginPercent] = useState(0)
+  const [guaranteedRevenueRatioPercent, setGuaranteedRevenueRatioPercent] = useState(100)
   const [healthModels, setHealthModels] = useState<Record<string, string>>({})
   const [healthIntervalSeconds, setHealthIntervalSeconds] = useState(30)
   const [healthFailureThreshold, setHealthFailureThreshold] = useState(10)
@@ -71,6 +72,7 @@ export function StationConfigDialog({
     setAutoMarginProtection(config?.auto_margin_protection ?? false)
     setAutoRecovery(config?.auto_recovery ?? false)
     setMinimumMarginPercent((config?.minimum_margin_basis_points ?? 0) / 100)
+    setGuaranteedRevenueRatioPercent((config?.guaranteed_revenue_ratio_basis_points ?? 10000) / 100)
     setHealthModels(config?.health_models ?? {})
     setHealthIntervalSeconds(config?.health_interval_seconds ?? 30)
     setHealthFailureThreshold(config?.health_failure_threshold ?? 10)
@@ -169,6 +171,10 @@ export function StationConfigDialog({
       toast.error("全局最低利润率必须在 0% 到 99% 之间")
       return
     }
+    if (!Number.isFinite(guaranteedRevenueRatioPercent) || guaranteedRevenueRatioPercent <= 0 || guaranteedRevenueRatioPercent > 100) {
+      toast.error("保底收入折算比例必须大于 0% 且不超过 100%")
+      return
+    }
     setBusy("save")
     try {
       const saved = await apiFetch<MainStationConfig>("/main-station", {
@@ -183,6 +189,7 @@ export function StationConfigDialog({
           auto_margin_protection: autoMarginProtection,
           auto_recovery: autoRecovery,
           minimum_margin_basis_points: Math.round(minimumMarginPercent * 100),
+          guaranteed_revenue_ratio_basis_points: Math.round(guaranteedRevenueRatioPercent * 100),
           health_models: healthModels,
           health_interval_seconds: healthIntervalSeconds,
           health_failure_threshold: healthFailureThreshold,
@@ -278,6 +285,26 @@ export function StationConfigDialog({
               <Input id="main-station-ranking-interval" type="number" min={5} max={86400} value={rankingIntervalSeconds} onChange={(event) => setRankingIntervalSeconds(Number(event.target.value))} />
             </div>
           </div>
+          {config?.configured ? (
+            <div className="space-y-3 border-t pt-4">
+              <Label>利润统计</Label>
+              <div className="space-y-2">
+                <Label htmlFor="main-station-guaranteed-revenue-ratio">保底收入折算比例（%）</Label>
+                <Input
+                  id="main-station-guaranteed-revenue-ratio"
+                  type="number"
+                  min={0.01}
+                  max={100}
+                  step={0.01}
+                  value={guaranteedRevenueRatioPercent}
+                  onChange={(event) => setGuaranteedRevenueRatioPercent(Number(event.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  实收 1000、到账余额 1200 时填写 83.33%；保底收入 = 用户余额消费 × 折算比例。
+                </p>
+              </div>
+            </div>
+          ) : null}
           {config?.configured ? (
             <div className="space-y-3 border-t pt-4">
               <Label>自动保护</Label>

@@ -309,13 +309,16 @@ export interface DashboardProfitSummary {
   available: boolean
   today_available: boolean
   today_revenue: number
+  today_guaranteed_revenue: number
   today_cost: number
   today_profit: number
   seven_day_revenue: number
+  seven_day_guaranteed_revenue: number
   seven_day_cost: number
   seven_day_profit: number
   sampled_days: number
   complete: boolean
+  guaranteed_revenue_ratio_basis_points: number
   last_sampled_at?: string
 }
 
@@ -719,6 +722,7 @@ export interface MainStationConfig {
   auto_health_protection: boolean
   auto_recovery: boolean
   minimum_margin_basis_points: number
+  guaranteed_revenue_ratio_basis_points: number
   health_models: Record<string, string>
   health_interval_seconds: number
   health_failure_threshold: number

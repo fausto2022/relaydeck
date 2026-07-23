@@ -65,7 +65,10 @@ export function KpiRow() {
       iconBg: "bg-success/10",
       iconColor: "text-success",
       footer: profit?.today_available ? (
-        <span className="text-muted-foreground">收入 {money(profit.today_revenue)} · 成本 {money(profit.today_cost)}</span>
+        <span className="flex flex-col gap-0.5 text-muted-foreground">
+          <span>收入 {money(profit.today_revenue)} · 成本 {money(profit.today_cost)}</span>
+          <span>保底收入 {money(profit.today_guaranteed_revenue)} · 按 {(profit.guaranteed_revenue_ratio_basis_points / 100).toFixed(2)}% 折算</span>
+        </span>
       ) : (
         <span className="text-muted-foreground">等待主站同步采样</span>
       ),

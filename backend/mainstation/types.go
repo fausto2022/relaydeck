@@ -34,6 +34,7 @@ type ConfigDTO struct {
 	AutoHealthProtection     bool               `json:"auto_health_protection"`
 	AutoRecovery             bool               `json:"auto_recovery"`
 	MinimumMarginBasisPoints int64              `json:"minimum_margin_basis_points"`
+	GuaranteedRevenueRatioBP int64              `json:"guaranteed_revenue_ratio_basis_points"`
 	HealthModels             map[string]string  `json:"health_models"`
 	HealthIntervalSeconds    int                `json:"health_interval_seconds"`
 	HealthFailureThreshold   int                `json:"health_failure_threshold"`
@@ -56,6 +57,7 @@ type ConfigInput struct {
 	AutoHealthProtection     *bool             `json:"auto_health_protection,omitempty"`
 	AutoRecovery             *bool             `json:"auto_recovery,omitempty"`
 	MinimumMarginBasisPoints *int64            `json:"minimum_margin_basis_points,omitempty"`
+	GuaranteedRevenueRatioBP *int64            `json:"guaranteed_revenue_ratio_basis_points,omitempty"`
 	HealthModels             map[string]string `json:"health_models,omitempty"`
 	HealthIntervalSeconds    *int              `json:"health_interval_seconds,omitempty"`
 	HealthFailureThreshold   *int              `json:"health_failure_threshold,omitempty"`

@@ -32,6 +32,7 @@ const (
 	minimumRankingIntervalSeconds      = 5
 	defaultMainStationSyncInterval     = 300
 	maximumHealthThreshold             = 100
+	defaultGuaranteedRevenueRatioBP    = int64(10000)
 )
 
 type globalHealthSettings struct {
@@ -160,12 +161,13 @@ func (s *Service) UpdateProbeConfig(proxy config.ProxyConfig, timeout time.Durat
 
 func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto := &ConfigDTO{
-		HealthModels:            map[string]string{},
-		HealthIntervalSeconds:   defaultHealthIntervalSeconds,
-		HealthFailureThreshold:  defaultHealthFailureThreshold,
-		HealthRecoveryThreshold: defaultHealthRecoveryThreshold,
-		RankingIntervalSeconds:  defaultRankingIntervalSeconds,
-		SyncIntervalSeconds:     defaultMainStationSyncInterval,
+		HealthModels:             map[string]string{},
+		HealthIntervalSeconds:    defaultHealthIntervalSeconds,
+		HealthFailureThreshold:   defaultHealthFailureThreshold,
+		HealthRecoveryThreshold:  defaultHealthRecoveryThreshold,
+		RankingIntervalSeconds:   defaultRankingIntervalSeconds,
+		SyncIntervalSeconds:      defaultMainStationSyncInterval,
+		GuaranteedRevenueRatioBP: defaultGuaranteedRevenueRatioBP,
 	}
 	if state, err := s.store.GetMigrationState(); err == nil {
 		dto.Migration = &MigrationStateDTO{Status: state.Status, Detail: state.Detail}
@@ -197,6 +199,7 @@ func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto.AutoHealthProtection = config.AutoHealthProtection
 	dto.AutoRecovery = config.AutoRecovery
 	dto.MinimumMarginBasisPoints = config.MinimumMarginBasisPoints
+	dto.GuaranteedRevenueRatioBP = normalizedGuaranteedRevenueRatioBP(config.GuaranteedRevenueRatioBP)
 	dto.HealthModels = decodeHealthModels(config.HealthModelsJSON)
 	dto.HealthIntervalSeconds = normalizedGlobalHealthInterval(config.HealthIntervalSeconds)
 	dto.HealthFailureThreshold = normalizedHealthThreshold(config.HealthFailureThreshold, defaultHealthFailureThreshold)
@@ -288,6 +291,13 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 			return nil, err
 		}
 	}
+	guaranteedRevenueRatioBP := defaultGuaranteedRevenueRatioBP
+	if in.GuaranteedRevenueRatioBP != nil {
+		guaranteedRevenueRatioBP = *in.GuaranteedRevenueRatioBP
+		if err := validateGuaranteedRevenueRatioBP(guaranteedRevenueRatioBP); err != nil {
+			return nil, err
+		}
+	}
 	config := &storage.MainStationConfig{
 		ID:                       storage.MainStationSingletonID,
 		Enabled:                  enabled,
@@ -296,6 +306,7 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		HealthFailureThreshold:   healthFailureThreshold,
 		HealthRecoveryThreshold:  healthRecoveryThreshold,
 		MinimumMarginBasisPoints: minimumMarginBasisPoints,
+		GuaranteedRevenueRatioBP: guaranteedRevenueRatioBP,
 		RankingIntervalSeconds:   rankingIntervalSeconds,
 		SyncIntervalSeconds:      syncIntervalSeconds,
 	}
@@ -407,6 +418,12 @@ func (s *Service) UpdateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		}
 		config.MinimumMarginBasisPoints = *in.MinimumMarginBasisPoints
 	}
+	if in.GuaranteedRevenueRatioBP != nil {
+		if err := validateGuaranteedRevenueRatioBP(*in.GuaranteedRevenueRatioBP); err != nil {
+			return nil, err
+		}
+		config.GuaranteedRevenueRatioBP = *in.GuaranteedRevenueRatioBP
+	}
 	if in.HealthModels != nil {
 		config.HealthModelsJSON, err = encodeHealthModels(in.HealthModels)
 		if err != nil {
@@ -499,6 +516,20 @@ func normalizedSyncInterval(value int) int {
 func validateSyncInterval(value int) error {
 	if value < 30 || value > 86400 {
 		return errors.New("main station sync interval must be between 30 and 86400 seconds")
+	}
+	return nil
+}
+
+func normalizedGuaranteedRevenueRatioBP(value int64) int64 {
+	if value <= 0 || value > defaultGuaranteedRevenueRatioBP {
+		return defaultGuaranteedRevenueRatioBP
+	}
+	return value
+}
+
+func validateGuaranteedRevenueRatioBP(value int64) error {
+	if value <= 0 || value > defaultGuaranteedRevenueRatioBP {
+		return errors.New("保底收入折算比例必须大于 0% 且不超过 100%")
 	}
 	return nil
 }

@@ -89,6 +89,10 @@ func TestSyncUsesActualCostWithoutAccountCost(t *testing.T) {
 	}
 	service.adminFactory = func() adminClient { return admin }
 	configureTestStation(t, service)
+	guaranteedRevenueRatio := int64(8000)
+	if _, err := service.UpdateConfig(context.Background(), ConfigInput{GuaranteedRevenueRatioBP: &guaranteedRevenueRatio}); err != nil {
+		t.Fatalf("update guaranteed revenue ratio: %v", err)
+	}
 	if _, err := service.Sync(context.Background()); err != nil {
 		t.Fatalf("sync main station: %v", err)
 	}
@@ -96,7 +100,7 @@ func TestSyncUsesActualCostWithoutAccountCost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("profit summary: %v", err)
 	}
-	if !summary.Available || summary.TodayRevenue != 10 || summary.TodayCost != 3 || summary.TodayProfit != 7 {
+	if !summary.Available || summary.TodayRevenue != 10 || summary.TodayGuaranteedRevenue != 8 || summary.GuaranteedRevenueRatioBP != guaranteedRevenueRatio || summary.TodayCost != 3 || summary.TodayProfit != 7 {
 		t.Fatalf("profit should use actual revenue and converted upstream cost: %#v", summary)
 	}
 }
