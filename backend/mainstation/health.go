@@ -430,6 +430,14 @@ func buildL1ProbeRequest(mode, model string) (probeRequest, error) {
 			"contents":         []map[string]any{{"parts": []map[string]string{{"text": "Reply OK"}}}},
 			"generationConfig": map[string]any{"maxOutputTokens": 8},
 		}
+	case "gemini_image":
+		request.Path = "/v1beta/models/" + url.PathEscape(model) + ":generateContent"
+		request.Protocol = "gemini_image"
+		request.ResponseBodyLimit = imageProbeResponseBodyLimit
+		request.Body = map[string]any{
+			"contents":         []map[string]any{{"parts": []map[string]string{{"text": "A simple red circle centered on a white background"}}}},
+			"generationConfig": map[string]any{"responseModalities": []string{"IMAGE"}},
+		}
 	case "openai_image":
 		request.Path = "/v1/images/generations"
 		request.Protocol = "openai_image"
@@ -512,7 +520,7 @@ func (s *Service) performProbeRequest(ctx context.Context, channel *storage.Chan
 	switch request.Protocol {
 	case "anthropic":
 		httpRequest.Header.Set("x-api-key", secret)
-	case "gemini":
+	case "gemini", "gemini_image":
 		httpRequest.Header.Set("x-goog-api-key", secret)
 	default:
 		httpRequest.Header.Set("Authorization", "Bearer "+secret)
@@ -558,8 +566,12 @@ func (s *Service) performProbeRequest(ctx context.Context, channel *storage.Chan
 		return probeExecution{Status: "failure", ErrorClass: "empty_response", HTTPStatus: response.StatusCode, Protocol: request.Protocol, Model: request.Model, Endpoint: request.Path, LatencyMS: latency, TTFBMS: ttfb, Message: "upstream returned an empty response"}
 	}
 	imageURL := ""
-	if request.Protocol == "openai_image" {
-		imageURL = parseProbeImageURL(raw)
+	if isImageQuickTestMode(request.Protocol) {
+		if request.Protocol == "gemini_image" {
+			imageURL = parseGeminiProbeImageURL(raw)
+		} else {
+			imageURL = parseProbeImageURL(raw)
+		}
 		if imageURL == "" {
 			return probeExecution{Status: "failure", ErrorClass: "image_missing", HTTPStatus: response.StatusCode, Protocol: request.Protocol, Model: request.Model, Endpoint: request.Path, LatencyMS: latency, TTFBMS: ttfb, Message: "upstream response did not contain a generated image"}
 		}
@@ -591,6 +603,38 @@ func parseProbeImageURL(raw []byte) string {
 		return ""
 	}
 	return parsed.String()
+}
+
+func parseGeminiProbeImageURL(raw []byte) string {
+	var response struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					InlineData *struct {
+						MIMEType string `json:"mimeType"`
+						Data     string `json:"data"`
+					} `json:"inlineData"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return ""
+	}
+	for _, candidate := range response.Candidates {
+		for _, part := range candidate.Content.Parts {
+			if part.InlineData == nil {
+				continue
+			}
+			mimeType := strings.ToLower(strings.TrimSpace(part.InlineData.MIMEType))
+			data := strings.TrimSpace(part.InlineData.Data)
+			if !strings.HasPrefix(mimeType, "image/") || data == "" {
+				continue
+			}
+			return "data:" + mimeType + ";base64," + data
+		}
+	}
+	return ""
 }
 
 func (s *Service) probeHTTPClient(channel *storage.Channel) *http.Client {

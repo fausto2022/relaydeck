@@ -149,6 +149,74 @@ func TestQuickTestRateInfersImageModeFromOpenAIImageModel(t *testing.T) {
 	}
 }
 
+func TestQuickTestRateGeneratesGeminiImagePreview(t *testing.T) {
+	service, db, _, _ := newTestService(t)
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		if r.URL.Path != "/v1beta/models/gemini-2.5-flash-image:generateContent" {
+			t.Fatalf("gemini image probe path = %q", r.URL.Path)
+		}
+		if r.Header.Get("x-goog-api-key") != "sk-source-secret" {
+			t.Fatalf("gemini api key = %q", r.Header.Get("x-goog-api-key"))
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode gemini image body: %v", err)
+		}
+		generationConfig, ok := body["generationConfig"].(map[string]any)
+		if !ok || len(generationConfig["responseModalities"].([]any)) != 1 {
+			t.Fatalf("gemini image body = %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/webp","data":"aW1hZ2U="}}]}}]}`))
+	}))
+	defer server.Close()
+
+	channel := createTestChannel(t, db)
+	channel.SiteURL = server.URL
+	if err := db.Save(channel).Error; err != nil {
+		t.Fatalf("save channel: %v", err)
+	}
+	groupID := int64(305)
+	rate := &storage.RateSnapshot{ChannelID: channel.ID, RemoteGroupID: &groupID, ModelName: "nano-banana", Ratio: 0.2, LastSeenAt: time.Now()}
+	if err := db.Create(rate).Error; err != nil {
+		t.Fatalf("create rate: %v", err)
+	}
+
+	result, err := service.QuickTestRate(context.Background(), channel.ID, rate.ID, RateQuickTestInput{
+		Platform: "gemini", Model: "gemini-2.5-flash-image", Mode: "image",
+	})
+	if err != nil {
+		t.Fatalf("quick test gemini image rate: %v", err)
+	}
+	if !result.Usable || result.Protocol != "gemini_image" || result.ImageURL != "data:image/webp;base64,aW1hZ2U=" {
+		t.Fatalf("gemini image quick test result = %#v", result)
+	}
+	if result.AttemptCount != 1 || result.SuccessCount != 1 || requestCount.Load() != 1 {
+		t.Fatalf("gemini image attempts = %#v request_count=%d", result.Attempts, requestCount.Load())
+	}
+}
+
+func TestQuickTestAPIModeForImageModels(t *testing.T) {
+	tests := []struct {
+		platform string
+		model    string
+		want     string
+	}{
+		{platform: "openai", model: "gpt-image-2", want: "openai_image"},
+		{platform: "grok", model: "grok-imagine-image", want: "openai_image"},
+		{platform: "gemini", model: "nano-banana-pro", want: "gemini_image"},
+		{platform: "gemini", model: "gemini-2.5-flash-image", want: "gemini_image"},
+	}
+	for _, test := range tests {
+		got, err := quickTestAPIModeForModel(test.platform, test.model)
+		if err != nil || got != test.want {
+			t.Errorf("quickTestAPIModeForModel(%q, %q) = %q, %v; want %q", test.platform, test.model, got, err, test.want)
+		}
+	}
+}
+
 func TestQuickTestResultRequiresEveryAttemptToSucceed(t *testing.T) {
 	result := quickTestResult([]probeExecution{
 		{Status: "success", HTTPStatus: http.StatusOK, Protocol: "openai_chat", Model: "gpt-test", LatencyMS: 100, TTFBMS: 80},

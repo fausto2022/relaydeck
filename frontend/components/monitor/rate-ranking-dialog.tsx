@@ -191,7 +191,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
     try {
       const tested = await apiFetch<RateQuickTestResult>(`/channels/${selectedRate.channel_id}/rates/${selectedRate.id}/test`, {
         method: "POST",
-        body: JSON.stringify({ platform: testMode === "image" ? "image" : provider, model: model.trim() }),
+        body: JSON.stringify({ platform: provider, model: model.trim(), mode: testMode }),
       })
       setResult(tested)
       if (tested.usable) toast.success("快速测试通过")
@@ -232,7 +232,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
             cost_adjustment: 1,
             health_enabled: true,
             health_model: model.trim(),
-            health_api_mode: mainStationHealthAPIMode(testMode === "image" ? "image" : workspace.group.platform),
+            health_api_mode: mainStationHealthAPIMode(workspace.group.platform, testMode === "image"),
           }),
         })
         setAddedGroupName(workspace.group.name)
@@ -579,7 +579,7 @@ export function quickTestUnavailableReason(rate: RateSnapshot, channel: Channel 
 }
 
 function supportsImageQuickTest(provider: RateProviderType) {
-  return provider === "openai" || provider === "grok" || provider === "image"
+  return provider === "openai" || provider === "gemini" || provider === "grok" || provider === "image"
 }
 
 function isManagedAccountNameConflict(error: unknown) {

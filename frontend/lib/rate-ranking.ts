@@ -4,7 +4,15 @@ export const ALL_RATE_CATEGORY = "__all__"
 
 export function isImageQuickTestModel(model?: string) {
   const normalized = model?.trim().toLowerCase() ?? ""
-  return normalized.includes("gpt-image") || normalized.startsWith("dall-e") || normalized.includes("image-generation") || normalized.includes("imagine-image")
+  return normalized.includes("gpt-image")
+    || normalized.startsWith("dall-e")
+    || normalized.includes("image-generation")
+    || normalized.includes("imagine-image")
+    || (normalized.includes("grok-imagine") && !normalized.includes("video"))
+    || normalized.includes("nanobanana")
+    || normalized.includes("nano-banana")
+    || normalized.includes("nano banana")
+    || (normalized.includes("gemini") && normalized.includes("image"))
 }
 
 export function latestRateSeenAt(rates: RateSnapshot[]) {

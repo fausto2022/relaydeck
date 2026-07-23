@@ -77,6 +77,10 @@ describe("quick test model mode", () => {
   it("recognizes image models even when the ranking provider is OpenAI", () => {
     expect(isImageQuickTestModel("gpt-image-2")).toBe(true)
     expect(isImageQuickTestModel("dall-e-3")).toBe(true)
+    expect(isImageQuickTestModel("gemini-2.5-flash-image")).toBe(true)
+    expect(isImageQuickTestModel("nano-banana-pro")).toBe(true)
+    expect(isImageQuickTestModel("grok-imagine-image")).toBe(true)
+    expect(isImageQuickTestModel("grok-imagine-video")).toBe(false)
     expect(isImageQuickTestModel("gpt-5.2")).toBe(false)
   })
 })

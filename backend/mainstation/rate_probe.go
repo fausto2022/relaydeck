@@ -52,7 +52,7 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 	if model == "" {
 		return nil, errors.New("请选择快速测试模型")
 	}
-	mode, err := quickTestAPIModeForModel(platform, model)
+	mode, err := quickTestAPIModeForModel(platform, model, in.Mode)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 }
 
 func quickTestAttemptCount(mode string) int {
-	if strings.EqualFold(strings.TrimSpace(mode), "openai_image") {
+	if isImageQuickTestMode(mode) {
 		return 1
 	}
 	return rateQuickTestAttempts
@@ -240,9 +240,25 @@ func quickTestAPIMode(platform string) (string, error) {
 	}
 }
 
-func quickTestAPIModeForModel(platform, model string) (string, error) {
+func quickTestAPIModeForModel(platform, model string, requestedMode ...string) (string, error) {
 	platform = normalizeHealthPlatform(platform)
-	if platform == "image" || isImageQuickTestModel(model) {
+	mode := ""
+	if len(requestedMode) > 0 {
+		mode = strings.ToLower(strings.TrimSpace(requestedMode[0]))
+	}
+	if mode != "" && mode != "chat" && mode != "image" {
+		return "", errors.New("快速测试模式不正确")
+	}
+	if mode == "chat" {
+		return quickTestAPIMode(platform)
+	}
+	if platform == "image" || mode == "image" || isImageQuickTestModel(model) {
+		if platform == "gemini" {
+			return "gemini_image", nil
+		}
+		if platform != "openai" && platform != "grok" && platform != "image" {
+			return "", errors.New("当前渠道类型暂不支持生图快速测试")
+		}
 		return "openai_image", nil
 	}
 	return quickTestAPIMode(platform)
@@ -256,7 +272,17 @@ func isImageQuickTestModel(model string) bool {
 	return strings.Contains(model, "gpt-image") ||
 		strings.HasPrefix(model, "dall-e") ||
 		strings.Contains(model, "image-generation") ||
-		strings.Contains(model, "imagine-image")
+		strings.Contains(model, "imagine-image") ||
+		(strings.Contains(model, "grok-imagine") && !strings.Contains(model, "video")) ||
+		strings.Contains(model, "nanobanana") ||
+		strings.Contains(model, "nano-banana") ||
+		strings.Contains(model, "nano banana") ||
+		(strings.Contains(model, "gemini") && strings.Contains(model, "image"))
+}
+
+func isImageQuickTestMode(mode string) bool {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	return mode == "openai_image" || mode == "gemini_image"
 }
 
 func quickTestResult(executions []probeExecution, keyName string, cleanupErr error, testedAt time.Time) *RateQuickTestResult {
@@ -332,7 +358,7 @@ func quickTestAggregateMessage(executions []probeExecution, successCount int, fi
 		return "快速测试没有执行"
 	}
 	if successCount == len(executions) {
-		if len(executions) == 1 && executions[0].Protocol == "openai_image" {
+		if len(executions) == 1 && isImageQuickTestMode(executions[0].Protocol) {
 			return "生图测试成功，当前上游分组可以生成图片"
 		}
 		return fmt.Sprintf("连续测试 %d 次全部成功，当前上游分组可以使用", len(executions))

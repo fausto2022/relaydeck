@@ -23,6 +23,12 @@ describe("main station platform", () => {
     expect(mainStationHealthAPIMode(platform)).toBe(expected)
   })
 
+  it("uses the provider-specific image API mode", () => {
+    expect(mainStationHealthAPIMode("openai", true)).toBe("openai_image")
+    expect(mainStationHealthAPIMode("grok", true)).toBe("openai_image")
+    expect(mainStationHealthAPIMode("gemini", true)).toBe("gemini_image")
+  })
+
   it("only matches equivalent non-empty platforms", () => {
     expect(mainStationPlatformsMatch("xai", "grok")).toBe(true)
     expect(mainStationPlatformsMatch("claude", "anthropic")).toBe(true)

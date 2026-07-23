@@ -6,7 +6,10 @@ export function normalizeMainStationPlatform(value?: string) {
   return normalized
 }
 
-export function mainStationHealthAPIMode(platform?: string) {
+export function mainStationHealthAPIMode(platform?: string, image = false) {
+  if (image) {
+    return normalizeMainStationPlatform(platform) === "gemini" ? "gemini_image" : "openai_image"
+  }
   switch (normalizeMainStationPlatform(platform)) {
     case "anthropic":
       return "anthropic"
