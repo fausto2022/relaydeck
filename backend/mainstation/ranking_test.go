@@ -184,3 +184,23 @@ func TestReconcilePoolRankingMarksMissingRemoteAccountOrphaned(t *testing.T) {
 		t.Fatalf("orphaned account was retried: updates = %d", len(admin.schedulingUpdates))
 	}
 }
+
+func TestReconcileAccountClearsDirtyStateWhenRemoteAccountIsDeleted(t *testing.T) {
+	service, _, admin, pool, member := createBoundSchedulingMember(t)
+	admin.accounts = nil
+
+	decision, err := service.ReconcileAccount(context.Background(), *member.RemoteAccountID, "scheduler")
+	if err != nil {
+		t.Fatalf("reconcile deleted account: %v", err)
+	}
+	if decision == nil || decision.Reason != "member binding is invalid" {
+		t.Fatalf("decision = %#v", decision)
+	}
+	updated, err := service.store.FindMember(pool.ID, member.ID)
+	if err != nil {
+		t.Fatalf("reload member: %v", err)
+	}
+	if updated.BindingStatus != "orphaned" || updated.Status != "orphaned" || updated.SchedulingDirtyAt != nil || updated.LastSchedulingError != "" {
+		t.Fatalf("orphaned member scheduling state = %#v", updated)
+	}
+}

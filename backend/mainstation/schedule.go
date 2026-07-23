@@ -152,12 +152,23 @@ func (s *Service) ReconcileAccount(ctx context.Context, remoteAccountID int64, s
 		if statusCodeFromError(err) == 404 || errors.Is(err, gorm.ErrRecordNotFound) {
 			member.BindingStatus = "orphaned"
 			member.Status = "orphaned"
-			_ = s.store.UpdateMember(member)
+			if updateErr := s.store.UpdateMember(member); updateErr != nil {
+				return nil, updateErr
+			}
+			_ = s.store.MarkAccountSnapshotMissing(remoteAccountID, s.now())
 			bindingLock := &storage.MainAccountGuardLock{
 				RemoteAccountID: remoteAccountID, MemberID: member.ID, LockType: "binding", Active: true,
 				Reason: "remote account no longer exists", CreatedBy: "system",
 			}
-			_ = s.store.UpsertGuardLock(bindingLock)
+			if lockErr := s.store.UpsertGuardLock(bindingLock); lockErr != nil {
+				return nil, lockErr
+			}
+			decision = &SchedulingDecision{
+				RemoteAccountID: remoteAccountID, DesiredSchedulable: false, RemoteSchedulable: false,
+				Reason: "member binding is invalid", Locks: []storage.MainAccountGuardLock{*bindingLock},
+			}
+			_ = s.appendAudit(&pool.ID, &member.ID, &remoteAccountID, "schedulable_reconcile", source, true, nil, nil, decision, "remote account no longer exists; member marked orphaned", "")
+			return decision, nil
 		}
 		_ = s.appendAudit(&pool.ID, &member.ID, &remoteAccountID, "schedulable_reconcile", source, false, nil, nil, nil, "", redactSecretError(err, apiKey).Error())
 		return nil, fmt.Errorf("read remote account before scheduling decision: %w", redactSecretError(err, apiKey))
