@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -16,6 +17,7 @@ import (
 const (
 	maximumBindingCandidates = 5
 	maximumBatchBindings     = 100
+	bindingSourceConcurrency = 4
 )
 
 type bindingSource struct {
@@ -25,6 +27,11 @@ type bindingSource struct {
 	apiKeyID    *int64
 	apiKeyName  string
 	concurrency int
+}
+
+type bindingSourceResult struct {
+	sources  []bindingSource
+	warnings []string
 }
 
 func (s *Service) RecommendBindings(ctx context.Context, groupID uint) (*BindingRecommendationResult, error) {
@@ -147,63 +154,88 @@ func (s *Service) BindMembersBatch(ctx context.Context, groupID uint, in Binding
 }
 
 func (s *Service) bindingSources(ctx context.Context, channels []storage.Channel) ([]bindingSource, []string) {
+	if s.channelSvc == nil {
+		return nil, []string{"channel service is unavailable"}
+	}
+	results := make([]bindingSourceResult, len(channels))
+	semaphore := make(chan struct{}, bindingSourceConcurrency)
+	var wait sync.WaitGroup
+	for i := range channels {
+		i := i
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-ctx.Done():
+				results[i].warnings = []string{fmt.Sprintf("%s：读取已取消", channels[i].Name)}
+				return
+			}
+			results[i] = s.bindingSourcesForChannel(ctx, channels[i])
+		}()
+	}
+	wait.Wait()
+
 	sources := make([]bindingSource, 0)
 	warnings := make([]string, 0)
-	if s.channelSvc == nil {
-		return sources, []string{"channel service is unavailable"}
-	}
-	for i := range channels {
-		channel := channels[i]
-		channelWarnings := make([]string, 0, 3)
-		concurrency := 0
-		if limits, limitErr := s.channelSvc.GetAccountLimits(ctx, channel.ID); limitErr == nil && limits != nil {
-			concurrency = limits.Concurrency
-		} else {
-			channelWarnings = append(channelWarnings, "最高并发")
-			if limitErr != nil {
-				s.logBindingSourceError(channel, "load concurrency", limitErr)
-			}
-		}
-		keys, err := s.listBindingAPIKeys(ctx, channel.ID)
-		if err != nil {
-			channelWarnings = append(channelWarnings, "API Key")
-			s.logBindingSourceError(channel, "load api keys", err)
-		}
-		usableKeys := 0
-		for j := range keys {
-			key := keys[j]
-			if !usableBindingKey(key.Status) {
-				continue
-			}
-			keyID := key.ID
-			sources = append(sources, bindingSource{
-				channel: channel, groupID: key.GroupID, groupName: firstNonEmpty(key.GroupName, key.Group),
-				apiKeyID: &keyID, apiKeyName: key.Name, concurrency: concurrency,
-			})
-			usableKeys++
-		}
-		if usableKeys > 0 {
-			warnings = appendBindingSourceWarning(warnings, channel.Name, channelWarnings)
-			continue
-		}
-		groups, groupErr := s.channelSvc.ListAPIKeyGroups(ctx, channel.ID)
-		if groupErr != nil {
-			channelWarnings = append(channelWarnings, "来源分组")
-			s.logBindingSourceError(channel, "load api key groups", groupErr)
-		}
-		if len(groups) == 0 {
-			sources = append(sources, bindingSource{channel: channel, concurrency: concurrency})
-			warnings = appendBindingSourceWarning(warnings, channel.Name, channelWarnings)
-			continue
-		}
-		for j := range groups {
-			sources = append(sources, bindingSource{
-				channel: channel, groupID: groups[j].ID, groupName: groups[j].Name, concurrency: concurrency,
-			})
-		}
-		warnings = appendBindingSourceWarning(warnings, channel.Name, channelWarnings)
+	for i := range results {
+		sources = append(sources, results[i].sources...)
+		warnings = append(warnings, results[i].warnings...)
 	}
 	return sources, warnings
+}
+
+func (s *Service) bindingSourcesForChannel(ctx context.Context, channel storage.Channel) bindingSourceResult {
+	sources := make([]bindingSource, 0)
+	warnings := make([]string, 0)
+	channelWarnings := make([]string, 0, 3)
+	concurrency := 0
+	if limits, limitErr := s.channelSvc.GetAccountLimits(ctx, channel.ID); limitErr == nil && limits != nil {
+		concurrency = limits.Concurrency
+	} else {
+		channelWarnings = append(channelWarnings, "最高并发")
+		if limitErr != nil {
+			s.logBindingSourceError(channel, "load concurrency", limitErr)
+		}
+	}
+	keys, err := s.listBindingAPIKeys(ctx, channel.ID)
+	if err != nil {
+		channelWarnings = append(channelWarnings, "API Key")
+		s.logBindingSourceError(channel, "load api keys", err)
+	}
+	usableKeys := 0
+	for j := range keys {
+		key := keys[j]
+		if !usableBindingKey(key.Status) {
+			continue
+		}
+		keyID := key.ID
+		sources = append(sources, bindingSource{
+			channel: channel, groupID: key.GroupID, groupName: firstNonEmpty(key.GroupName, key.Group),
+			apiKeyID: &keyID, apiKeyName: key.Name, concurrency: concurrency,
+		})
+		usableKeys++
+	}
+	if usableKeys > 0 {
+		return bindingSourceResult{sources: sources, warnings: appendBindingSourceWarning(warnings, channel.Name, channelWarnings)}
+	}
+	groups, groupErr := s.channelSvc.ListAPIKeyGroups(ctx, channel.ID)
+	if groupErr != nil {
+		channelWarnings = append(channelWarnings, "来源分组")
+		s.logBindingSourceError(channel, "load api key groups", groupErr)
+	}
+	if len(groups) == 0 {
+		sources = append(sources, bindingSource{channel: channel, concurrency: concurrency})
+		return bindingSourceResult{sources: sources, warnings: appendBindingSourceWarning(warnings, channel.Name, channelWarnings)}
+	}
+	for j := range groups {
+		sources = append(sources, bindingSource{
+			channel: channel, groupID: groups[j].ID, groupName: groups[j].Name, concurrency: concurrency,
+		})
+	}
+	warnings = appendBindingSourceWarning(warnings, channel.Name, channelWarnings)
+	return bindingSourceResult{sources: sources, warnings: warnings}
 }
 
 func (s *Service) logBindingSourceError(channel storage.Channel, operation string, err error) {

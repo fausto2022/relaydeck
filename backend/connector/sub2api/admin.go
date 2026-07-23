@@ -206,6 +206,10 @@ func (a *AdminClient) ListAccounts(ctx context.Context, t AdminTarget, page, pag
 }
 
 func (a *AdminClient) ListAccountsPage(ctx context.Context, t AdminTarget, page, pageSize int) (*AdminAccountPage, error) {
+	return a.listAccountsPage(ctx, t, page, pageSize, "")
+}
+
+func (a *AdminClient) listAccountsPage(ctx context.Context, t AdminTarget, page, pageSize int, search string) (*AdminAccountPage, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -215,7 +219,13 @@ func (a *AdminClient) ListAccountsPage(ctx context.Context, t AdminTarget, page,
 	if pageSize > 1000 {
 		pageSize = 1000
 	}
-	body, err := a.getJSON(ctx, t, "/api/v1/admin/accounts?page="+strconv.Itoa(page)+"&page_size="+strconv.Itoa(pageSize))
+	query := url.Values{}
+	query.Set("page", strconv.Itoa(page))
+	query.Set("page_size", strconv.Itoa(pageSize))
+	if search = strings.TrimSpace(search); search != "" {
+		query.Set("search", search)
+	}
+	body, err := a.getJSON(ctx, t, "/api/v1/admin/accounts?"+query.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -296,13 +306,23 @@ func (a *AdminClient) FindGroupByName(ctx context.Context, t AdminTarget, name s
 }
 
 func (a *AdminClient) FindAccountByName(ctx context.Context, t AdminTarget, name string) (*AdminAccount, error) {
-	items, err := a.ListAllAccounts(ctx, t)
-	if err != nil {
-		return nil, err
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, nil
 	}
-	for i := range items {
-		if strings.EqualFold(items[i].Name, name) {
-			return &items[i], nil
+	const pageSize = 100
+	for page := 1; page <= 100; page++ {
+		result, err := a.listAccountsPage(ctx, t, page, pageSize, name)
+		if err != nil {
+			return nil, err
+		}
+		for i := range result.Items {
+			if strings.EqualFold(strings.TrimSpace(result.Items[i].Name), name) {
+				return &result.Items[i], nil
+			}
+		}
+		if !adminPageHasNext(result.Page, result.PageSize, result.Pages, result.Total, len(result.Items)) {
+			break
 		}
 	}
 	return nil, nil

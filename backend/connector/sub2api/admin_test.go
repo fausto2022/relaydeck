@@ -347,6 +347,41 @@ func TestAdminClientUsesAPIKeyAndDecodesAccountWrites(t *testing.T) {
 	}
 }
 
+func TestFindAccountByNameUsesServerSearch(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if search := r.URL.Query().Get("search"); search != "Target Account" {
+			t.Fatalf("search = %q", search)
+		}
+		if pageSize := r.URL.Query().Get("page_size"); pageSize != "100" {
+			t.Fatalf("page_size = %q", pageSize)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"items":     []map[string]any{{"id": 7, "name": "Target Account Copy"}, {"id": 8, "name": "target account"}},
+				"total":     2,
+				"page":      1,
+				"page_size": 100,
+				"pages":     1,
+			},
+		})
+	}))
+	defer server.Close()
+
+	account, err := NewAdminClient().FindAccountByName(context.Background(), AdminTarget{BaseURL: server.URL, APIKey: "admin-key"}, " Target Account ")
+	if err != nil {
+		t.Fatalf("find account: %v", err)
+	}
+	if account == nil || account.ID != 8 {
+		t.Fatalf("account = %#v", account)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
+}
+
 func TestAdminClientListsAllPages(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/groups/all", func(w http.ResponseWriter, r *http.Request) {

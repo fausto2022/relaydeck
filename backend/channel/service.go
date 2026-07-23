@@ -4,6 +4,7 @@ package channel
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,9 @@ const tokenSessionTTL = 365 * 24 * time.Hour
 
 const loginRateLimitBackoff = 30 * time.Second
 
+// sessionValidationTTL 只覆盖一次用户操作中的连续上游调用；超过该时间仍会重新验权。
+const sessionValidationTTL = 30 * time.Second
+
 const imageCaptchaLoginAttempts = 3
 
 // Service 渠道领域服务。
@@ -44,8 +48,14 @@ type Service struct {
 	proxyConfig  config.ProxyConfig
 	upstream     config.UpstreamConfig
 	sessionLocks sync.Map
+	validated    sync.Map
 	backoffMu    sync.Mutex
 	backoffUntil map[uint]time.Time
+}
+
+type sessionValidation struct {
+	fingerprint [sha256.Size]byte
+	checkedAt   time.Time
 }
 
 func NewService(
@@ -709,13 +719,19 @@ func (s *Service) EnsureSession(
 			_ = s.Channels.SetLastError(c.ID, err.Error())
 			return nil, err
 		}
+		if s.sessionRecentlyValidated(c.ID, session) {
+			progress.OK(ctx, progress.StageSession, "复用刚验证的 token")
+			return session, nil
+		}
 		// 走一次 CheckAuth 确认 token 仍有效。失败时如果有 refresh_token，先尝试刷新并回写。
 		if err := conn.CheckAuth(ctx, resolved, session); err != nil {
+			s.invalidateSessionValidation(c.ID)
 			if refreshed, ok, refreshErr := s.refreshProvidedTokenSession(ctx, c, resolved, conn, session); refreshErr != nil {
 				progress.Fail(ctx, progress.StageSession, refreshErr.Error())
 				_ = s.Channels.SetLastError(c.ID, refreshErr.Error())
 				return nil, refreshErr
 			} else if ok {
+				s.rememberSessionValidation(c.ID, refreshed)
 				return refreshed, nil
 			}
 			msg := "token 已失效，请重新粘贴凭据：" + err.Error()
@@ -723,6 +739,7 @@ func (s *Service) EnsureSession(
 			_ = s.Channels.SetLastError(c.ID, msg)
 			return nil, errors.New(msg)
 		}
+		s.rememberSessionValidation(c.ID, session)
 		_ = s.Channels.SetLastError(c.ID, "")
 		progress.OK(ctx, progress.StageSession, "token 有效，跳过登录")
 		return session, nil
@@ -738,12 +755,17 @@ func (s *Service) EnsureSession(
 			return nil, err
 		}
 		if saved.ExpiresAt != nil && time.Until(*saved.ExpiresAt) > SessionRefreshThreshold {
+			if s.sessionRecentlyValidated(c.ID, session) {
+				return session, nil
+			}
 			// 轻量校验现有 session，不通过则继续尝试 refresh_token / 重新登录。
 			progress.Start(ctx, progress.StageSession, "校验已有会话…")
 			if err := conn.CheckAuth(ctx, resolved, session); err == nil {
+				s.rememberSessionValidation(c.ID, session)
 				progress.OK(ctx, progress.StageSession, "复用现有会话")
 				return session, nil
 			}
+			s.invalidateSessionValidation(c.ID)
 			progress.OK(ctx, progress.StageSession, "会话校验失败，尝试刷新")
 		}
 		if refreshed, ok, err := s.refreshStoredSession(ctx, c, resolved, conn, session); err != nil {
@@ -753,6 +775,45 @@ func (s *Service) EnsureSession(
 		}
 	}
 	return s.loginLocked(ctx, c, resolved, conn)
+}
+
+func (s *Service) sessionRecentlyValidated(channelID uint, session *connector.AuthSession) bool {
+	if session == nil {
+		return false
+	}
+	value, ok := s.validated.Load(channelID)
+	if !ok {
+		return false
+	}
+	validation, ok := value.(sessionValidation)
+	if !ok || validation.fingerprint != sessionFingerprint(session) {
+		return false
+	}
+	age := time.Since(validation.checkedAt)
+	return age >= 0 && age < sessionValidationTTL
+}
+
+func (s *Service) rememberSessionValidation(channelID uint, session *connector.AuthSession) {
+	if session == nil {
+		return
+	}
+	s.validated.Store(channelID, sessionValidation{fingerprint: sessionFingerprint(session), checkedAt: time.Now()})
+}
+
+func (s *Service) invalidateSessionValidation(channelID uint) {
+	s.validated.Delete(channelID)
+}
+
+func sessionFingerprint(session *connector.AuthSession) [sha256.Size]byte {
+	values := []string{
+		session.UserID,
+		session.AccessToken,
+		session.RefreshToken,
+		session.Cookie,
+		session.CSRFToken,
+		session.ExpiresAt.UTC().Format(time.RFC3339Nano),
+	}
+	return sha256.Sum256([]byte(strings.Join(values, "\x00")))
 }
 
 func (s *Service) sessionMutex(channelID uint) *sync.Mutex {
@@ -946,6 +1007,7 @@ func (s *Service) loginLocked(
 	})
 	if err != nil {
 		s.updateLoginBackoff(c.ID, err)
+		s.invalidateSessionValidation(c.ID)
 		progress.Fail(ctx, progress.StageLogin, err.Error())
 		_ = s.AuthSessions.Delete(c.ID)
 		_ = s.Channels.SetLastError(c.ID, err.Error())
@@ -957,6 +1019,7 @@ func (s *Service) loginLocked(
 		return nil, err
 	}
 	_ = s.Channels.SetLastError(c.ID, "")
+	s.rememberSessionValidation(c.ID, session)
 	progress.OK(ctx, progress.StageLogin, "登录成功")
 	return session, nil
 }
@@ -1041,6 +1104,7 @@ func (s *Service) TestLogin(ctx context.Context, channelID uint) error {
 	}
 	s.applyHTTPConfig(conn)
 	applyProxy(conn, resolved)
+	s.invalidateSessionValidation(c.ID)
 	if c.CredentialMode == storage.CredentialModeToken {
 		_, err = s.EnsureSession(ctx, c, resolved, conn)
 		return err
@@ -1232,8 +1296,10 @@ func (s *Service) ListAPIKeys(ctx context.Context, channelID uint, query connect
 	}
 	page, err := conn.ListAPIKeys(ctx, resolved, session, query)
 	if err != nil {
+		s.invalidateSessionValidation(c.ID)
 		return nil, err
 	}
+	s.rememberSessionValidation(c.ID, session)
 	_ = s.Channels.SetLastError(c.ID, "")
 	return page, nil
 }
@@ -1245,8 +1311,10 @@ func (s *Service) ListAPIKeyGroups(ctx context.Context, channelID uint) ([]conne
 	}
 	groups, err := conn.ListAPIKeyGroups(ctx, resolved, session)
 	if err != nil {
+		s.invalidateSessionValidation(c.ID)
 		return nil, err
 	}
+	s.rememberSessionValidation(c.ID, session)
 	_ = s.Channels.SetLastError(c.ID, "")
 	return groups, nil
 }
@@ -1262,8 +1330,10 @@ func (s *Service) GetAccountLimits(ctx context.Context, channelID uint) (*connec
 	}
 	limits, err := provider.GetAccountLimits(ctx, resolved, session)
 	if err != nil {
+		s.invalidateSessionValidation(c.ID)
 		return nil, err
 	}
+	s.rememberSessionValidation(c.ID, session)
 	_ = s.Channels.SetLastError(c.ID, "")
 	return limits, nil
 }
@@ -1275,8 +1345,10 @@ func (s *Service) CreateAPIKey(ctx context.Context, channelID uint, req connecto
 	}
 	key, err := conn.CreateAPIKey(ctx, resolved, session, req)
 	if err != nil {
+		s.invalidateSessionValidation(c.ID)
 		return nil, err
 	}
+	s.rememberSessionValidation(c.ID, session)
 	_ = s.Channels.SetLastError(c.ID, "")
 	return key, nil
 }
@@ -1300,8 +1372,10 @@ func (s *Service) DeleteAPIKey(ctx context.Context, channelID uint, keyID int64)
 		return err
 	}
 	if err := conn.DeleteAPIKey(ctx, resolved, session, keyID); err != nil {
+		s.invalidateSessionValidation(c.ID)
 		return err
 	}
+	s.rememberSessionValidation(c.ID, session)
 	_ = s.Channels.SetLastError(c.ID, "")
 	return nil
 }
@@ -1313,8 +1387,10 @@ func (s *Service) RevealAPIKey(ctx context.Context, channelID uint, keyID int64)
 	}
 	key, err := conn.RevealAPIKey(ctx, resolved, session, keyID)
 	if err != nil {
+		s.invalidateSessionValidation(c.ID)
 		return "", err
 	}
+	s.rememberSessionValidation(c.ID, session)
 	_ = s.Channels.SetLastError(c.ID, "")
 	return key, nil
 }

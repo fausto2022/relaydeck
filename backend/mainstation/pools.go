@@ -1009,29 +1009,21 @@ func (s *Service) managedAccountNameExists(ctx context.Context, pool *storage.Ma
 	if err != nil {
 		return false, err
 	}
-	accounts, err := s.adminFactory().ListAllAccounts(ctx, sub2api.AdminTarget{BaseURL: target.BaseURL, APIKey: adminAPIKey})
+	name := managedAccountName(pool, member)
+	account, err := s.adminFactory().FindAccountByName(ctx, sub2api.AdminTarget{BaseURL: target.BaseURL, APIKey: adminAPIKey}, name)
 	if err != nil {
 		return false, fmt.Errorf("检查主站同名账号失败：%w", redactSecretError(err, adminAPIKey))
 	}
-	name := managedAccountName(pool, member)
-	for i := range accounts {
-		if strings.EqualFold(accounts[i].Name, name) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return account != nil, nil
 }
 
 func findManagedRemoteAccount(ctx context.Context, client adminClient, target sub2api.AdminTarget, name string, memberID uint) (*sub2api.AdminAccount, error) {
-	accounts, err := client.ListAllAccounts(ctx, target)
+	account, err := client.FindAccountByName(ctx, target, name)
 	if err != nil {
 		return nil, err
 	}
-	for i := range accounts {
-		if strings.EqualFold(accounts[i].Name, name) && hasManagedMemberMarker(accounts[i].Notes, memberID) {
-			item := accounts[i]
-			return &item, nil
-		}
+	if account != nil && hasManagedMemberMarker(account.Notes, memberID) {
+		return account, nil
 	}
 	return nil, nil
 }

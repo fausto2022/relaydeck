@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -212,6 +214,20 @@ type fakeChannelService struct {
 	deletedKeys  []int64
 	deleteKeyErr error
 	concurrency  int
+	bindingDelay time.Duration
+	bindingCalls atomic.Int32
+	bindingMax   atomic.Int32
+}
+
+func (f *fakeChannelService) beginBindingCall() func() {
+	if f.bindingDelay <= 0 {
+		return func() {}
+	}
+	current := f.bindingCalls.Add(1)
+	for maximum := f.bindingMax.Load(); current > maximum && !f.bindingMax.CompareAndSwap(maximum, current); maximum = f.bindingMax.Load() {
+	}
+	time.Sleep(f.bindingDelay)
+	return func() { f.bindingCalls.Add(-1) }
 }
 
 func (f *fakeChannelService) RevealAPIKey(context.Context, uint, int64) (string, error) {
@@ -246,15 +262,21 @@ func (f *fakeChannelService) DeleteAPIKey(_ context.Context, _ uint, id int64) e
 	return f.deleteKeyErr
 }
 func (f *fakeChannelService) ListAPIKeyGroups(context.Context, uint) ([]connector.APIKeyGroup, error) {
+	done := f.beginBindingCall()
+	defer done()
 	return append([]connector.APIKeyGroup(nil), f.groups...), nil
 }
 func (f *fakeChannelService) ListAPIKeys(context.Context, uint, connector.APIKeyQuery) (*connector.APIKeyPage, error) {
+	done := f.beginBindingCall()
+	defer done()
 	if f.listKeysErr != nil {
 		return nil, f.listKeysErr
 	}
 	return &connector.APIKeyPage{Items: append([]connector.APIKey(nil), f.keys...), Total: int64(len(f.keys)), Page: 1, PageSize: 100, Pages: 1}, nil
 }
 func (f *fakeChannelService) GetAccountLimits(context.Context, uint) (*connector.AccountLimits, error) {
+	done := f.beginBindingCall()
+	defer done()
 	concurrency := f.concurrency
 	if concurrency <= 0 {
 		concurrency = 10
@@ -1219,6 +1241,33 @@ func TestRecommendBindingsUsesEndpointNameAndSourceGroup(t *testing.T) {
 	if recommendation.Confidence != "high" || recommendation.Conflict || candidate.SourceChannelID != channel.ID ||
 		candidate.SourceAPIKeyID == nil || *candidate.SourceAPIKeyID != 77 || candidate.SourceGroupID == nil || *candidate.SourceGroupID != groupID {
 		t.Fatalf("recommendation = %#v", recommendation)
+	}
+}
+
+func TestBindingSourcesLoadsChannelsConcurrentlyAndKeepsOrder(t *testing.T) {
+	service, _, _, channels := newTestService(t)
+	channels.bindingDelay = 20 * time.Millisecond
+	groupID := int64(301)
+	channels.keys = []connector.APIKey{{ID: 77, Name: "source-key", Status: "active", GroupID: &groupID, GroupName: "OpenAI"}}
+	items := make([]storage.Channel, 6)
+	for i := range items {
+		items[i] = storage.Channel{ID: uint(i + 1), Name: fmt.Sprintf("source-%d", i+1), Type: storage.ChannelTypeSub2API}
+	}
+
+	sources, warnings := service.bindingSources(context.Background(), items)
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(sources) != len(items) {
+		t.Fatalf("sources = %#v", sources)
+	}
+	if channels.bindingMax.Load() <= 1 {
+		t.Fatalf("maximum concurrent binding calls = %d, want > 1", channels.bindingMax.Load())
+	}
+	for i := range sources {
+		if sources[i].channel.ID != items[i].ID {
+			t.Fatalf("source order at %d = %d, want %d", i, sources[i].channel.ID, items[i].ID)
+		}
 	}
 }
 

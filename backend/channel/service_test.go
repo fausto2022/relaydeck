@@ -496,6 +496,7 @@ func TestTestLoginRetriesRejectedImageCaptcha(t *testing.T) {
 
 func TestEnsureSessionSerializesConcurrentLoginPerChannel(t *testing.T) {
 	var loginCalls atomic.Int32
+	var authCalls atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/user/login", func(w http.ResponseWriter, r *http.Request) {
 		loginCalls.Add(1)
@@ -504,6 +505,7 @@ func TestEnsureSessionSerializesConcurrentLoginPerChannel(t *testing.T) {
 		_, _ = w.Write([]byte(`{"success":true,"message":"","data":{"id":7}}`))
 	})
 	mux.HandleFunc("/api/user/self", func(w http.ResponseWriter, r *http.Request) {
+		authCalls.Add(1)
 		_, _ = w.Write([]byte(`{"success":true,"message":"","data":{"id":7}}`))
 	})
 	server := httptest.NewServer(mux)
@@ -551,6 +553,9 @@ func TestEnsureSessionSerializesConcurrentLoginPerChannel(t *testing.T) {
 	}
 	if calls := loginCalls.Load(); calls != 1 {
 		t.Fatalf("login calls = %d, want 1", calls)
+	}
+	if calls := authCalls.Load(); calls != 1 {
+		t.Fatalf("auth calls = %d, want 1", calls)
 	}
 }
 
