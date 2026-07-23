@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -708,6 +709,88 @@ func TestSuccessfulManagedHealthCheckClearsStaleSyncLock(t *testing.T) {
 	}
 	if !strings.Contains(result.Check.TriggeredAction, "sync_lock_cleared") {
 		t.Fatalf("triggered action = %q", result.Check.TriggeredAction)
+	}
+}
+
+func TestSuccessfulL1HealthRecoveryClearsSub2APIRuntimeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"content": "OK"}}}})
+	}))
+	defer server.Close()
+
+	service, db, admin, _ := newTestService(t)
+	member := createHealthMember(t, service, db, admin, server.URL, "")
+	config, err := service.store.GetConfig()
+	if err != nil {
+		t.Fatalf("get config: %v", err)
+	}
+	config.AutoRecovery = true
+	config.HealthRecoveryThreshold = 1
+	if err := service.store.SaveConfig(config); err != nil {
+		t.Fatalf("save recovery config: %v", err)
+	}
+	if err := db.Model(&storage.MainAccountPoolMember{}).Where("id = ?", member.ID).Updates(map[string]any{
+		"status": "quarantined", "last_health_status": "unhealthy", "consecutive_health_failure": 10,
+	}).Error; err != nil {
+		t.Fatalf("set unhealthy member: %v", err)
+	}
+	admin.accounts[0].Status = "error"
+	admin.accounts[0].Schedulable = false
+	if err := db.Model(&storage.MainStationAccountSnapshot{}).Where("remote_account_id = ?", *member.RemoteAccountID).Updates(map[string]any{
+		"status": "error", "schedulable": false,
+	}).Error; err != nil {
+		t.Fatalf("set remote error snapshot: %v", err)
+	}
+	if _, err := service.ActivateGuardLock(context.Background(), *member.RemoteAccountID, "health", "health failure", nil, "health"); err != nil {
+		t.Fatalf("activate health lock: %v", err)
+	}
+
+	result, err := service.CheckMember(context.Background(), member.PoolID, member.ID, HealthCheckInput{Level: "L1", Force: true})
+	if err != nil {
+		t.Fatalf("L1 recovery check: %v", err)
+	}
+	if !strings.Contains(result.Check.TriggeredAction, "remote_state_recovered") {
+		t.Fatalf("triggered action = %q", result.Check.TriggeredAction)
+	}
+	if !slices.Equal(admin.recoverStateCalls, []int64{*member.RemoteAccountID}) {
+		t.Fatalf("recover state calls = %#v", admin.recoverStateCalls)
+	}
+	if admin.accounts[0].Status != "active" || !admin.accounts[0].Schedulable {
+		t.Fatalf("recovered remote account = %#v", admin.accounts[0])
+	}
+	locks, err := service.ListGuardLocks(*member.RemoteAccountID)
+	if err != nil || guardLockActive(locks, "health") {
+		t.Fatalf("health lock remained after recovery: locks=%#v err=%v", locks, err)
+	}
+}
+
+func TestSuccessfulHealthCheckDoesNotRecoverManuallyInactiveAccount(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"content": "OK"}}}})
+	}))
+	defer server.Close()
+
+	service, db, admin, _ := newTestService(t)
+	member := createHealthMember(t, service, db, admin, server.URL, "")
+	config, err := service.store.GetConfig()
+	if err != nil {
+		t.Fatalf("get config: %v", err)
+	}
+	config.AutoRecovery = true
+	if err := service.store.SaveConfig(config); err != nil {
+		t.Fatalf("save recovery config: %v", err)
+	}
+	admin.accounts[0].Status = "inactive"
+	admin.accounts[0].Schedulable = false
+	if _, err := service.CheckMember(context.Background(), member.PoolID, member.ID, HealthCheckInput{Level: "L1", Force: true}); err != nil {
+		t.Fatalf("L1 health check: %v", err)
+	}
+	if len(admin.recoverStateCalls) != 0 || admin.accounts[0].Status != "inactive" || admin.accounts[0].Schedulable {
+		t.Fatalf("inactive account was recovered: calls=%#v account=%#v", admin.recoverStateCalls, admin.accounts[0])
 	}
 }
 

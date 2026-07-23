@@ -173,10 +173,11 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 		}
 		_ = s.store.SaveConfig(config)
 	}
+	remoteRecoveryAction, remoteRecoveryErr := s.recoverRemoteAccountState(ctx, pool, member, &check, oldHealth, newHealth)
 	syncRecoveryAction, syncRecoveryErr := s.recoverManagedSyncLock(ctx, pool, member, &check, newHealth)
 	healthAutomationAction, healthAutomationErr := s.applyHealthAutomation(ctx, pool, member, &check, oldHealth, newHealth)
-	automationAction := strings.Join(nonEmptyStrings(syncRecoveryAction, healthAutomationAction), ",")
-	automationErr := errors.Join(syncRecoveryErr, healthAutomationErr)
+	automationAction := strings.Join(nonEmptyStrings(remoteRecoveryAction, syncRecoveryAction, healthAutomationAction), ",")
+	automationErr := errors.Join(remoteRecoveryErr, syncRecoveryErr, healthAutomationErr)
 	if automationAction != "" {
 		if check.TriggeredAction != "" {
 			check.TriggeredAction += ","
@@ -286,6 +287,57 @@ func (s *Service) recoverManagedSyncLock(ctx context.Context, pool *storage.Main
 		return "sync_lock_recovery_failed", err
 	}
 	return "sync_lock_cleared", nil
+}
+
+func (s *Service) recoverRemoteAccountState(ctx context.Context, pool *storage.MainAccountPool, member *storage.MainAccountPoolMember, check *storage.MainAccountHealthCheck, oldHealth, newHealth string) (string, error) {
+	if member.RemoteAccountID == nil || check.Status != "success" || (check.Level != "L1" && check.Level != "L2") {
+		return "", nil
+	}
+	config, err := s.store.GetConfig()
+	if err != nil {
+		return "remote_state_recovery_failed", err
+	}
+	if !member.Preferred && !config.AutoRecovery {
+		return "", nil
+	}
+	remoteAccountID := *member.RemoteAccountID
+	recoveredHealth := newHealth == "healthy" && oldHealth != "healthy"
+	if snapshot, snapshotErr := s.store.FindAccountSnapshot(remoteAccountID); snapshotErr == nil {
+		if snapshot.Status != "error" && !(recoveredHealth && snapshot.Status == "active" && !snapshot.Schedulable) {
+			return "", nil
+		}
+	} else if !errors.Is(snapshotErr, gorm.ErrRecordNotFound) {
+		return "remote_state_recovery_failed", snapshotErr
+	}
+	_, target, apiKey, err := s.loadAdminTarget()
+	if err != nil {
+		return "remote_state_recovery_failed", err
+	}
+	client := s.adminFactory()
+	adminTarget := sub2api.AdminTarget{BaseURL: target.BaseURL, APIKey: apiKey}
+	remote, err := client.GetAccount(ctx, adminTarget, remoteAccountID)
+	if err != nil {
+		return "remote_state_recovery_failed", redactSecretError(err, apiKey)
+	}
+	if remote.Status != "error" && !(recoveredHealth && remote.Status == "active" && !remote.Schedulable) {
+		return "", nil
+	}
+	before := *remote
+	recovered, err := client.RecoverAccountState(ctx, adminTarget, remoteAccountID)
+	if err != nil {
+		safeErr := redactSecretError(err, apiKey)
+		_ = s.appendAudit(&pool.ID, &member.ID, &remoteAccountID, "remote_account_state_recover", "health", false, before, nil, nil, "", safeErr.Error())
+		return "remote_state_recovery_failed", safeErr
+	}
+	if recovered == nil {
+		return "remote_state_recovery_failed", errors.New("recover remote account state returned no account")
+	}
+	s.saveRemoteSchedulingSnapshot(recovered, remoteAccountID)
+	_ = s.appendAudit(&pool.ID, &member.ID, &remoteAccountID, "remote_account_state_recover", "health", true, before, recovered, nil, "successful health probe recovered Sub2API runtime state", "")
+	if _, err := s.ReconcileAccount(ctx, remoteAccountID, "health"); err != nil {
+		return "remote_state_recovered", err
+	}
+	return "remote_state_recovered", nil
 }
 
 func nonEmptyStrings(values ...string) []string {

@@ -62,6 +62,7 @@ type adminClient interface {
 	UpdateAccount(ctx context.Context, target sub2api.AdminTarget, id int64, req sub2api.AdminAccount) (*sub2api.AdminAccount, error)
 	UpdateAccountScheduling(ctx context.Context, target sub2api.AdminTarget, id int64, req sub2api.AdminAccountSchedulingUpdate) (*sub2api.AdminAccount, error)
 	SetAccountSchedulable(ctx context.Context, target sub2api.AdminTarget, id int64, schedulable bool) (*sub2api.AdminAccount, error)
+	RecoverAccountState(ctx context.Context, target sub2api.AdminTarget, id int64) (*sub2api.AdminAccount, error)
 	DeleteAccount(ctx context.Context, target sub2api.AdminTarget, id int64) error
 	SyncAccountModelsFromUpstream(ctx context.Context, target sub2api.AdminTarget, id int64) ([]string, error)
 	UpdateAccountModelMapping(ctx context.Context, target sub2api.AdminTarget, id int64, models []string) error

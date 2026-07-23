@@ -129,6 +129,19 @@ func TestAdminClientUsesAPIKeyAndDecodesAccountWrites(t *testing.T) {
 			"data": map[string]any{"id": 8, "name": "updated", "status": "inactive", "schedulable": false},
 		})
 	})
+	mux.HandleFunc("/api/v1/admin/accounts/8/recover-state", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-api-key") != "admin-key" {
+			t.Fatalf("x-api-key = %q", r.Header.Get("x-api-key"))
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 8, "name": "updated", "status": "active", "schedulable": false},
+		})
+	})
 	mux.HandleFunc("/api/v1/admin/accounts/8/models/sync-upstream", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("x-api-key") != "admin-key" {
 			t.Fatalf("x-api-key = %q", r.Header.Get("x-api-key"))
@@ -269,6 +282,13 @@ func TestAdminClientUsesAPIKeyAndDecodesAccountWrites(t *testing.T) {
 	}
 	if account.ID != 8 || account.Schedulable {
 		t.Fatalf("schedulable account = %#v", account)
+	}
+	account, err = client.RecoverAccountState(context.Background(), target, 8)
+	if err != nil {
+		t.Fatalf("RecoverAccountState: %v", err)
+	}
+	if account.ID != 8 || account.Status != "active" {
+		t.Fatalf("recovered account = %#v", account)
 	}
 	account, err = client.GetAccount(context.Background(), target, 8)
 	if err != nil {

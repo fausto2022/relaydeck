@@ -31,6 +31,8 @@ type fakeAdminClient struct {
 	schedulingUpdates   []sub2api.AdminAccountSchedulingUpdate
 	schedulingUpdateErr error
 	schedulableCalls    []bool
+	recoverStateCalls   []int64
+	recoverStateErr     error
 	setSchedulableErr   error
 	applyBeforeSetError bool
 	deletedAccounts     []int64
@@ -122,6 +124,22 @@ func (f *fakeAdminClient) SetAccountSchedulable(_ context.Context, _ sub2api.Adm
 			f.accounts[i].Schedulable = schedulable
 			if f.setSchedulableErr != nil {
 				return nil, f.setSchedulableErr
+			}
+			item := f.accounts[i]
+			return &item, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+func (f *fakeAdminClient) RecoverAccountState(_ context.Context, _ sub2api.AdminTarget, id int64) (*sub2api.AdminAccount, error) {
+	f.recoverStateCalls = append(f.recoverStateCalls, id)
+	if f.recoverStateErr != nil {
+		return nil, f.recoverStateErr
+	}
+	for i := range f.accounts {
+		if f.accounts[i].ID == id {
+			if f.accounts[i].Status == "error" {
+				f.accounts[i].Status = "active"
 			}
 			item := f.accounts[i]
 			return &item, nil

@@ -414,6 +414,20 @@ func (a *AdminClient) SetAccountSchedulable(ctx context.Context, t AdminTarget, 
 	return out, nil
 }
 
+func (a *AdminClient) RecoverAccountState(ctx context.Context, t AdminTarget, id int64) (*AdminAccount, error) {
+	resp, err := a.client.http.R().
+		SetContext(ctx).
+		SetHeader("x-api-key", t.APIKey).
+		Post(strings.TrimRight(t.BaseURL, "/") + "/api/v1/admin/accounts/" + strconv.FormatInt(id, 10) + "/recover-state")
+	if err != nil {
+		return nil, err
+	}
+	if resp.IsError() {
+		return nil, fmt.Errorf("recover admin account state: %w", connector.HTTPStatusError(resp.StatusCode(), resp.Body()))
+	}
+	return decodeAdminAccount(resp.Body())
+}
+
 func adminAccountStatusForUpdate(status string) string {
 	if strings.TrimSpace(status) == "disabled" {
 		return "inactive"
