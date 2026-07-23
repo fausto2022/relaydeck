@@ -116,6 +116,39 @@ func TestQuickTestRateGeneratesAndReturnsImagePreview(t *testing.T) {
 	}
 }
 
+func TestQuickTestRateInfersImageModeFromOpenAIImageModel(t *testing.T) {
+	service, db, _, _ := newTestService(t)
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		if r.URL.Path != "/v1/images/generations" {
+			t.Fatalf("image probe path = %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"b64_json":"aW1hZ2U="}]}`))
+	}))
+	defer server.Close()
+
+	channel := createTestChannel(t, db)
+	channel.SiteURL = server.URL
+	if err := db.Save(channel).Error; err != nil {
+		t.Fatalf("save channel: %v", err)
+	}
+	groupID := int64(304)
+	rate := &storage.RateSnapshot{ChannelID: channel.ID, RemoteGroupID: &groupID, ModelName: "source-image", Ratio: 0.2, LastSeenAt: time.Now()}
+	if err := db.Create(rate).Error; err != nil {
+		t.Fatalf("create rate: %v", err)
+	}
+
+	result, err := service.QuickTestRate(context.Background(), channel.ID, rate.ID, RateQuickTestInput{Platform: "openai", Model: "gpt-image-2"})
+	if err != nil {
+		t.Fatalf("quick test image rate: %v", err)
+	}
+	if !result.Usable || result.Protocol != "openai_image" || result.AttemptCount != 1 || requestCount.Load() != 1 || result.ImageURL == "" {
+		t.Fatalf("image inference result = %#v requests=%d", result, requestCount.Load())
+	}
+}
+
 func TestQuickTestResultRequiresEveryAttemptToSucceed(t *testing.T) {
 	result := quickTestResult([]probeExecution{
 		{Status: "success", HTTPStatus: http.StatusOK, Protocol: "openai_chat", Model: "gpt-test", LatencyMS: 100, TTFBMS: 80},

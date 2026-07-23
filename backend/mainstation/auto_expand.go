@@ -106,13 +106,13 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 		return errors.New("当前主站分组计费方式不支持自动利润判断")
 	}
 	platform := normalizeHealthPlatform(pool.Platform)
-	mode, err := quickTestAPIMode(platform)
-	if err != nil {
-		return errors.New("当前主站分组类型不支持自动扩池测试")
-	}
 	model := strings.TrimSpace(s.configuredHealthModels()[platform])
 	if model == "" {
 		return fmt.Errorf("尚未配置 %s 类型的全局探活模型", platform)
+	}
+	mode, err := quickTestAPIModeForModel(platform, model)
+	if err != nil {
+		return errors.New("当前主站分组类型不支持自动扩池测试")
 	}
 	saleMicros, _, reason := effectiveSaleMultiplier(group, now)
 	if reason != "" {

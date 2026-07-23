@@ -39,6 +39,7 @@ import { dateTime, formatRatio, relativeTime } from "@/lib/format"
 import {
   ALL_RATE_CATEGORY,
   categoryRankingRates,
+  isImageQuickTestModel,
   latestRateSeenAt,
   type RateCategoryOption,
 } from "@/lib/rate-ranking"
@@ -67,6 +68,8 @@ interface Props {
   onAdded: () => void
 }
 
+type QuickTestMode = "chat" | "image"
+
 export function RateRankingDialog({ open, onOpenChange, provider, onProviderChange, category, onCategoryChange, categoryOptions, rates, channels, initialRateID, onAdded }: Props) {
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [view, setView] = useState<"list" | "test">("list")
@@ -77,6 +80,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
   const [metadataLoading, setMetadataLoading] = useState(false)
   const [metadataError, setMetadataError] = useState("")
   const [model, setModel] = useState("")
+  const [testMode, setTestMode] = useState<QuickTestMode>("chat")
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<RateQuickTestResult | null>(null)
   const [workspaceID, setWorkspaceID] = useState("")
@@ -109,6 +113,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
     setResult(null)
     setAddedGroupName("")
     setWorkspaceID("")
+    setTestMode("chat")
     if (initialRateID != null) {
       setSelectedRateID(initialRateID)
       setView("test")
@@ -144,7 +149,9 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
 
   useEffect(() => {
     if (!selectedRate || model || providerModels.length === 0) return
-    setModel(providerModels[0])
+    const nextModel = providerModels[0]
+    setModel(nextModel)
+    setTestMode(isImageQuickTestModel(nextModel) ? "image" : "chat")
   }, [model, providerModels, selectedRate])
 
   useEffect(() => {
@@ -159,6 +166,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
     setSelectedRateID(null)
     setResult(null)
     setModel("")
+    setTestMode(value === "image" ? "image" : "chat")
   }
 
   function openTest(rate: RateSnapshot) {
@@ -166,7 +174,9 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
     setResult(null)
     setAddedGroupName("")
     setWorkspaceID("")
-    setModel(config?.health_models?.[provider]?.trim() || providerModels[0] || "")
+    const nextModel = config?.health_models?.[provider]?.trim() || providerModels[0] || ""
+    setModel(nextModel)
+    setTestMode(isImageQuickTestModel(nextModel) ? "image" : "chat")
     setView("test")
   }
 
@@ -181,7 +191,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
     try {
       const tested = await apiFetch<RateQuickTestResult>(`/channels/${selectedRate.channel_id}/rates/${selectedRate.id}/test`, {
         method: "POST",
-        body: JSON.stringify({ platform: provider, model: model.trim() }),
+        body: JSON.stringify({ platform: testMode === "image" ? "image" : provider, model: model.trim() }),
       })
       setResult(tested)
       if (tested.usable) toast.success("快速测试通过")
@@ -222,7 +232,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
             cost_adjustment: 1,
             health_enabled: true,
             health_model: model.trim(),
-            health_api_mode: mainStationHealthAPIMode(workspace.group.platform),
+            health_api_mode: mainStationHealthAPIMode(testMode === "image" ? "image" : workspace.group.platform),
           }),
         })
         setAddedGroupName(workspace.group.name)
@@ -301,7 +311,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
               </DialogHeader>
               <ScrollArea className="h-[min(72dvh,660px)]">
                 <div className="space-y-5 px-4 py-5 sm:px-6">
-                  <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto] sm:items-end">
                     <div className="space-y-2">
                       <Label htmlFor="rate-quick-test-model">测试模型</Label>
                       {provider === "image" ? (
@@ -310,7 +320,11 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                             id="rate-quick-test-model"
                             list="rate-image-test-models"
                             value={model}
-                            onChange={(event) => setModel(event.target.value)}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setModel(value)
+                              setTestMode(isImageQuickTestModel(value) ? "image" : "chat")
+                            }}
                             disabled={testing}
                             placeholder={metadataLoading ? "加载模型中" : "例如 gpt-image-1"}
                           />
@@ -319,7 +333,10 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                           </datalist>
                         </>
                       ) : (
-                        <Select value={model} onValueChange={setModel} disabled={testing || providerModels.length === 0}>
+                          <Select value={model} onValueChange={(value) => {
+                            setModel(value)
+                            setTestMode(isImageQuickTestModel(value) ? "image" : "chat")
+                          }} disabled={testing || providerModels.length === 0}>
                           <SelectTrigger id="rate-quick-test-model" className="w-full"><SelectValue placeholder={metadataLoading ? "加载模型中" : "选择测试模型"} /></SelectTrigger>
                           <SelectContent>
                             {providerModels.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
@@ -328,12 +345,24 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                       )}
                       {metadataError ? <p className="text-xs text-amber-700 dark:text-amber-300">{metadataError}</p> : null}
                     </div>
+                    {supportsImageQuickTest(provider) ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="rate-quick-test-mode">测试模式</Label>
+                        <Select value={testMode} onValueChange={(value) => setTestMode(value as QuickTestMode)} disabled={testing}>
+                          <SelectTrigger id="rate-quick-test-mode" className="w-full"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="chat">普通请求</SelectItem>
+                            <SelectItem value="image">生图请求（测试 1 次）</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : null}
                     <Button onClick={() => void runTest()} disabled={testing || !model.trim() || quickTestUnavailableReason(selectedRate, channelMap.get(selectedRate.channel_id), provider) !== ""}>
                       {testing ? <Loader2 className="animate-spin" /> : <TestTubeDiagonal />}{testing ? "测试中" : "开始测试"}
                     </Button>
                   </div>
 
-                  {testing ? <TestingProgress image={provider === "image"} /> : null}
+                  {testing ? <TestingProgress image={testMode === "image"} /> : null}
                   {result ? <TestResult result={result} /> : null}
 
                   {result?.usable ? (
@@ -547,6 +576,10 @@ export function quickTestUnavailableReason(rate: RateSnapshot, channel: Channel 
   if (provider === "other") return "当前分组类型暂不支持快速测试"
   if (channel.type === "sub2api" && rate.remote_group_id == null) return "缺少远端分组 ID，请先同步倍率"
   return ""
+}
+
+function supportsImageQuickTest(provider: RateProviderType) {
+  return provider === "openai" || provider === "grok" || provider === "image"
 }
 
 function isManagedAccountNameConflict(error: unknown) {

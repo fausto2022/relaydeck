@@ -3,6 +3,7 @@ import type { RateSnapshot } from "@/lib/api-types"
 import {
   ALL_RATE_CATEGORY,
   categoryRankingRates,
+  isImageQuickTestModel,
   latestRateSeenAt,
   providerRankingRates,
   rateCategoryOptions,
@@ -69,6 +70,14 @@ describe("rate ranking categories", () => {
       { value: ALL_RATE_CATEGORY, label: "全部", count: 0 },
       { value: "Pro", label: "Pro", count: 0 },
     ])
+  })
+})
+
+describe("quick test model mode", () => {
+  it("recognizes image models even when the ranking provider is OpenAI", () => {
+    expect(isImageQuickTestModel("gpt-image-2")).toBe(true)
+    expect(isImageQuickTestModel("dall-e-3")).toBe(true)
+    expect(isImageQuickTestModel("gpt-5.2")).toBe(false)
   })
 })
 

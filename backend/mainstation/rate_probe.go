@@ -45,16 +45,16 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 		return nil, fmt.Errorf("读取倍率分组失败：%w", err)
 	}
 	platform := normalizeHealthPlatform(in.Platform)
-	mode, err := quickTestAPIMode(platform)
-	if err != nil {
-		return nil, err
-	}
 	model := strings.TrimSpace(in.Model)
 	if model == "" {
 		model = strings.TrimSpace(s.configuredHealthModels()[platform])
 	}
 	if model == "" {
 		return nil, errors.New("请选择快速测试模型")
+	}
+	mode, err := quickTestAPIModeForModel(platform, model)
+	if err != nil {
+		return nil, err
 	}
 	request, err := buildL1ProbeRequest(mode, model)
 	if err != nil {
@@ -98,7 +98,7 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 		return nil, errors.Join(errors.New("临时测试 Key 内容为空"), cleanupErr)
 	}
 
-	attemptCount := quickTestAttemptCount(platform)
+	attemptCount := quickTestAttemptCount(mode)
 	executions := make([]probeExecution, 0, attemptCount)
 	for range attemptCount {
 		executions = append(executions, s.performProbeRequest(ctx, channel, secret, request))
@@ -117,8 +117,8 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 	return result, nil
 }
 
-func quickTestAttemptCount(platform string) int {
-	if normalizeHealthPlatform(platform) == "image" {
+func quickTestAttemptCount(mode string) int {
+	if strings.EqualFold(strings.TrimSpace(mode), "openai_image") {
 		return 1
 	}
 	return rateQuickTestAttempts
@@ -238,6 +238,25 @@ func quickTestAPIMode(platform string) (string, error) {
 	default:
 		return "", errors.New("当前分组类型暂不支持快速测试")
 	}
+}
+
+func quickTestAPIModeForModel(platform, model string) (string, error) {
+	platform = normalizeHealthPlatform(platform)
+	if platform == "image" || isImageQuickTestModel(model) {
+		return "openai_image", nil
+	}
+	return quickTestAPIMode(platform)
+}
+
+func isImageQuickTestModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if model == "" {
+		return false
+	}
+	return strings.Contains(model, "gpt-image") ||
+		strings.HasPrefix(model, "dall-e") ||
+		strings.Contains(model, "image-generation") ||
+		strings.Contains(model, "imagine-image")
 }
 
 func quickTestResult(executions []probeExecution, keyName string, cleanupErr error, testedAt time.Time) *RateQuickTestResult {

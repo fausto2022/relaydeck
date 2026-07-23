@@ -2,6 +2,11 @@ import type { RateProviderType, RateRankingConfig, RateSnapshot } from "@/lib/ap
 
 export const ALL_RATE_CATEGORY = "__all__"
 
+export function isImageQuickTestModel(model?: string) {
+  const normalized = model?.trim().toLowerCase() ?? ""
+  return normalized.includes("gpt-image") || normalized.startsWith("dall-e") || normalized.includes("image-generation") || normalized.includes("imagine-image")
+}
+
 export function latestRateSeenAt(rates: RateSnapshot[]) {
   let latest: string | null = null
   let latestTime = -Infinity
