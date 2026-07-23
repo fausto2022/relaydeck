@@ -38,6 +38,7 @@ config.yaml
 
 # Volumes / 缓存
 data/
+backups/
 postgres-data/
 .claude/
 
