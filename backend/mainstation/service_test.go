@@ -20,6 +20,7 @@ import (
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
 	"github.com/fausto2022/relaydeck/backend/crypto"
 	"github.com/fausto2022/relaydeck/backend/notify"
+	"github.com/fausto2022/relaydeck/backend/rateranking"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"gorm.io/gorm"
 )
@@ -1417,6 +1418,7 @@ func newTestService(t *testing.T) (*Service, *gorm.DB, *fakeAdminClient, *fakeCh
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	service.adminFactory = func() adminClient { return admin }
+	service.SetRateRankingService(rateranking.New(storage.NewRateRankingConfigs(db)))
 	return service, db, admin, channelSvc
 }
 

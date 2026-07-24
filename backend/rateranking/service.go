@@ -59,6 +59,7 @@ type Config struct {
 type Classification struct {
 	Provider      string
 	Category      string
+	RuleID        uint
 	CategoryOrder int
 	Visible       bool
 }
@@ -111,6 +112,22 @@ func (s *Service) Save(ctx context.Context, config Config) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	current, err := s.Get(ctx)
+	if err != nil {
+		return Config{}, err
+	}
+	existingRuleIDs := make(map[uint]struct{}, len(current.Rules))
+	for _, rule := range current.Rules {
+		existingRuleIDs[rule.ID] = struct{}{}
+	}
+	for _, rule := range normalized.Rules {
+		if rule.ID == 0 {
+			continue
+		}
+		if _, ok := existingRuleIDs[rule.ID]; !ok {
+			return Config{}, fmt.Errorf("倍率分类 #%d 不存在，请刷新后重试", rule.ID)
+		}
+	}
 	providers := make([]storage.RateRankingProviderSetting, 0, len(normalized.Providers))
 	for _, item := range normalized.Providers {
 		providers = append(providers, storage.RateRankingProviderSetting{
@@ -124,7 +141,7 @@ func (s *Service) Save(ctx context.Context, config Config) (Config, error) {
 			return Config{}, encodeErr
 		}
 		rules = append(rules, storage.RateRankingCategoryRule{
-			Provider: item.Provider, CategoryName: item.CategoryName, KeywordsJSON: keywordsJSON,
+			ID: item.ID, Provider: item.Provider, CategoryName: item.CategoryName, KeywordsJSON: keywordsJSON,
 			MatchMode: item.MatchMode, SortOrder: item.SortOrder, Enabled: item.Enabled,
 		})
 	}
@@ -184,7 +201,7 @@ func (c *Classifier) ClassifyWithProvider(platform, modelName, description strin
 	for _, rule := range c.rules[provider] {
 		if ruleMatches(rule, modelName) {
 			return Classification{
-				Provider: provider, Category: rule.CategoryName, CategoryOrder: rule.SortOrder, Visible: true,
+				Provider: provider, Category: rule.CategoryName, RuleID: rule.ID, CategoryOrder: rule.SortOrder, Visible: true,
 			}
 		}
 	}
@@ -231,7 +248,14 @@ func normalizeConfig(config Config) (Config, error) {
 		normalized.Providers = append(normalized.Providers, ProviderSetting{Provider: provider, IncludeUnmatched: settings[provider]})
 	}
 	categoryNames := make(map[string]struct{}, len(config.Rules))
+	ruleIDs := make(map[uint]struct{}, len(config.Rules))
 	for index, rule := range config.Rules {
+		if rule.ID != 0 {
+			if _, exists := ruleIDs[rule.ID]; exists {
+				return Config{}, fmt.Errorf("倍率分类 ID 重复：%d", rule.ID)
+			}
+			ruleIDs[rule.ID] = struct{}{}
+		}
 		provider := strings.ToLower(strings.TrimSpace(rule.Provider))
 		if _, ok := validProviders[provider]; !ok {
 			return Config{}, fmt.Errorf("第 %d 条规则的所属类型无效", index+1)
@@ -269,7 +293,7 @@ func normalizeConfig(config Config) (Config, error) {
 			sortOrder = (index + 1) * 10
 		}
 		normalized.Rules = append(normalized.Rules, Rule{
-			Provider: provider, CategoryName: name, Keywords: keywords,
+			ID: rule.ID, Provider: provider, CategoryName: name, Keywords: keywords,
 			MatchMode: mode, SortOrder: sortOrder, Enabled: rule.Enabled,
 		})
 	}

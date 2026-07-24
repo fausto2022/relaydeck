@@ -19,8 +19,17 @@ func (s *memoryStore) List(context.Context) ([]storage.RateRankingProviderSettin
 func (s *memoryStore) Replace(_ context.Context, providers []storage.RateRankingProviderSetting, rules []storage.RateRankingCategoryRule) error {
 	s.providers = providers
 	s.rules = rules
+	var nextID uint
+	for _, rule := range s.rules {
+		if rule.ID > nextID {
+			nextID = rule.ID
+		}
+	}
 	for index := range s.rules {
-		s.rules[index].ID = uint(index + 1)
+		if s.rules[index].ID == 0 {
+			nextID++
+			s.rules[index].ID = nextID
+		}
 	}
 	return nil
 }
@@ -39,7 +48,7 @@ func TestClassifierUsesRulePriorityAndFallback(t *testing.T) {
 	classifier := NewClassifier(config)
 
 	matched := classifier.Classify("OpenAI Pro Plus", "")
-	if matched.Provider != "openai" || matched.Category != "Pro" || !matched.Visible {
+	if matched.Provider != "openai" || matched.Category != "Pro" || matched.RuleID != 0 || !matched.Visible {
 		t.Fatalf("priority classification = %#v", matched)
 	}
 	wordMiss := classifier.Classify("OpenAI Profile", "")
@@ -49,6 +58,35 @@ func TestClassifierUsesRulePriorityAndFallback(t *testing.T) {
 	other := classifier.Classify("普通线路", "")
 	if other.Provider != "other" || other.Category != GeneralCategory || !other.Visible {
 		t.Fatalf("default fallback = %#v", other)
+	}
+}
+
+func TestServiceSaveKeepsRuleIDWhenRenamed(t *testing.T) {
+	store := &memoryStore{}
+	service := New(store)
+	config := DefaultConfig()
+	config.Rules = []Rule{
+		{Provider: "openai", CategoryName: "Pro", Keywords: []string{"pro"}, MatchMode: MatchModeContains, Enabled: true},
+		{Provider: "openai", CategoryName: "Plus", Keywords: []string{"plus"}, MatchMode: MatchModeContains, Enabled: true},
+	}
+	saved, err := service.Save(context.Background(), config)
+	if err != nil {
+		t.Fatalf("save initial config: %v", err)
+	}
+	plusID := saved.Rules[1].ID
+	saved.Rules = []Rule{{
+		ID: plusID, Provider: "openai", CategoryName: "Team", Keywords: []string{"team"}, MatchMode: MatchModeContains, Enabled: true,
+	}}
+	saved, err = service.Save(context.Background(), saved)
+	if err != nil {
+		t.Fatalf("rename category: %v", err)
+	}
+	if len(saved.Rules) != 1 || saved.Rules[0].ID != plusID || saved.Rules[0].CategoryName != "Team" {
+		t.Fatalf("renamed rules = %#v", saved.Rules)
+	}
+	classification := NewClassifier(saved).ClassifyWithProvider("openai", "Team 专线", "")
+	if classification.RuleID != plusID || classification.Category != "Team" {
+		t.Fatalf("classification = %#v", classification)
 	}
 }
 

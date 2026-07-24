@@ -160,6 +160,7 @@ type GroupWorkspaceDTO struct {
 	LastRankingError               string                          `json:"last_ranking_error,omitempty"`
 	AutoExpandEnabled              bool                            `json:"auto_expand_enabled"`
 	AutoExpandMinMarginBasisPoints int64                           `json:"auto_expand_min_margin_basis_points"`
+	AutoExpandCategoryRuleID       *uint                           `json:"auto_expand_category_rule_id,omitempty"`
 	LastAutoExpandAt               *time.Time                      `json:"last_auto_expand_at,omitempty"`
 	LastAutoExpandError            string                          `json:"last_auto_expand_error,omitempty"`
 	AccountCount                   int                             `json:"account_count"`
@@ -225,6 +226,7 @@ type GroupSettingsInput struct {
 	RankingIntervalSeconds         int    `json:"ranking_interval_seconds"`
 	AutoExpandEnabled              bool   `json:"auto_expand_enabled"`
 	AutoExpandMinMarginBasisPoints int64  `json:"auto_expand_min_margin_basis_points"`
+	AutoExpandCategoryRuleID       *uint  `json:"auto_expand_category_rule_id"`
 }
 
 type Page[T any] struct {
@@ -249,6 +251,7 @@ type PoolInput struct {
 	RankingIntervalSeconds         int    `json:"ranking_interval_seconds"`
 	AutoExpandEnabled              bool   `json:"auto_expand_enabled"`
 	AutoExpandMinMarginBasisPoints int64  `json:"auto_expand_min_margin_basis_points"`
+	AutoExpandCategoryRuleID       *uint  `json:"auto_expand_category_rule_id"`
 	TargetGroupIDs                 []uint `json:"target_group_ids"`
 }
 

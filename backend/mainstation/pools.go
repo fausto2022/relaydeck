@@ -132,6 +132,7 @@ func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO,
 			LastRankingError:               pool.LastRankingError,
 			AutoExpandEnabled:              pool.AutoExpandEnabled,
 			AutoExpandMinMarginBasisPoints: pool.AutoExpandMinMarginBasisPoints,
+			AutoExpandCategoryRuleID:       pool.AutoExpandCategoryRuleID,
 			LastAutoExpandAt:               pool.LastAutoExpandAt,
 			LastAutoExpandError:            pool.LastAutoExpandError,
 			AccountCount:                   accountCount,
@@ -253,8 +254,11 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	if err := validateAutoExpandMarginBasisPoints(in.AutoExpandMinMarginBasisPoints); err != nil {
 		return nil, err
 	}
+	platform := normalizeHealthPlatform(pool.Platform)
 	if in.AutoExpandEnabled {
-		platform := normalizeHealthPlatform(pool.Platform)
+		if err := s.validateAutoExpansionCategory(ctx, in.AutoExpandCategoryRuleID, platform); err != nil {
+			return nil, err
+		}
 		if _, err := quickTestAPIMode(platform); err != nil {
 			return nil, errors.New("当前主站分组类型不支持自动扩池测试")
 		}
@@ -266,6 +270,7 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	pool.MinimumMarginBasisPoints = copyOptionalInt64(in.MinimumMarginBasisPoints)
 	pool.AutoExpandEnabled = in.AutoExpandEnabled
 	pool.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
+	pool.AutoExpandCategoryRuleID = copyOptionalUint(in.AutoExpandCategoryRuleID)
 	pool.HealthPolicyJSON = strings.TrimSpace(in.HealthPolicy)
 	pool.MarginPolicyJSON = marginPolicy
 	if err := s.store.UpdatePool(pool, []uint{group.ID}); err != nil {
@@ -489,8 +494,12 @@ func (s *Service) poolFromInput(existing *storage.MainAccountPool, in PoolInput)
 	}
 	item.AutoExpandEnabled = in.AutoExpandEnabled
 	item.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
+	item.AutoExpandCategoryRuleID = copyOptionalUint(in.AutoExpandCategoryRuleID)
 	if item.AutoExpandEnabled {
 		platform := normalizeHealthPlatform(item.Platform)
+		if err := s.validateAutoExpansionCategory(context.Background(), item.AutoExpandCategoryRuleID, platform); err != nil {
+			return nil, nil, err
+		}
 		if _, err := quickTestAPIMode(platform); err != nil {
 			return nil, nil, errors.New("当前账号池类型不支持自动扩池测试")
 		}
@@ -570,6 +579,14 @@ func copyOptionalInt64(value *int64) *int64 {
 	}
 	copied := *value
 	return &copied
+}
+
+func copyOptionalUint(value *uint) *uint {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
 }
 
 func (s *Service) poolDTO(item *storage.MainAccountPool) (*PoolDTO, error) {

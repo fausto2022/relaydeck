@@ -137,6 +137,7 @@ func main() {
 	syncSvc.SetDispatcher(dispatcher)
 	mainStationSvc := mainstation.New(mainStationStore, syncTargets, syncGroups, channels, rates, managedSyncAccounts, cipher, channelSvc, log)
 	mainStationSvc.SetDispatcher(dispatcher)
+	mainStationSvc.SetRateRankingService(rateRankingSvc)
 	mainStationSvc.UpdateProbeConfig(cfg.Proxy, time.Duration(cfg.Upstream.TimeoutSeconds)*time.Second, cfg.Upstream.UserAgent)
 	syncSvc.SetSchedulingGuard(mainStationSvc)
 	sqliteBackups := storage.NewSQLiteBackups(db, cfg.Database.ToStorageConfig(), storage.DefaultSQLiteBackupKeep)

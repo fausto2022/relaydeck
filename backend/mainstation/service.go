@@ -17,6 +17,7 @@ import (
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
 	"github.com/fausto2022/relaydeck/backend/crypto"
 	"github.com/fausto2022/relaydeck/backend/notify"
+	"github.com/fausto2022/relaydeck/backend/rateranking"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"gorm.io/gorm"
 )
@@ -82,6 +83,7 @@ type Service struct {
 	channelSvc       channelService
 	log              *slog.Logger
 	dispatcher       *notify.Dispatcher
+	rateRanking      *rateranking.Service
 	adminFactory     func() adminClient
 	healthMu         sync.Mutex
 	healthRunning    map[string]struct{}
@@ -105,6 +107,10 @@ type Service struct {
 
 func (s *Service) SetDispatcher(dispatcher *notify.Dispatcher) {
 	s.dispatcher = dispatcher
+}
+
+func (s *Service) SetRateRankingService(service *rateranking.Service) {
+	s.rateRanking = service
 }
 
 func (s *Service) DeleteHistoryBefore(cutoff time.Time) (storage.MainStationRetentionResult, error) {

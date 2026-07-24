@@ -23,7 +23,31 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { apiFetch } from "@/lib/api"
-import type { MainStationConfig, MainStationGroupWorkspace } from "@/lib/api-types"
+import type { MainStationConfig, MainStationGroupWorkspace, RateProviderType, RateRankingConfig } from "@/lib/api-types"
+
+const ALL_PROVIDER_RATES = "all"
+
+function normalizeProvider(platform?: string): RateProviderType {
+  switch (platform?.trim().toLowerCase()) {
+    case "claude":
+      return "anthropic"
+    case "google":
+    case "google-gemini":
+      return "gemini"
+    case "xai":
+    case "x-ai":
+      return "grok"
+    case "openai":
+    case "anthropic":
+    case "gemini":
+    case "antigravity":
+    case "grok":
+    case "image":
+      return platform.trim().toLowerCase() as RateProviderType
+    default:
+      return "other"
+  }
+}
 
 interface Props {
   open: boolean
@@ -44,6 +68,9 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
   const [minimumMarginPercent, setMinimumMarginPercent] = useState("")
   const [autoExpandEnabled, setAutoExpandEnabled] = useState(false)
   const [autoExpandMinMarginPercent, setAutoExpandMinMarginPercent] = useState(0)
+  const [autoExpandCategoryRuleID, setAutoExpandCategoryRuleID] = useState(ALL_PROVIDER_RATES)
+  const [rateRankingConfig, setRateRankingConfig] = useState<RateRankingConfig | null>(null)
+  const [rateRankingLoading, setRateRankingLoading] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -59,8 +86,33 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
     setMinimumMarginPercent(workspace.minimum_margin_basis_points == null ? "" : String(workspace.minimum_margin_basis_points / 100))
     setAutoExpandEnabled(workspace.auto_expand_enabled ?? false)
     setAutoExpandMinMarginPercent((workspace.auto_expand_min_margin_basis_points ?? 0) / 100)
+    setAutoExpandCategoryRuleID(workspace.auto_expand_category_rule_id == null ? ALL_PROVIDER_RATES : String(workspace.auto_expand_category_rule_id))
     setAdvancedOpen(false)
   }, [open, workspace])
+
+  useEffect(() => {
+    if (!open) return
+    let active = true
+    setRateRankingLoading(true)
+    apiFetch<RateRankingConfig>("/settings/rate-ranking")
+      .then((result) => {
+        if (active) setRateRankingConfig(result)
+      })
+      .catch((error) => {
+        if (active) toast.error(error instanceof Error ? error.message : "读取倍率排行分类失败")
+      })
+      .finally(() => {
+        if (active) setRateRankingLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [open])
+
+  const provider = normalizeProvider(workspace?.group.platform)
+  const categoryRules = rateRankingConfig?.rules.filter((rule) => rule.provider === provider && rule.enabled) ?? []
+  const selectedCategoryExists = rateRankingConfig == null || autoExpandCategoryRuleID === ALL_PROVIDER_RATES
+    || categoryRules.some((rule) => String(rule.id) === autoExpandCategoryRuleID)
 
   async function handleSave() {
     if (!workspace) return
@@ -92,6 +144,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
           minimum_margin_basis_points: minimumMarginValue == null ? null : Math.round(minimumMarginValue * 100),
           auto_expand_enabled: autoExpandEnabled,
           auto_expand_min_margin_basis_points: Math.round(autoExpandMinMarginPercent * 100),
+          auto_expand_category_rule_id: autoExpandCategoryRuleID === ALL_PROVIDER_RATES ? null : Number(autoExpandCategoryRuleID),
         }),
       })
       onSaved(saved)
@@ -106,7 +159,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>分组设置</DialogTitle>
           <DialogDescription>{workspace?.group.name}</DialogDescription>
@@ -171,6 +224,27 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
                 <p className="mt-1 text-xs text-muted-foreground">倍率同步后自动筛选同类型上游分组。</p>
               </div>
               <Switch id="group-auto-expand" checked={autoExpandEnabled} onCheckedChange={setAutoExpandEnabled} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="group-auto-expand-category">候选分类</Label>
+              <Select
+                value={autoExpandCategoryRuleID}
+                onValueChange={setAutoExpandCategoryRuleID}
+                disabled={!autoExpandEnabled || rateRankingLoading}
+              >
+                <SelectTrigger id="group-auto-expand-category">
+                  <SelectValue placeholder={rateRankingLoading ? "正在读取分类..." : "选择候选分类"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_PROVIDER_RATES}>整个 {provider} 类型</SelectItem>
+                  {!selectedCategoryExists ? <SelectItem value={autoExpandCategoryRuleID}>原分类已失效，请重新选择</SelectItem> : null}
+                  {categoryRules.map((rule) => (
+                    <SelectItem key={rule.id} value={String(rule.id)}>{rule.category_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">选择自定义分类后，只会测试命中该分类关键词的上游分组。</p>
+              {!selectedCategoryExists ? <p className="text-xs text-destructive">原分类已删除、停用或更改类型，自动扩池将暂停，保存前请重新选择。</p> : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="group-auto-expand-margin">自动扩池最低利润率（%）</Label>

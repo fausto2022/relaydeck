@@ -43,8 +43,10 @@ func (r *RateRankingConfigs) Replace(
 			}
 		}
 		if len(rules) > 0 {
-			if err := tx.Create(&rules).Error; err != nil {
-				return err
+			for i := range rules {
+				if err := tx.Create(&rules[i]).Error; err != nil {
+					return err
+				}
 			}
 		}
 		return nil

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/fausto2022/relaydeck/backend/connector"
+	"github.com/fausto2022/relaydeck/backend/rateranking"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"gorm.io/gorm"
 )
@@ -41,11 +42,48 @@ type autoExpansionCandidate struct {
 	marginBasisPoints int64
 }
 
+type autoExpansionCategory struct {
+	classifier *rateranking.Classifier
+	rule       *rateranking.Rule
+}
+
 func validateAutoExpandMarginBasisPoints(value int64) error {
 	if value < 0 || value > maximumMarginBasisPoints {
 		return errors.New("自动扩池最低利润率必须在 0% 到 99% 之间")
 	}
 	return nil
+}
+
+func (s *Service) validateAutoExpansionCategory(ctx context.Context, ruleID *uint, platform string) error {
+	_, err := s.autoExpansionCategory(ctx, ruleID, platform)
+	return err
+}
+
+func (s *Service) autoExpansionCategory(ctx context.Context, ruleID *uint, platform string) (*autoExpansionCategory, error) {
+	if ruleID == nil {
+		return &autoExpansionCategory{classifier: rateranking.DefaultClassifier()}, nil
+	}
+	if s.rateRanking == nil {
+		return nil, errors.New("倍率排行分类服务尚未初始化")
+	}
+	config, err := s.rateRanking.Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("读取倍率排行分类失败：%w", err)
+	}
+	for i := range config.Rules {
+		rule := &config.Rules[i]
+		if rule.ID != *ruleID {
+			continue
+		}
+		if !rule.Enabled {
+			return nil, fmt.Errorf("自动扩池所选分类“%s”已停用，请重新选择", rule.CategoryName)
+		}
+		if normalizeHealthPlatform(rule.Provider) != platform {
+			return nil, fmt.Errorf("自动扩池所选分类“%s”已不属于当前分组类型，请重新选择", rule.CategoryName)
+		}
+		return &autoExpansionCategory{classifier: rateranking.NewClassifier(config), rule: rule}, nil
+	}
+	return nil, errors.New("自动扩池所选分类已删除，请重新选择")
 }
 
 func (s *Service) RunAutoExpansion(ctx context.Context) {
@@ -106,6 +144,10 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 		return errors.New("当前主站分组计费方式不支持自动利润判断")
 	}
 	platform := normalizeHealthPlatform(pool.Platform)
+	category, err := s.autoExpansionCategory(ctx, pool.AutoExpandCategoryRuleID, platform)
+	if err != nil {
+		return err
+	}
 	model := strings.TrimSpace(s.configuredHealthModels()[platform])
 	if model == "" {
 		return fmt.Errorf("尚未配置 %s 类型的全局探活模型", platform)
@@ -122,7 +164,7 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 	if err != nil {
 		return err
 	}
-	candidates, err := s.autoExpansionCandidates(pool, group, members, platform, saleMicros, now)
+	candidates, err := s.autoExpansionCandidates(pool, group, members, platform, saleMicros, now, category)
 	if err != nil {
 		return err
 	}
@@ -133,7 +175,7 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 		}
 		candidate := &candidates[i]
 		tested++
-		evidence := autoExpansionEvidence(group, candidate, saleMicros, pool.AutoExpandMinMarginBasisPoints, platform, model)
+		evidence := autoExpansionEvidence(group, candidate, saleMicros, pool.AutoExpandMinMarginBasisPoints, platform, model, category.rule)
 		result, testErr := s.quickTestRate(ctx, candidate.channel.ID, candidate.rate.ID, RateQuickTestInput{
 			Platform: platform,
 			Model:    model,
@@ -195,7 +237,11 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 			continue
 		}
 		_ = s.saveAutoExpansionAttempt(pool.ID, group.ID, candidate, "added", "已自动加入主站分组", now, nil)
-		_ = s.appendAudit(&pool.ID, &member.ID, member.RemoteAccountID, "auto_expand_member_add", "scheduler", true, nil, member, evidence, "已通过利润筛选和连续三次测试，自动加入主站分组", "")
+		detail := "已通过利润筛选和快速测试，自动加入主站分组"
+		if result.AttemptCount > 1 {
+			detail = fmt.Sprintf("已通过利润筛选和连续 %d 次测试，自动加入主站分组", result.AttemptCount)
+		}
+		_ = s.appendAudit(&pool.ID, &member.ID, member.RemoteAccountID, "auto_expand_member_add", "scheduler", true, nil, member, evidence, detail, "")
 		break
 	}
 	return nil
@@ -208,6 +254,7 @@ func (s *Service) autoExpansionCandidates(
 	platform string,
 	saleMicros int64,
 	now time.Time,
+	category *autoExpansionCategory,
 ) ([]autoExpansionCandidate, error) {
 	channels, err := s.channels.ListMonitorEnabled()
 	if err != nil {
@@ -223,6 +270,9 @@ func (s *Service) autoExpansionCandidates(
 		for j := range rates {
 			rate := rates[j]
 			if rate.LastSeenAt.IsZero() || rate.LastSeenAt.Before(now.Add(-autoExpansionRateFreshness)) || classifyAutoExpansionRate(rate) != platform {
+				continue
+			}
+			if category.rule != nil && category.classifier.ClassifyWithProvider(platform, rate.ModelName, rate.Description).RuleID != category.rule.ID {
 				continue
 			}
 			effectiveRate := connector.ApplyRechargeMultiplier(rate.Ratio, channel.RechargeMultiplier, channel.RechargeMultiplierMode)
@@ -285,8 +335,9 @@ func autoExpansionEvidence(
 	candidate *autoExpansionCandidate,
 	saleMicros, threshold int64,
 	platform, model string,
+	categoryRule *rateranking.Rule,
 ) map[string]any {
-	return map[string]any{
+	evidence := map[string]any{
 		"target_group_id":             group.ID,
 		"target_group":                group.Name,
 		"channel_id":                  candidate.channel.ID,
@@ -300,6 +351,11 @@ func autoExpansionEvidence(
 		"margin_basis_points":         candidate.marginBasisPoints,
 		"minimum_margin_basis_points": threshold,
 	}
+	if categoryRule != nil {
+		evidence["category_rule_id"] = categoryRule.ID
+		evidence["category"] = categoryRule.CategoryName
+	}
+	return evidence
 }
 
 func autoExpansionMatchingMember(members []storage.MainAccountPoolMember, channelID uint, rate *storage.RateSnapshot) *storage.MainAccountPoolMember {

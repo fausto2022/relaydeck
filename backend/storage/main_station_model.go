@@ -108,6 +108,7 @@ type MainAccountPool struct {
 	LastRankingError               string     `gorm:"type:text" json:"last_ranking_error,omitempty"`
 	AutoExpandEnabled              bool       `gorm:"not null;default:false;index" json:"auto_expand_enabled"`
 	AutoExpandMinMarginBasisPoints int64      `gorm:"not null;default:0" json:"auto_expand_min_margin_basis_points"`
+	AutoExpandCategoryRuleID       *uint      `json:"auto_expand_category_rule_id,omitempty"`
 	LastAutoExpandAt               *time.Time `json:"last_auto_expand_at,omitempty"`
 	LastAutoExpandError            string     `gorm:"type:text" json:"last_auto_expand_error,omitempty"`
 	LastStatus                     string     `gorm:"size:32;not null;default:'unknown';index" json:"last_status"`

@@ -6,12 +6,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/fausto2022/relaydeck/backend/connector"
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
+	"github.com/fausto2022/relaydeck/backend/rateranking"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"gorm.io/gorm"
 )
@@ -118,6 +120,67 @@ func TestAutoExpansionRequiresMarginStrictlyAboveThreshold(t *testing.T) {
 
 	if fixture.chatCalls.Load() != 0 || len(fixture.channels.createdKeys) != 0 || len(fixture.admin.createRequests) != 0 {
 		t.Fatalf("break-even threshold candidate was tested: chat=%d keys=%d accounts=%d", fixture.chatCalls.Load(), len(fixture.channels.createdKeys), len(fixture.admin.createRequests))
+	}
+}
+
+func TestAutoExpansionOnlyUsesSelectedCustomCategory(t *testing.T) {
+	fixture := newAutoExpansionTestFixture(t, 1000)
+	config := rateranking.DefaultConfig()
+	config.Rules = []rateranking.Rule{{
+		Provider: "openai", CategoryName: "Pro", Keywords: []string{"pro"}, MatchMode: rateranking.MatchModeWord, SortOrder: 10, Enabled: true,
+	}}
+	saved, err := fixture.service.rateRanking.Save(context.Background(), config)
+	if err != nil {
+		t.Fatalf("save category: %v", err)
+	}
+	proGroupID := int64(302)
+	fixture.channels.groups = append(fixture.channels.groups, connector.APIKeyGroup{ID: &proGroupID, Name: "OpenAI Pro", Ratio: 0.5})
+	if err := fixture.db.Create(&storage.RateSnapshot{
+		ChannelID: fixture.rate.ChannelID, RemoteGroupID: &proGroupID, ModelName: "OpenAI Pro",
+		Ratio: 0.5, LastSeenAt: fixture.now,
+	}).Error; err != nil {
+		t.Fatalf("create pro rate: %v", err)
+	}
+	fixture.pool.AutoExpandCategoryRuleID = &saved.Rules[0].ID
+	if err := fixture.db.Save(fixture.pool).Error; err != nil {
+		t.Fatalf("select category: %v", err)
+	}
+
+	fixture.service.RunAutoExpansion(context.Background())
+
+	members, err := fixture.service.store.ListMembers(fixture.pool.ID)
+	if err != nil || len(members) != 1 || members[0].SourceGroupID == nil || *members[0].SourceGroupID != proGroupID {
+		t.Fatalf("auto-expanded members = %#v, err=%v", members, err)
+	}
+}
+
+func TestAutoExpansionStopsWhenSelectedCategoryIsDeleted(t *testing.T) {
+	fixture := newAutoExpansionTestFixture(t, 1000)
+	config := rateranking.DefaultConfig()
+	config.Rules = []rateranking.Rule{{
+		Provider: "openai", CategoryName: "Pro", Keywords: []string{"pro"}, MatchMode: rateranking.MatchModeWord, SortOrder: 10, Enabled: true,
+	}}
+	saved, err := fixture.service.rateRanking.Save(context.Background(), config)
+	if err != nil {
+		t.Fatalf("save category: %v", err)
+	}
+	fixture.pool.AutoExpandCategoryRuleID = &saved.Rules[0].ID
+	if err := fixture.db.Save(fixture.pool).Error; err != nil {
+		t.Fatalf("select category: %v", err)
+	}
+	saved.Rules = nil
+	if _, err := fixture.service.rateRanking.Save(context.Background(), saved); err != nil {
+		t.Fatalf("delete category: %v", err)
+	}
+
+	fixture.service.RunAutoExpansion(context.Background())
+
+	if fixture.chatCalls.Load() != 0 || len(fixture.channels.createdKeys) != 0 {
+		t.Fatalf("deleted category fell back to whole provider: calls=%d keys=%d", fixture.chatCalls.Load(), len(fixture.channels.createdKeys))
+	}
+	pool, err := fixture.service.store.FindPool(fixture.pool.ID)
+	if err != nil || !strings.Contains(pool.LastAutoExpandError, "已删除") {
+		t.Fatalf("pool status = %#v, err=%v", pool, err)
 	}
 }
 

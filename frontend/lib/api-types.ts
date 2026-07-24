@@ -843,6 +843,7 @@ export interface MainStationGroupWorkspace {
   last_ranking_error?: string
   auto_expand_enabled: boolean
   auto_expand_min_margin_basis_points: number
+  auto_expand_category_rule_id?: number | null
   last_auto_expand_at?: string | null
   last_auto_expand_error?: string
   last_status: "healthy" | "degraded" | "critical" | "unknown" | string
