@@ -43,6 +43,8 @@ export type NotificationEvent =
   | "upstream_sync_group_changed"
   | "main_pool_degraded"
   | "main_pool_critical"
+  | "main_pool_unavailable"
+  | "main_pool_recovered"
   | "main_member_health_failed"
   | "main_member_health_recovered"
   | "main_member_margin_risk"

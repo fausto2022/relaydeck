@@ -68,6 +68,8 @@ const eventMeta: Record<NotificationEvent, { icon: LucideIcon; cls: string }> = 
   upstream_sync_group_changed: { icon: RefreshCw, cls: "text-brand" },
   main_pool_degraded: { icon: AlertTriangle, cls: "text-warning" },
   main_pool_critical: { icon: ShieldX, cls: "text-danger" },
+  main_pool_unavailable: { icon: ShieldX, cls: "text-danger" },
+  main_pool_recovered: { icon: RefreshCw, cls: "text-brand" },
   main_member_health_failed: { icon: ShieldX, cls: "text-danger" },
   main_member_health_recovered: { icon: RefreshCw, cls: "text-brand" },
   main_member_margin_risk: { icon: AlertTriangle, cls: "text-warning" },

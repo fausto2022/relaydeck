@@ -2,10 +2,16 @@ package mainstation
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/fausto2022/relaydeck/backend/notify"
 	"github.com/fausto2022/relaydeck/backend/storage"
 )
 
@@ -189,6 +195,98 @@ func TestPoolCapacityThresholds(t *testing.T) {
 	}
 	if critical.Status != "critical" || critical.QualifiedMembers != 0 {
 		t.Fatalf("critical capacity = %#v", critical)
+	}
+}
+
+func TestPoolAvailabilityNotifications(t *testing.T) {
+	service, db, admin, _ := newTestService(t)
+	current := time.Date(2026, 7, 17, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	service.now = func() time.Time { return current }
+	pool, member, _ := createProfitMember(
+		t,
+		service,
+		db,
+		admin,
+		current,
+		0.8,
+		`{"mode":"observe","minimum_margin_basis_points":0,"risk_confirmations":2,"cost_max_age_minutes":60}`,
+	)
+	if err := db.Model(&storage.MainAccountPoolMember{}).
+		Where("id = ?", member.ID).
+		Updates(map[string]any{"last_health_status": "healthy", "status": "active"}).Error; err != nil {
+		t.Fatalf("mark member healthy: %v", err)
+	}
+	initial, err := service.EvaluatePoolCapacity(context.Background(), pool.ID)
+	updatedPool, loadErr := service.store.FindPool(pool.ID)
+	if err != nil || loadErr != nil || initial.SchedulableMembers != 1 || updatedPool.LastAvailabilityStatus != "available" {
+		t.Fatalf("initial capacity = %#v err=%v", initial, err)
+	}
+
+	events := make(chan storage.NotificationEvent, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Event storage.NotificationEvent `json:"event"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		events <- body.Event
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	configBody, err := json.Marshal(map[string]any{"url": server.URL, "method": http.MethodPost})
+	if err != nil {
+		t.Fatalf("marshal notification config: %v", err)
+	}
+	configCipher, err := service.cipher.Encrypt(string(configBody))
+	if err != nil {
+		t.Fatalf("encrypt notification config: %v", err)
+	}
+	notifications := storage.NewNotifications(db)
+	if err := notifications.CreateChannel(&storage.NotificationChannel{
+		Name: "webhook", Type: storage.NotifyWebhook, ConfigCipher: configCipher, Subscriptions: "[]", Enabled: true,
+	}); err != nil {
+		t.Fatalf("create notification channel: %v", err)
+	}
+	service.SetDispatcher(notify.NewDispatcher(
+		notifications,
+		service.cipher,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		notify.Policy{SendMaxAttempts: 1},
+	))
+
+	remoteID := *member.RemoteAccountID
+	if err := db.Model(&storage.MainStationAccountSnapshot{}).
+		Where("remote_account_id = ?", remoteID).
+		Update("schedulable", false).Error; err != nil {
+		t.Fatalf("disable remote scheduling: %v", err)
+	}
+	if _, err := service.EvaluatePoolCapacity(context.Background(), pool.ID); err != nil {
+		t.Fatalf("unavailable capacity: %v", err)
+	}
+	assertNotificationEvent(t, events, storage.EventMainPoolUnavailable)
+
+	if err := db.Model(&storage.MainStationAccountSnapshot{}).
+		Where("remote_account_id = ?", remoteID).
+		Update("schedulable", true).Error; err != nil {
+		t.Fatalf("restore remote scheduling: %v", err)
+	}
+	if _, err := service.EvaluatePoolCapacity(context.Background(), pool.ID); err != nil {
+		t.Fatalf("recovered capacity: %v", err)
+	}
+	assertNotificationEvent(t, events, storage.EventMainPoolRecovered)
+}
+
+func assertNotificationEvent(t *testing.T, events <-chan storage.NotificationEvent, want storage.NotificationEvent) {
+	t.Helper()
+	select {
+	case event := <-events:
+		if event != want {
+			t.Fatalf("notification event = %q, want %q", event, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for notification %q", want)
 	}
 }
 

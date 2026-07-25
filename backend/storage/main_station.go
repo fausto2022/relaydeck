@@ -962,6 +962,9 @@ func applyPoolDefaults(item *MainAccountPool) {
 	if strings.TrimSpace(item.LastStatus) == "" {
 		item.LastStatus = "unknown"
 	}
+	if strings.TrimSpace(item.LastAvailabilityStatus) == "" {
+		item.LastAvailabilityStatus = "unknown"
+	}
 }
 
 func applyMemberDefaults(item *MainAccountPoolMember) {

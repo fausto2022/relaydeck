@@ -112,6 +112,7 @@ type MainAccountPool struct {
 	LastAutoExpandAt               *time.Time `json:"last_auto_expand_at,omitempty"`
 	LastAutoExpandError            string     `gorm:"type:text" json:"last_auto_expand_error,omitempty"`
 	LastStatus                     string     `gorm:"size:32;not null;default:'unknown';index" json:"last_status"`
+	LastAvailabilityStatus         string     `gorm:"size:16;not null;default:'unknown';index" json:"last_availability_status"`
 	LastEvaluatedAt                *time.Time `json:"last_evaluated_at,omitempty"`
 	CreatedAt                      time.Time  `json:"created_at"`
 	UpdatedAt                      time.Time  `json:"updated_at"`

@@ -258,6 +258,8 @@ const (
 	EventUpstreamSyncGroupChanged  NotificationEvent = "upstream_sync_group_changed"
 	EventMainPoolDegraded          NotificationEvent = "main_pool_degraded"
 	EventMainPoolCritical          NotificationEvent = "main_pool_critical"
+	EventMainPoolUnavailable       NotificationEvent = "main_pool_unavailable"
+	EventMainPoolRecovered         NotificationEvent = "main_pool_recovered"
 	EventMainMemberHealthFailed    NotificationEvent = "main_member_health_failed"
 	EventMainMemberHealthRecovered NotificationEvent = "main_member_health_recovered"
 	EventMainMemberMarginRisk      NotificationEvent = "main_member_margin_risk"

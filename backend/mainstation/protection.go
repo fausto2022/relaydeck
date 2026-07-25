@@ -308,11 +308,20 @@ func (s *Service) EvaluatePoolCapacity(ctx context.Context, poolID uint) (*PoolC
 		result.Status = "healthy"
 	}
 	oldStatus := pool.LastStatus
+	oldAvailabilityStatus := pool.LastAvailabilityStatus
+	availabilityStatus := "available"
+	if result.SchedulableMembers == 0 {
+		availabilityStatus = "unavailable"
+	}
 	now := s.now()
 	pool.LastStatus = result.Status
+	pool.LastAvailabilityStatus = availabilityStatus
 	pool.LastEvaluatedAt = &now
 	if err := s.store.UpdatePool(pool, groupIDs); err != nil {
 		return nil, err
+	}
+	if oldAvailabilityStatus != availabilityStatus {
+		s.notifyPoolAvailabilityTransition(ctx, pool, result, oldAvailabilityStatus)
 	}
 	if oldStatus != result.Status {
 		s.notifyPoolCapacityTransition(ctx, pool, result, oldStatus)
@@ -347,6 +356,57 @@ func (s *Service) notifyPoolCapacityTransition(ctx context.Context, pool *storag
 			notify.Detail("有效并发", result.EffectiveConcurrency),
 		) + notify.MarkdownNote("处理建议", "请检查异常成员、利润风险和账号池最低容量配置。"),
 	})
+}
+
+func (s *Service) notifyPoolAvailabilityTransition(ctx context.Context, pool *storage.MainAccountPool, result *PoolCapacityResult, oldStatus string) {
+	availabilityStatus := "available"
+	if result.SchedulableMembers == 0 {
+		availabilityStatus = "unavailable"
+	}
+	if s.dispatcher == nil || oldStatus == availabilityStatus {
+		return
+	}
+	event := storage.EventMainPoolRecovered
+	status := "可用"
+	if availabilityStatus == "unavailable" {
+		event = storage.EventMainPoolUnavailable
+		status = "无可用账号"
+	}
+	dedupKey := fmt.Sprintf("%s:%d:0:0", event, pool.ID)
+	claimed, err := s.store.TryClaimNotificationCooldown(dedupKey, string(event), pool.ID, 0, 0, 30*time.Minute)
+	if err != nil || !claimed {
+		return
+	}
+	_ = s.dispatcher.Dispatch(ctx, notify.Message{
+		Event:   event,
+		Subject: fmt.Sprintf("主站分组可用性 · %s · %s", status, pool.Name),
+		Body: notify.MarkdownDetails(
+			"主站分组可用账号数量发生变化。",
+			notify.Detail("账号池", pool.Name),
+			notify.Detail("状态变化", fmt.Sprintf("%s -> %s", availabilityStatusLabel(oldStatus), status)),
+			notify.Detail("可调度账号", result.SchedulableMembers),
+			notify.Detail("总账号", result.TotalMembers),
+			notify.Detail("健康成员", result.HealthyMembers),
+		) + notify.MarkdownNote("处理建议", availabilityAction(result.SchedulableMembers)),
+	})
+}
+
+func availabilityStatusLabel(status string) string {
+	switch status {
+	case "available":
+		return "可用"
+	case "unavailable":
+		return "无可用账号"
+	default:
+		return "未知"
+	}
+}
+
+func availabilityAction(schedulableMembers int) string {
+	if schedulableMembers == 0 {
+		return "请检查主站账号状态、健康探活、保护锁和远端调度状态。"
+	}
+	return "主站分组已有可调度账号恢复，可继续观察请求成功率。"
 }
 
 func (s *Service) ListAuditLogs(poolID, memberID uint, page, pageSize int) (*Page[storage.MainAccountAuditLog], error) {
