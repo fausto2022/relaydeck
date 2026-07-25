@@ -1171,6 +1171,10 @@ func (s *Service) managedAccountRequest(ctx context.Context, pool *storage.MainA
 }
 
 func (s *Service) ensureManagedSourceAPIKey(ctx context.Context, pool *storage.MainAccountPool, member *storage.MainAccountPoolMember) (string, error) {
+	sourceChannel, err := s.channels.FindByID(member.SourceChannelID)
+	if err != nil {
+		return "", fmt.Errorf("load source channel for api key: %w", err)
+	}
 	if member.SourceAPIKeyID != nil {
 		secret, err := s.channelSvc.RevealAPIKey(ctx, member.SourceChannelID, *member.SourceAPIKeyID)
 		if err != nil && !missingRemoteResource(err) {
@@ -1188,11 +1192,18 @@ func (s *Service) ensureManagedSourceAPIKey(ctx context.Context, pool *storage.M
 		member.SourceAPIKeyID = nil
 	}
 	name := managedSourceAPIKeyName(member)
-	key, err := s.channelSvc.CreateAPIKey(ctx, member.SourceChannelID, connector.APIKeyCreateRequest{
+	createRequest := connector.APIKeyCreateRequest{
 		Name:    name,
 		Group:   member.SourceGroupName,
 		GroupID: member.SourceGroupID,
-	})
+	}
+	if sourceChannel.Type == storage.ChannelTypeNewAPI {
+		unlimitedQuota := true
+		neverExpire := int64(-1)
+		createRequest.UnlimitedQuota = &unlimitedQuota
+		createRequest.ExpiredTime = &neverExpire
+	}
+	key, err := s.channelSvc.CreateAPIKey(ctx, member.SourceChannelID, createRequest)
 	if err != nil {
 		return "", fmt.Errorf("create managed source api key: %w", err)
 	}

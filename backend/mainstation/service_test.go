@@ -977,6 +977,39 @@ func TestEnsureManagedSourceAPIKeyRecreatesMissingRemoteKey(t *testing.T) {
 	}
 }
 
+func TestEnsureManagedSourceAPIKeySetsNewAPIDefaults(t *testing.T) {
+	service, db, _, channels := newTestService(t)
+	channel := createTestChannel(t, db)
+	channel.Type = storage.ChannelTypeNewAPI
+	if err := db.Save(channel).Error; err != nil {
+		t.Fatalf("save newapi channel: %v", err)
+	}
+	pool := &storage.MainAccountPool{Name: "managed-pool", Platform: "openai"}
+	if err := service.store.CreatePool(pool, nil); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	member := &storage.MainAccountPoolMember{
+		PoolID: pool.ID, AccountName: "OpenAI-01", OwnershipMode: "managed",
+		SourceChannelID: channel.ID, SourceGroupName: "source-group",
+	}
+	if err := service.store.CreateMember(member); err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	if _, err := service.ensureManagedSourceAPIKey(context.Background(), pool, member); err != nil {
+		t.Fatalf("ensure managed source api key: %v", err)
+	}
+	if len(channels.createdKeys) != 1 {
+		t.Fatalf("created keys = %#v", channels.createdKeys)
+	}
+	request := channels.createdKeys[0]
+	if request.UnlimitedQuota == nil || !*request.UnlimitedQuota {
+		t.Fatalf("create unlimited_quota = %#v", request.UnlimitedQuota)
+	}
+	if request.ExpiredTime == nil || *request.ExpiredTime != -1 {
+		t.Fatalf("create expired_time = %#v", request.ExpiredTime)
+	}
+}
+
 func TestManagedAutomaticNameUsesChannelAndDefaultGroup(t *testing.T) {
 	service, db, _, _ := newTestService(t)
 	channel := createTestChannel(t, db)
