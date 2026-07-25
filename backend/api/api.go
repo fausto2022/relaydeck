@@ -132,13 +132,19 @@ func registerFrontend(r *gin.Engine, dist fs.FS) {
 			return
 		}
 
-		// 文件存在就直接 serve，否则回落到 index.html。
+		// 文件存在就直接 serve，否则回落到 index.html。Vite 的 assets 文件名包含内容
+		// hash，可以长期缓存；HTML 和 SPA fallback 必须每次重新验证，以便及时加载新版本。
 		clean := strings.TrimPrefix(path, "/")
 		if clean == "" {
 			clean = "index.html"
 		}
 		if _, err := fs.Stat(dist, clean); err != nil {
 			c.Request.URL.Path = "/"
+			c.Header("Cache-Control", "no-cache")
+		} else if strings.HasPrefix(clean, "assets/") {
+			c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			c.Header("Cache-Control", "no-cache")
 		}
 		fileServer.ServeHTTP(c.Writer, c.Request)
 	})

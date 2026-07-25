@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -220,32 +222,16 @@ func (r *Rates) AggregateBalanceTrend(days int) ([]DailyAggregate, error) {
 	today := dayStart(trendNow())
 	since := today.AddDate(0, 0, -(days - 1))
 
-	var snapshots []BalanceSnapshot
-	if err := r.db.
-		Where("sampled_at >= ?", since).
-		Order("sampled_at ASC").
-		Find(&snapshots).Error; err != nil {
+	rows, err := r.aggregateDailyLatest("balance_snapshots", "balance", since, days)
+	if err != nil {
 		return nil, err
 	}
-	if len(snapshots) == 0 {
+	if len(rows) == 0 {
 		return []DailyAggregate{}, nil
 	}
-
-	type key struct {
-		ChannelID uint
-		Day       time.Time
-	}
-
-	latest := make(map[key]BalanceSnapshot, len(snapshots))
-	for _, snapshot := range snapshots {
-		day := dayStart(snapshot.SampledAt)
-		latest[key{ChannelID: snapshot.ChannelID, Day: day}] = snapshot
-	}
-
 	byDay := make(map[string]float64, days)
-	for _, snapshot := range latest {
-		day := dayStart(snapshot.SampledAt)
-		byDay[dayKey(day)] += snapshot.Balance
+	for _, row := range rows {
+		byDay[dayKey(since.AddDate(0, 0, row.DayIndex))] = row.Total
 	}
 
 	out := make([]DailyAggregate, 0, days)
@@ -268,32 +254,16 @@ func (r *Rates) AggregateCostTrendAt(days int, now time.Time) ([]DailyCostAggreg
 	today := dayStart(now)
 	since := today.AddDate(0, 0, -(days - 1))
 
-	var snapshots []CostSnapshot
-	if err := r.db.
-		Where("sampled_at >= ?", since).
-		Order("sampled_at ASC").
-		Find(&snapshots).Error; err != nil {
+	rows, err := r.aggregateDailyLatest("cost_snapshots", "today_cost", since, days)
+	if err != nil {
 		return nil, err
 	}
-	if len(snapshots) == 0 {
+	if len(rows) == 0 {
 		return []DailyCostAggregate{}, nil
 	}
-
-	type key struct {
-		ChannelID uint
-		Day       time.Time
-	}
-
-	latest := make(map[key]CostSnapshot, len(snapshots))
-	for _, snapshot := range snapshots {
-		day := dayStart(snapshot.SampledAt)
-		latest[key{ChannelID: snapshot.ChannelID, Day: day}] = snapshot
-	}
-
 	byDay := make(map[string]float64, days)
-	for _, snapshot := range latest {
-		day := dayStart(snapshot.SampledAt)
-		byDay[dayKey(day)] += snapshot.TodayCost
+	for _, row := range rows {
+		byDay[dayKey(since.AddDate(0, 0, row.DayIndex))] = row.Total
 	}
 
 	out := make([]DailyCostAggregate, 0, days)
@@ -301,6 +271,65 @@ func (r *Rates) AggregateCostTrendAt(days int, now time.Time) ([]DailyCostAggreg
 		out = append(out, DailyCostAggregate{Day: day, Cost: byDay[dayKey(day)]})
 	}
 	return out, nil
+}
+
+type dailyAggregateRow struct {
+	DayIndex int     `gorm:"column:day_index"`
+	Total    float64 `gorm:"column:total"`
+}
+
+// aggregateDailyLatest 在数据库中完成“每天每渠道最后一次采样”的筛选和汇总。
+// table、valueColumn 仅由上面的固定调用传入，不接受外部输入。
+func (r *Rates) aggregateDailyLatest(table, valueColumn string, since time.Time, days int) ([]dailyAggregateRow, error) {
+	timeExpression := "snapshots.sampled_at"
+	boundExpression := "?"
+	if r.db.Dialector.Name() == "sqlite" {
+		// SQLite 把 time.Time 保存为带时区的文本；julianday 同时兼容历史 UTC 数据和
+		// 当前 Asia/Shanghai 数据，避免直接按字符串比较时跨日错分。
+		timeExpression = "julianday(snapshots.sampled_at)"
+		boundExpression = "julianday(?)"
+	}
+
+	var ranges strings.Builder
+	args := make([]any, 0, days*2)
+	for dayIndex := 0; dayIndex < days; dayIndex++ {
+		if dayIndex > 0 {
+			ranges.WriteString(" UNION ALL ")
+		}
+		fmt.Fprintf(
+			&ranges,
+			"SELECT %d AS day_index, %s AS start_at, %s AS end_at",
+			dayIndex,
+			boundExpression,
+			boundExpression,
+		)
+		args = append(args, since.AddDate(0, 0, dayIndex), since.AddDate(0, 0, dayIndex+1))
+	}
+
+	query := fmt.Sprintf(`
+WITH day_ranges AS (%s),
+ranked AS (
+	SELECT day_ranges.day_index, snapshots.%s AS metric_value,
+		ROW_NUMBER() OVER (
+			PARTITION BY day_ranges.day_index, snapshots.channel_id
+			ORDER BY %s DESC, snapshots.id DESC
+		) AS row_num
+	FROM %s AS snapshots
+	INNER JOIN day_ranges
+		ON %s >= day_ranges.start_at
+		AND %s < day_ranges.end_at
+)
+SELECT day_index, COALESCE(SUM(metric_value), 0) AS total
+FROM ranked
+WHERE row_num = 1
+GROUP BY day_index
+ORDER BY day_index`, ranges.String(), valueColumn, timeExpression, table, timeExpression, timeExpression)
+
+	var rows []dailyAggregateRow
+	if err := r.db.Raw(query, args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 func dayStart(t time.Time) time.Time {
