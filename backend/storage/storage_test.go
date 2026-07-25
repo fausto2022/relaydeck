@@ -67,6 +67,25 @@ func openTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestAutoMigrateCreatesSQLiteTrendIndexes(t *testing.T) {
+	db := openTestDB(t)
+	for _, name := range []string{
+		"idx_balance_snapshots_sampled_jd",
+		"idx_cost_snapshots_sampled_jd",
+	} {
+		var count int64
+		if err := db.Raw(
+			"SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?",
+			name,
+		).Scan(&count).Error; err != nil {
+			t.Fatalf("inspect index %s: %v", name, err)
+		}
+		if count != 1 {
+			t.Fatalf("index %s count = %d, want 1", name, count)
+		}
+	}
+}
+
 func TestAggregateBalanceTrend(t *testing.T) {
 	db := openTestDB(t)
 	rates := NewRates(db)

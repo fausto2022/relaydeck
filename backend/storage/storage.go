@@ -173,6 +173,9 @@ func AutoMigrate(db *gorm.DB) error {
 	); err != nil {
 		return err
 	}
+	if err := ensureSQLiteTrendIndexes(db); err != nil {
+		return err
+	}
 	if upgradeHealthDefaults {
 		if err := db.Model(&MainStationConfig{}).
 			Where("health_interval_seconds = ?", 300).
@@ -181,6 +184,30 @@ func AutoMigrate(db *gorm.DB) error {
 		}
 	}
 	return migrateLegacyMainStationData(db)
+}
+
+func ensureSQLiteTrendIndexes(db *gorm.DB) error {
+	if db.Dialector.Name() != "sqlite" {
+		return nil
+	}
+	indexes := []struct {
+		name  string
+		table string
+	}{
+		{name: "idx_balance_snapshots_sampled_jd", table: "balance_snapshots"},
+		{name: "idx_cost_snapshots_sampled_jd", table: "cost_snapshots"},
+	}
+	for _, index := range indexes {
+		query := fmt.Sprintf(
+			"CREATE INDEX IF NOT EXISTS %s ON %s(julianday(sampled_at), channel_id, id)",
+			index.name,
+			index.table,
+		)
+		if err := db.Exec(query).Error; err != nil {
+			return fmt.Errorf("create sqlite trend index %s: %w", index.name, err)
+		}
+	}
+	return nil
 }
 
 func dropDeletedAtColumns(db *gorm.DB) error {
