@@ -22,7 +22,7 @@ func MarkdownDetails(summary string, fields ...MarkdownField) string {
 		b.WriteString("\n\n")
 	}
 	for _, field := range fields {
-		fmt.Fprintf(&b, "- *%s：* %s\n", field.Label, MarkdownCode(field.Value))
+		fmt.Fprintf(&b, "- **%s：** %s\n", field.Label, MarkdownCode(field.Value))
 	}
 	return strings.TrimSpace(b.String())
 }
@@ -52,7 +52,7 @@ func MarkdownNote(label, text string) string {
 	if text == "" {
 		return ""
 	}
-	return fmt.Sprintf("\n\n> *%s：* %s", label, text)
+	return fmt.Sprintf("\n\n> **%s：** %s", label, text)
 }
 
 func MarkdownCode(value any) string {

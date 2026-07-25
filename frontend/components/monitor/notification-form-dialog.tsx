@@ -69,6 +69,8 @@ interface ConfigState {
   // wecom / dingtalk / feishu
   webhook_url: string
   secret: string
+  dingtalk_message_style: "markdown" | "action_card"
+  dingtalk_action_url: string
   // Server酱³
   serverchan3_uid: string
   serverchan3_sendkey: string
@@ -107,6 +109,8 @@ function emptyConfig(): ConfigState {
     use_tls: false,
     webhook_url: "",
     secret: "",
+    dingtalk_message_style: "markdown",
+    dingtalk_action_url: "",
     serverchan3_uid: "",
     serverchan3_sendkey: "",
   }
@@ -147,7 +151,11 @@ function initialState(c?: NotificationChannel | null): FormState {
     type: c?.type ?? "telegram",
     enabled: c?.enabled ?? true,
     proxy_enabled: c?.proxy_enabled ?? false,
-    cfg: emptyConfig(),
+    cfg: {
+      ...emptyConfig(),
+      dingtalk_message_style: c?.display_config?.message_style ?? "markdown",
+      dingtalk_action_url: c?.display_config?.action_url ?? "",
+    },
     subs,
   }
 }
@@ -192,7 +200,20 @@ function buildConfigByType(type: NotificationChannelType, cfg: ConfigState): str
     }
     case "wecom":
       return JSON.stringify({ webhook_url: cfg.webhook_url })
-    case "dingtalk":
+    case "dingtalk": {
+      const body: Record<string, unknown> = {
+        webhook_url: cfg.webhook_url,
+        message_style: cfg.dingtalk_message_style,
+        action_url: "",
+      }
+      if (cfg.secret) body.secret = cfg.secret
+      if (cfg.dingtalk_message_style === "action_card") {
+        const actionURL = cfg.dingtalk_action_url.trim()
+        if (!actionURL) throw new Error("ActionCard 模式必须填写跳转地址")
+        body.action_url = actionURL
+      }
+      return JSON.stringify(body)
+    }
     case "feishu": {
       const body: Record<string, unknown> = { webhook_url: cfg.webhook_url }
       if (cfg.secret) body.secret = cfg.secret
@@ -277,6 +298,8 @@ export function NotificationFormDialog({
             return !!(form.cfg.host || form.cfg.from || form.cfg.to)
           case "serverchan3":
             return !!(form.cfg.serverchan3_uid || form.cfg.serverchan3_sendkey)
+          case "dingtalk":
+            return !!(form.cfg.webhook_url || form.cfg.secret || form.cfg.dingtalk_message_style || form.cfg.dingtalk_action_url)
           default:
             return !!form.cfg.webhook_url
         }
@@ -719,6 +742,39 @@ function ConfigFields({ type, cfg, updateCfg, disabled, isEdit }: ConfigFieldsPr
             disabled={disabled}
           />
         </div>
+      ) : null}
+      {type === "dingtalk" ? (
+        <>
+          <div className="space-y-1.5">
+            <Label htmlFor="dingtalk-style">消息样式</Label>
+            <Select
+              value={cfg.dingtalk_message_style}
+              onValueChange={(value) => updateCfg({ dingtalk_message_style: value as "markdown" | "action_card" })}
+              disabled={disabled}
+            >
+              <SelectTrigger id="dingtalk-style" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="markdown">美化 Markdown</SelectItem>
+                <SelectItem value="action_card">ActionCard 卡片</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {cfg.dingtalk_message_style === "action_card" ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="dingtalk-action-url">卡片跳转地址</Label>
+              <Input
+                id="dingtalk-action-url"
+                type="url"
+                placeholder="https://example.com"
+                value={cfg.dingtalk_action_url}
+                onChange={(e) => updateCfg({ dingtalk_action_url: e.target.value })}
+                required
+                disabled={disabled}
+              />
+              <p className="text-[11px] text-muted-foreground">卡片底部“打开 RelayDeck”按钮跳转到此地址。</p>
+            </div>
+          ) : null}
+        </>
       ) : null}
       {hint}
     </div>

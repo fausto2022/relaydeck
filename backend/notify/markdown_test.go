@@ -16,9 +16,9 @@ func TestMarkdownDetailsFormatsReadableFields(t *testing.T) {
 
 	for _, want := range []string{
 		"> 检测到异常。",
-		"- *渠道：* `open_ai`",
-		"- *错误：* `first line second 'line'`",
-		"> *处理建议：* 检查配置。",
+		"- **渠道：** `open_ai`",
+		"- **错误：** `first line second 'line'`",
+		"> **处理建议：** 检查配置。",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
@@ -49,9 +49,9 @@ func TestBuildRateBatchMessageUsesMarkdown(t *testing.T) {
 	}
 	for _, want := range []string{
 		"> 分组倍率发生上涨。",
-		"- *渠道：* `OpenAI`",
-		"- *倍率：* `1 -> 1.2`",
-		"- *补全倍率：* `1 -> 1.1`",
+		"- **渠道：** `OpenAI`",
+		"- **倍率：** `1 -> 1.2`",
+		"- **补全倍率：** `1 -> 1.1`",
 	} {
 		if !strings.Contains(message.Body, want) {
 			t.Fatalf("body missing %q: %s", want, message.Body)

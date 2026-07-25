@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/fausto2022/relaydeck/backend/storage"
@@ -20,8 +21,10 @@ func init() {
 }
 
 type dingTalkConfig struct {
-	WebhookURL string `json:"webhook_url"`
-	Secret     string `json:"secret,omitempty"`
+	WebhookURL   string `json:"webhook_url"`
+	Secret       string `json:"secret,omitempty"`
+	MessageStyle string `json:"message_style,omitempty"`
+	ActionURL    string `json:"action_url,omitempty"`
 }
 
 type dingTalk struct {
@@ -58,15 +61,10 @@ func (d *dingTalk) Send(ctx context.Context, msg Message) error {
 		sign := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 		endpoint = fmt.Sprintf("%s&timestamp=%d&sign=%s", endpoint, ts, url.QueryEscape(sign))
 	}
+	payload := d.payload(msg)
 	resp, err := d.http.R().
 		SetContext(ctx).
-		SetBody(map[string]any{
-			"msgtype": "markdown",
-			"markdown": map[string]string{
-				"title": msg.Subject,
-				"text":  "### " + msg.Subject + "\n" + msg.Body,
-			},
-		}).
+		SetBody(payload).
 		Post(endpoint)
 	if err != nil {
 		return err
@@ -74,5 +72,47 @@ func (d *dingTalk) Send(ctx context.Context, msg Message) error {
 	if resp.IsError() {
 		return errors.New("dingtalk returned " + resp.Status())
 	}
+	var result struct {
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(resp.Body(), &result); err == nil && result.ErrCode != 0 {
+		return fmt.Errorf("dingtalk returned errcode %d: %s", result.ErrCode, result.ErrMsg)
+	}
 	return nil
+}
+
+func (d *dingTalk) payload(msg Message) map[string]any {
+	text := dingTalkCardText(msg)
+	if strings.EqualFold(strings.TrimSpace(d.cfg.MessageStyle), "action_card") && strings.TrimSpace(d.cfg.ActionURL) != "" {
+		return map[string]any{
+			"msgtype": "actionCard",
+			"actionCard": map[string]any{
+				"title":          msg.Subject,
+				"text":           text,
+				"singleTitle":    "打开 RelayDeck",
+				"singleURL":      strings.TrimSpace(d.cfg.ActionURL),
+				"btnOrientation": "0",
+			},
+		}
+	}
+	return map[string]any{
+		"msgtype": "markdown",
+		"markdown": map[string]string{
+			"title": msg.Subject,
+			"text":  text,
+		},
+	}
+}
+
+func dingTalkCardText(msg Message) string {
+	var b strings.Builder
+	b.WriteString("## ")
+	b.WriteString(strings.TrimSpace(msg.Subject))
+	b.WriteString("\n\n---\n\n")
+	b.WriteString(strings.TrimSpace(msg.Body))
+	b.WriteString("\n\n---\n\n")
+	b.WriteString("> RelayDeck 自动通知 · ")
+	b.WriteString(time.Now().Format("2006-01-02 15:04:05"))
+	return b.String()
 }

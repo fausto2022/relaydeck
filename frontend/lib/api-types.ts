@@ -238,6 +238,10 @@ export interface NotificationChannel {
   enabled: boolean
   proxy_enabled: boolean
   subscriptions?: string
+  display_config?: {
+    message_style?: "markdown" | "action_card"
+    action_url?: string
+  }
   created_at: string
   updated_at: string
 }

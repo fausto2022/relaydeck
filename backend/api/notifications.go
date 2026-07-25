@@ -19,7 +19,24 @@ func registerNotifications(g *gin.RouterGroup, d *Deps) {
 			fail(c, http.StatusInternalServerError, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"data": list})
+		items := make([]gin.H, 0, len(list))
+		for i := range list {
+			item := gin.H{
+				"id": list[i].ID, "name": list[i].Name, "type": list[i].Type,
+				"subscriptions": list[i].Subscriptions, "enabled": list[i].Enabled,
+				"proxy_enabled": list[i].ProxyEnabled, "created_at": list[i].CreatedAt, "updated_at": list[i].UpdatedAt,
+			}
+			if list[i].Type == storage.NotifyDingTalk {
+				if config, configErr := decryptNotificationConfig(d, &list[i]); configErr == nil {
+					item["display_config"] = gin.H{
+						"message_style": config["message_style"],
+						"action_url":    config["action_url"],
+					}
+				}
+			}
+			items = append(items, item)
+		}
+		c.JSON(http.StatusOK, gin.H{"data": items})
 	})
 	gpc.POST("", func(c *gin.Context) { createNotifyChannel(c, d) })
 	gpc.PUT("/:id", func(c *gin.Context) { updateNotifyChannel(c, d) })
@@ -222,7 +239,15 @@ func updateNotifyChannel(c *gin.Context, d *Deps) {
 	ch.ProxyEnabled = in.ProxyEnabled
 	ch.Subscriptions = subs
 	if in.Config != "" {
-		cipherCfg, err := d.Cipher.Encrypt(in.Config)
+		config := in.Config
+		if ch.Type == storage.NotifyDingTalk {
+			config, err = mergeNotificationConfig(d, ch, in.Config)
+			if err != nil {
+				fail(c, http.StatusBadRequest, err)
+				return
+			}
+		}
+		cipherCfg, err := d.Cipher.Encrypt(config)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, err)
 			return
@@ -234,6 +259,43 @@ func updateNotifyChannel(c *gin.Context, d *Deps) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": ch})
+}
+
+func decryptNotificationConfig(d *Deps, ch *storage.NotificationChannel) (map[string]any, error) {
+	if d == nil || d.Cipher == nil {
+		return nil, errors.New("notification cipher is unavailable")
+	}
+	raw, err := d.Cipher.Decrypt(ch.ConfigCipher)
+	if err != nil {
+		return nil, err
+	}
+	config := make(map[string]any)
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+func mergeNotificationConfig(d *Deps, ch *storage.NotificationChannel, raw string) (string, error) {
+	config, err := decryptNotificationConfig(d, ch)
+	if err != nil {
+		return "", err
+	}
+	patch := make(map[string]any)
+	if err := json.Unmarshal([]byte(raw), &patch); err != nil {
+		return "", err
+	}
+	for key, value := range patch {
+		if text, ok := value.(string); ok && text == "" && (key == "webhook_url" || key == "secret") {
+			continue
+		}
+		config[key] = value
+	}
+	merged, err := json.Marshal(config)
+	if err != nil {
+		return "", err
+	}
+	return string(merged), nil
 }
 
 func testNotify(c *gin.Context, d *Deps) {
