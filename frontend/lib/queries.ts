@@ -163,6 +163,11 @@ export function useChannelRates(channelID: number | null) {
   return useApi<RateSnapshot[]>(channelID == null ? null : `/channels/${channelID}/rates`)
 }
 
+export function multiChannelRatesPath(channelIDs: number[]) {
+  const ids = Array.from(new Set(channelIDs)).sort((a, b) => a - b)
+  return ids.length > 0 ? `/rates?channel_ids=${ids.join(",")}` : null
+}
+
 export function mergeSettledChannelRates(
   previous: RateSnapshot[] | null,
   channelIDs: number[],
@@ -188,59 +193,9 @@ export function mergeSettledChannelRates(
   return [...latest, ...retained]
 }
 
-// useMultiChannelRates 把多个上游渠道的倍率分组拉回来合并去重，
-// 供订阅规则"多选渠道 + 指定分组"场景使用。复用 fetchShared 缓存，
-// 单渠道请求仍与 useChannelRates 共享，不会重复打接口。
+// useMultiChannelRates 通过批量接口一次拉取多个渠道的倍率，避免首页排行榜按渠道产生 N+1 请求。
 export function useMultiChannelRates(channelIDs: number[]) {
-  const [data, setData] = useState<RateSnapshot[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [bump, setBump] = useState(0)
-  const hasDataRef = useRef(false)
-  const refreshTick = useRefreshTick()
-  const key = channelIDs.slice().sort((a, b) => a - b).join(",")
-
-  useEffect(() => {
-    if (channelIDs.length === 0) {
-      setData(null)
-      setLoading(false)
-      setError(null)
-      hasDataRef.current = false
-      return
-    }
-    let cancelled = false
-    if (!hasDataRef.current) setLoading(true)
-    setError(null)
-    Promise.allSettled(
-      channelIDs.map((id) =>
-        fetchShared<RateSnapshot[]>(
-          `/channels/${id}/rates`,
-          cacheKey(`/channels/${id}/rates`, refreshTick, bump),
-        ),
-      ),
-    )
-      .then((results) => {
-        if (cancelled) return
-        const failedCount = results.filter((result) => result.status === "rejected").length
-        setData((previous) => {
-          const next = mergeSettledChannelRates(previous, channelIDs, results)
-          if (next !== null) hasDataRef.current = true
-          return next
-        })
-        if (failedCount > 0) {
-          setError(`${failedCount} 个渠道的倍率加载失败，已保留上次数据`)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-    // channelIDs 是数组引用，用排序后的 key 字符串做依赖避免每次渲染都触发
-  }, [key, refreshTick, bump])
-
-  return { data, loading, error, refetch: () => setBump((b) => b + 1) }
+  return useApi<RateSnapshot[]>(multiChannelRatesPath(channelIDs))
 }
 
 export function useRateChanges(page = 1, pageSize = 20, channelID?: number) {

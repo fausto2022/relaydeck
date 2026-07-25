@@ -1,11 +1,15 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/fausto2022/relaydeck/backend/connector"
+	"github.com/fausto2022/relaydeck/backend/mainstation"
+	"github.com/fausto2022/relaydeck/backend/rateranking"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"github.com/gin-gonic/gin"
 )
@@ -81,6 +85,7 @@ func copyFloat64(value *float64) *float64 {
 }
 
 func registerRates(g *gin.RouterGroup, d *Deps) {
+	g.GET("/rates", func(c *gin.Context) { listRates(c, d) })
 	g.GET("/rate-changes", func(c *gin.Context) {
 		var channelID uint
 		if s := c.Query("channel_id"); s != "" {
@@ -121,4 +126,77 @@ func registerRates(g *gin.RouterGroup, d *Deps) {
 			"pages":     pages,
 		}})
 	})
+}
+
+func listRates(c *gin.Context, d *Deps) {
+	channelIDs, err := parseChannelIDs(c.Query("channel_ids"))
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	list, err := d.Rates.ListByChannels(channelIDs)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err)
+		return
+	}
+	channels, err := d.Channels.List()
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err)
+		return
+	}
+	channelMap := make(map[uint]*storage.Channel, len(channels))
+	for i := range channels {
+		channelMap[channels[i].ID] = &channels[i]
+	}
+	for i := range list {
+		applyRechargeMultiplierToRates(list[i:i+1], channelMap[list[i].ChannelID])
+	}
+
+	connections := make(map[uint][]mainstation.RateConnection)
+	if d.MainStation != nil {
+		connections, err = d.MainStation.ListRateConnectionsForRates(list)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	classifier := rateranking.DefaultClassifier()
+	if d.RateRanking != nil {
+		classifier, err = d.RateRanking.Classifier(c.Request.Context())
+		if err != nil {
+			fail(c, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": channelRateOutputs(list, connections, classifier)})
+}
+
+func parseChannelIDs(raw string) ([]uint, error) {
+	const maxChannelIDs = 200
+	parts := strings.Split(raw, ",")
+	ids := make([]uint, 0, len(parts))
+	seen := make(map[uint]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		value, err := strconv.ParseUint(part, 10, 64)
+		if err != nil || value == 0 {
+			return nil, fmt.Errorf("渠道 ID %q 无效", part)
+		}
+		id := uint(value)
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+		if len(ids) > maxChannelIDs {
+			return nil, fmt.Errorf("渠道数量不能超过 %d", maxChannelIDs)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("至少需要一个渠道 ID")
+	}
+	return ids, nil
 }

@@ -5,7 +5,7 @@ const apiFetchMock = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/api", () => ({ apiFetch: apiFetchMock }))
 
-import { fetchShared, mergeSettledChannelRates } from "@/lib/queries"
+import { fetchShared, mergeSettledChannelRates, multiChannelRatesPath } from "@/lib/queries"
 
 function rate(id: number, channelID: number, ratio: number): RateSnapshot {
   return {
@@ -74,5 +74,12 @@ describe("mergeSettledChannelRates", () => {
     ]
 
     expect(mergeSettledChannelRates(null, [1], results)).toBeNull()
+  })
+})
+
+describe("multiChannelRatesPath", () => {
+  it("deduplicates and sorts channel IDs for the batch endpoint", () => {
+    expect(multiChannelRatesPath([3, 1, 3, 2])).toBe("/rates?channel_ids=1,2,3")
+    expect(multiChannelRatesPath([])).toBeNull()
   })
 })

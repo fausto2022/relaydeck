@@ -22,9 +22,27 @@ func managedAccountPoolModeRetryStatusCodes() []int {
 }
 
 func (s *Service) ListRateConnections(channelID uint, rates []storage.RateSnapshot) (map[uint][]RateConnection, error) {
-	connections := make(map[uint][]RateConnection, len(rates))
 	if channelID == 0 || len(rates) == 0 {
+		return make(map[uint][]RateConnection), nil
+	}
+	selected := make([]storage.RateSnapshot, 0, len(rates))
+	for i := range rates {
+		if rates[i].ChannelID == channelID {
+			selected = append(selected, rates[i])
+		}
+	}
+	return s.ListRateConnectionsForRates(selected)
+}
+
+// ListRateConnectionsForRates 批量计算多个渠道倍率与主站分组的连接关系。
+func (s *Service) ListRateConnectionsForRates(rates []storage.RateSnapshot) (map[uint][]RateConnection, error) {
+	connections := make(map[uint][]RateConnection, len(rates))
+	if len(rates) == 0 {
 		return connections, nil
+	}
+	ratesByChannel := make(map[uint][]storage.RateSnapshot)
+	for i := range rates {
+		ratesByChannel[rates[i].ChannelID] = append(ratesByChannel[rates[i].ChannelID], rates[i])
 	}
 	members, err := s.store.ListAllMembers()
 	if err != nil {
@@ -34,7 +52,8 @@ func (s *Service) ListRateConnections(channelID uint, rates []storage.RateSnapsh
 	seenByRate := make(map[uint]map[uint]struct{}, len(rates))
 	for i := range members {
 		member := &members[i]
-		if member.SourceChannelID != channelID || member.RemoteAccountID == nil || *member.RemoteAccountID <= 0 ||
+		channelRates := ratesByChannel[member.SourceChannelID]
+		if len(channelRates) == 0 || member.RemoteAccountID == nil || *member.RemoteAccountID <= 0 ||
 			member.BindingStatus == "invalid" || member.BindingStatus == "orphaned" || member.Status == "orphaned" {
 			continue
 		}
@@ -56,19 +75,19 @@ func (s *Service) ListRateConnections(channelID uint, rates []storage.RateSnapsh
 			}
 			poolConnections[member.PoolID] = groups
 		}
-		for j := range rates {
-			if !sourceMemberMatchesRate(member, &rates[j], len(rates)) {
+		for j := range channelRates {
+			if !sourceMemberMatchesRate(member, &channelRates[j], len(channelRates)) {
 				continue
 			}
-			if seenByRate[rates[j].ID] == nil {
-				seenByRate[rates[j].ID] = make(map[uint]struct{})
+			if seenByRate[channelRates[j].ID] == nil {
+				seenByRate[channelRates[j].ID] = make(map[uint]struct{})
 			}
 			for _, group := range groups {
-				if _, exists := seenByRate[rates[j].ID][group.GroupID]; exists {
+				if _, exists := seenByRate[channelRates[j].ID][group.GroupID]; exists {
 					continue
 				}
-				seenByRate[rates[j].ID][group.GroupID] = struct{}{}
-				connections[rates[j].ID] = append(connections[rates[j].ID], group)
+				seenByRate[channelRates[j].ID][group.GroupID] = struct{}{}
+				connections[channelRates[j].ID] = append(connections[channelRates[j].ID], group)
 			}
 		}
 	}
