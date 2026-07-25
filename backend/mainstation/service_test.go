@@ -206,20 +206,22 @@ func (f *fakeAdminClient) TestAccount(context.Context, sub2api.AdminTarget, int6
 }
 
 type fakeChannelService struct {
-	secret       string
-	revealKeyErr error
-	groups       []connector.APIKeyGroup
-	keys         []connector.APIKey
-	listKeysErr  error
-	createdKeys  []connector.APIKeyCreateRequest
-	updatedKeys  []connector.APIKeyUpdateRequest
-	createdKeyID int64
-	deletedKeys  []int64
-	deleteKeyErr error
-	concurrency  int
-	bindingDelay time.Duration
-	bindingCalls atomic.Int32
-	bindingMax   atomic.Int32
+	secret           string
+	revealKeyErr     error
+	groups           []connector.APIKeyGroup
+	keys             []connector.APIKey
+	listKeysErr      error
+	createdKeys      []connector.APIKeyCreateRequest
+	updatedKeys      []connector.APIKeyUpdateRequest
+	createdKeyID     int64
+	deletedKeys      []int64
+	deleteKeyErr     error
+	concurrency      int
+	bindingDelay     time.Duration
+	bindingCalls     atomic.Int32
+	bindingMax       atomic.Int32
+	createKeyStarted chan struct{}
+	createKeyRelease chan struct{}
 }
 
 func (f *fakeChannelService) beginBindingCall() func() {
@@ -241,6 +243,12 @@ func (f *fakeChannelService) RevealAPIKey(context.Context, uint, int64) (string,
 }
 func (f *fakeChannelService) CreateAPIKey(_ context.Context, _ uint, req connector.APIKeyCreateRequest) (*connector.APIKey, error) {
 	f.createdKeys = append(f.createdKeys, req)
+	if f.createKeyStarted != nil {
+		close(f.createKeyStarted)
+	}
+	if f.createKeyRelease != nil {
+		<-f.createKeyRelease
+	}
 	keyID := f.createdKeyID
 	if keyID == 0 {
 		keyID = 77
@@ -843,6 +851,82 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	}
 	if len(admin.schedulableCalls) != 3 || admin.schedulableCalls[1] || !admin.schedulableCalls[2] {
 		t.Fatalf("delete schedulable calls = %#v", admin.schedulableCalls)
+	}
+}
+
+func TestManagedMemberAsyncInitializationReturnsPendingAndCompletes(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/sub2api/billing":
+			_ = json.NewEncoder(w).Encode(map[string]any{"effective_rate_multiplier": 1})
+		case "/v1/chat/completions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{"message": map[string]any{"content": "OK"}}},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer upstream.Close()
+
+	service, db, admin, channels := newTestService(t)
+	configureTestStation(t, service)
+	admin.groups = []sub2api.AdminGroup{{ID: 31, Name: "main-group", RateMultiplier: 1, Status: "active"}}
+	admin.accountModels = map[int64][]string{1000: {"gpt-test"}}
+	if _, err := service.Sync(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	channel := createTestChannel(t, db)
+	channel.SiteURL = upstream.URL
+	if err := db.Save(channel).Error; err != nil {
+		t.Fatalf("update source channel: %v", err)
+	}
+	sourceGroupID := int64(5)
+	channels.groups = []connector.APIKeyGroup{{ID: &sourceGroupID, Name: "source-group", Ratio: 1}}
+	groups, err := service.ListGroups(false)
+	if err != nil || len(groups) != 1 {
+		t.Fatalf("groups = %#v, err=%v", groups, err)
+	}
+	pool, err := service.CreatePool(PoolInput{Name: "managed-pool", Platform: "openai", TargetGroupIDs: []uint{groups[0].ID}})
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	channels.createKeyStarted = make(chan struct{})
+	channels.createKeyRelease = make(chan struct{})
+
+	member, err := service.CreateMember(context.Background(), pool.ID, MemberInput{
+		OwnershipMode: "managed", SourceChannelID: channel.ID, SourceGroupID: &sourceGroupID,
+		SourceGroupName: "source-group", AllowNameConflict: true, Enabled: boolPtr(true),
+		Priority: 1, RateConvertMode: "raw", RateConvertValue: 1, CostAdjustment: 1,
+		HealthEnabled: boolPtr(true), HealthModel: "gpt-test", HealthAPIMode: "openai_chat",
+		InitializeAsync: true,
+	})
+	if err != nil {
+		t.Fatalf("create async managed member: %v", err)
+	}
+	if member.Status != "pending" || member.BindingStatus != "pending" || member.RemoteAccountID != nil {
+		t.Fatalf("initial async member = %#v", member)
+	}
+	select {
+	case <-channels.createKeyStarted:
+	case <-time.After(time.Second):
+		t.Fatal("async initialization did not start")
+	}
+	close(channels.createKeyRelease)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		member, err = service.store.FindMember(pool.ID, member.ID)
+		if err != nil {
+			t.Fatalf("reload async member: %v", err)
+		}
+		if member.Status == "active" && member.BindingStatus == "verified" && member.RemoteAccountID != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("async member did not complete: %#v", member)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

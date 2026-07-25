@@ -288,6 +288,7 @@ type MemberInput struct {
 	HealthFailureThreshold  *int     `json:"health_failure_threshold,omitempty"`
 	HealthRecoveryThreshold *int     `json:"health_recovery_threshold,omitempty"`
 	HealthAPIMode           string   `json:"health_api_mode,omitempty"`
+	InitializeAsync         bool     `json:"initialize_async"`
 }
 
 type BindingRecommendationCandidate struct {

@@ -874,10 +874,24 @@ func (s *Service) createManagedMember(ctx context.Context, poolID uint, in Membe
 	if err := s.store.CreateMember(member); err != nil {
 		return nil, err
 	}
+	if in.InitializeAsync {
+		s.initializeManagedMemberAsync(poolID, member.ID)
+		return s.store.FindMember(poolID, member.ID)
+	}
 	if _, err := s.SyncMember(ctx, poolID, member.ID); err != nil {
 		return member, err
 	}
 	return s.store.FindMember(poolID, member.ID)
+}
+
+func (s *Service) initializeManagedMemberAsync(poolID, memberID uint) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if _, err := s.SyncMember(ctx, poolID, memberID); err != nil && s.log != nil {
+			s.log.Error("initialize managed member", "pool_id", poolID, "member_id", memberID, "err", err)
+		}
+	}()
 }
 
 func (s *Service) validateManagedSourcePlatform(pool *storage.MainAccountPool, member *storage.MainAccountPoolMember) error {

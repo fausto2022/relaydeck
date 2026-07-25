@@ -233,6 +233,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
             health_enabled: true,
             health_model: model.trim(),
             health_api_mode: mainStationHealthAPIMode(workspace.group.platform, testMode === "image"),
+            initialize_async: true,
           }),
         })
         setAddedGroupName(workspace.group.name)
