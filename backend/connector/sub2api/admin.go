@@ -95,6 +95,8 @@ type AdminAccountTestResult struct {
 type AdminGroupUsageStat struct {
 	GroupID     int64    `json:"group_id"`
 	GroupName   string   `json:"group_name"`
+	Requests    int64    `json:"requests"`
+	TotalTokens int64    `json:"total_tokens"`
 	ActualCost  *float64 `json:"actual_cost"`
 	AccountCost *float64 `json:"account_cost"`
 }

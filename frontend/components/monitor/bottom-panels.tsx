@@ -14,6 +14,7 @@ import {
   Send,
   ShieldX,
   TestTube2,
+  TrendingUp,
   Trash2,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -79,6 +80,7 @@ const eventMeta: Record<NotificationEvent, { icon: LucideIcon; cls: string }> = 
   main_member_binding_lost: { icon: ShieldX, cls: "text-danger" },
   main_station_sync_failed: { icon: RefreshCw, cls: "text-danger" },
   health_probe_budget_exceeded: { icon: AlertTriangle, cls: "text-warning" },
+  daily_business_summary: { icon: TrendingUp, cls: "text-brand" },
 }
 
 const FEED_PREVIEW_SIZE = 10

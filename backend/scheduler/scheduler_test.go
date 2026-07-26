@@ -23,8 +23,9 @@ type blockingMainStation struct {
 }
 
 type pricingSyncMainStation struct {
-	pricingChanged bool
-	profitCalls    atomic.Int32
+	pricingChanged    bool
+	profitCalls       atomic.Int32
+	dailySummaryCalls atomic.Int32
 }
 
 type expiringMaintenanceMainStation struct {
@@ -44,6 +45,8 @@ func (f *expiringMaintenanceMainStation) RunDueRankings(ctx context.Context) {
 }
 func (f *expiringMaintenanceMainStation) RunProfitEvaluation(context.Context) {}
 func (f *expiringMaintenanceMainStation) RunAutoExpansion(context.Context)    {}
+func (f *expiringMaintenanceMainStation) SendDailyBusinessSummary(context.Context) {
+}
 
 func (f *pricingSyncMainStation) RunDueHealthChecks(context.Context)         {}
 func (f *pricingSyncMainStation) CleanupTemporaryAPIKeys(context.Context)    {}
@@ -52,6 +55,9 @@ func (f *pricingSyncMainStation) RunDueSchedulingReconciles(context.Context) {}
 func (f *pricingSyncMainStation) RunDueRankings(context.Context)             {}
 func (f *pricingSyncMainStation) RunProfitEvaluation(context.Context)        { f.profitCalls.Add(1) }
 func (f *pricingSyncMainStation) RunAutoExpansion(context.Context)           {}
+func (f *pricingSyncMainStation) SendDailyBusinessSummary(context.Context) {
+	f.dailySummaryCalls.Add(1)
+}
 
 func (f *blockingMainStation) RunDueHealthChecks(context.Context) {
 	if f.calls.Add(1) == 1 {
@@ -66,6 +72,7 @@ func (f *blockingMainStation) RunDueSchedulingReconciles(context.Context) {}
 func (f *blockingMainStation) RunDueRankings(context.Context)             {}
 func (f *blockingMainStation) RunProfitEvaluation(context.Context)        {}
 func (f *blockingMainStation) RunAutoExpansion(context.Context)           {}
+func (f *blockingMainStation) SendDailyBusinessSummary(context.Context)   {}
 
 func openTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -264,5 +271,17 @@ func TestRunMainStationMaintenanceUsesFreshContextForEachStage(t *testing.T) {
 	}
 	if mainStation.rankingContextErr != nil {
 		t.Fatalf("ranking reused expired context: %v", mainStation.rankingContextErr)
+	}
+}
+
+func TestRunDailyBusinessSummary(t *testing.T) {
+	mainStation := &pricingSyncMainStation{}
+	s := New(
+		config.SchedulerConfig{}, nil, nil, nil, nil, nil, nil, nil, nil,
+		mainStation, nil, config.ProxyConfig{}, slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	s.runDailyBusinessSummary()
+	if calls := mainStation.dailySummaryCalls.Load(); calls != 1 {
+		t.Fatalf("daily business summary calls = %d, want 1", calls)
 	}
 }

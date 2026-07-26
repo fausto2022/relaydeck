@@ -17,25 +17,26 @@ import (
 )
 
 type Scheduler struct {
-	cfg           config.SchedulerConfig
-	log           *slog.Logger
-	cron          *cron.Cron
-	monitor       *monitor.Service
-	monLogs       *storage.MonitorLogs
-	syncLogs      *storage.UpstreamSyncLogs
-	rates         *storage.Rates
-	notifies      *storage.Notifications
-	announcements *storage.UpstreamAnnouncements
-	captchas      *storage.Captchas
-	cipher        *crypto.Cipher
-	mainStation   mainStationHealthService
-	backup        databaseBackupService
-	proxy         config.ProxyConfig
-	balanceMu     sync.Mutex
-	ratesMu       sync.Mutex
-	retentionMu   sync.Mutex
-	mainHealthMu  sync.Mutex
-	mainOpsMu     sync.Mutex
+	cfg            config.SchedulerConfig
+	log            *slog.Logger
+	cron           *cron.Cron
+	monitor        *monitor.Service
+	monLogs        *storage.MonitorLogs
+	syncLogs       *storage.UpstreamSyncLogs
+	rates          *storage.Rates
+	notifies       *storage.Notifications
+	announcements  *storage.UpstreamAnnouncements
+	captchas       *storage.Captchas
+	cipher         *crypto.Cipher
+	mainStation    mainStationHealthService
+	backup         databaseBackupService
+	proxy          config.ProxyConfig
+	balanceMu      sync.Mutex
+	ratesMu        sync.Mutex
+	retentionMu    sync.Mutex
+	mainHealthMu   sync.Mutex
+	mainOpsMu      sync.Mutex
+	dailySummaryMu sync.Mutex
 }
 
 type mainStationHealthService interface {
@@ -46,6 +47,7 @@ type mainStationHealthService interface {
 	RunDueRankings(ctx context.Context)
 	RunProfitEvaluation(ctx context.Context)
 	RunAutoExpansion(ctx context.Context)
+	SendDailyBusinessSummary(ctx context.Context)
 }
 
 type mainStationRetentionService interface {
@@ -56,7 +58,10 @@ type databaseBackupService interface {
 	Backup() (string, error)
 }
 
-const mainStationTaskTimeout = 2 * time.Minute
+const (
+	mainStationTaskTimeout   = 2 * time.Minute
+	dailyBusinessSummaryCron = "CRON_TZ=Asia/Shanghai 0 55 23 * * *"
+)
 
 func New(
 	cfg config.SchedulerConfig,
@@ -114,6 +119,9 @@ func (s *Scheduler) Start() error {
 		if _, err := s.cron.AddFunc("@every 1s", s.runMainStationMaintenance); err != nil {
 			return err
 		}
+		if _, err := s.cron.AddFunc(dailyBusinessSummaryCron, s.runDailyBusinessSummary); err != nil {
+			return err
+		}
 	}
 	s.cron.Start()
 	s.log.Info("scheduler started",
@@ -150,6 +158,14 @@ func (s *Scheduler) runMainStationMaintenance() {
 	}
 	s.runMainStationTask(s.mainStation.RunDueSchedulingReconciles)
 	s.runMainStationTask(s.mainStation.RunDueRankings)
+}
+
+func (s *Scheduler) runDailyBusinessSummary() {
+	if !s.dailySummaryMu.TryLock() {
+		return
+	}
+	defer s.dailySummaryMu.Unlock()
+	s.runMainStationTask(s.mainStation.SendDailyBusinessSummary)
 }
 
 func (s *Scheduler) runMainStationTask(run func(context.Context)) {

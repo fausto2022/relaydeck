@@ -54,6 +54,7 @@ export type NotificationEvent =
   | "main_member_binding_lost"
   | "main_station_sync_failed"
   | "health_probe_budget_exceeded"
+  | "daily_business_summary"
 
 export interface Channel {
   id: number

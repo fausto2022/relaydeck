@@ -31,6 +31,7 @@ export const NOTIFICATION_EVENT_OPTIONS: NotificationEventOption[] = [
   { id: "main_member_reenabled", label: "主站账号恢复", description: "停用账号满足恢复条件后重新启用。", events: ["main_member_reenabled"] },
   { id: "main_member_binding_lost", label: "主站绑定丢失", description: "已接管账号在主站中被删除或失去绑定。", events: ["main_member_binding_lost"] },
   { id: "health_probe_budget_exceeded", label: "探活预算超限", description: "主站账号的每日探活次数或 Token 预算耗尽。", events: ["health_probe_budget_exceeded"] },
+  { id: "daily_business_summary", label: "每日经营汇总", description: "每天 23:55 汇总 Token 消耗、收入、成本、利润和保底利润。", events: ["daily_business_summary"] },
 ]
 
 export const ALL_NOTIFICATION_EVENTS = Array.from(

@@ -269,6 +269,7 @@ const (
 	EventMainMemberBindingLost     NotificationEvent = "main_member_binding_lost"
 	EventMainStationSyncFailed     NotificationEvent = "main_station_sync_failed"
 	EventHealthProbeBudgetExceeded NotificationEvent = "health_probe_budget_exceeded"
+	EventDailyBusinessSummary      NotificationEvent = "daily_business_summary"
 )
 
 // NotificationLog 通知发送记录。
