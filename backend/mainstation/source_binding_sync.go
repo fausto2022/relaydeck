@@ -113,8 +113,10 @@ func (s *Service) refreshSourceAPIKeyGroups(
 					}
 				}
 				preservedMissing++
-				_ = s.appendAudit(&member.PoolID, &member.ID, member.RemoteAccountID, "member_source_group_sync", source, false,
-					member, nil, map[string]any{"source_api_key_id": keyID}, "已保留原上游分组", "绑定的上游 Key 不存在")
+				if source != "scheduler" {
+					_ = s.appendAudit(&member.PoolID, &member.ID, member.RemoteAccountID, "member_source_group_sync", source, false,
+						member, nil, map[string]any{"source_api_key_id": keyID}, "已保留原上游分组", "绑定的上游 Key 不存在")
+				}
 				continue
 			}
 			pool, poolErr := s.store.FindPool(member.PoolID)

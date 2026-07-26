@@ -79,7 +79,7 @@ func TestSyncDoesNotPollModelsForUnchangedManagedAccount(t *testing.T) {
 }
 
 func TestSyncPreservesSourceGroupWhenAPIKeyIsMissing(t *testing.T) {
-	service, _, _, channels, member := createSourceBindingSyncFixture(t)
+	service, db, _, channels, member := createSourceBindingSyncFixture(t)
 	channels.keys = nil
 
 	result, err := service.Sync(context.Background())
@@ -89,12 +89,33 @@ func TestSyncPreservesSourceGroupWhenAPIKeyIsMissing(t *testing.T) {
 	if result.SourceBindingsChecked != 1 || result.SourceBindingsUpdated != 0 || result.SourceBindingsMissing != 1 || len(result.SourceBindingWarnings) != 1 {
 		t.Fatalf("source binding result = %#v", result)
 	}
+	if result.PricingChanged {
+		t.Fatalf("persistent missing source key triggered pricing change: %#v", result)
+	}
 	stored, err := service.store.FindMember(member.PoolID, member.ID)
 	if err != nil {
 		t.Fatalf("load preserved member: %v", err)
 	}
 	if stored.SourceGroupID == nil || *stored.SourceGroupID != *member.SourceGroupID || stored.SourceGroupName != member.SourceGroupName {
 		t.Fatalf("source group changed after missing key: %#v", stored)
+	}
+	var before int64
+	if err := db.Model(&storage.MainAccountAuditLog{}).
+		Where("action = ?", "member_source_group_sync").
+		Count(&before).Error; err != nil {
+		t.Fatalf("count source binding audits: %v", err)
+	}
+	if _, err := service.sync(context.Background(), "scheduler"); err != nil {
+		t.Fatalf("scheduled sync with missing key: %v", err)
+	}
+	var after int64
+	if err := db.Model(&storage.MainAccountAuditLog{}).
+		Where("action = ?", "member_source_group_sync").
+		Count(&after).Error; err != nil {
+		t.Fatalf("count scheduled source binding audits: %v", err)
+	}
+	if after != before {
+		t.Fatalf("persistent missing key audits = %d -> %d", before, after)
 	}
 }
 

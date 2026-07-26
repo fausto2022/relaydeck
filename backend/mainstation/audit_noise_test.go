@@ -79,7 +79,10 @@ func TestShouldAuditSuccessfulSync(t *testing.T) {
 	if !shouldAuditSuccessfulSync("scheduler", &SyncResult{PricingChanged: true}) {
 		t.Fatal("pricing change should be audited")
 	}
-	if !shouldAuditSuccessfulSync("scheduler", &SyncResult{SourceBindingsMissing: 1}) {
-		t.Fatal("binding issue should be audited")
+	if shouldAuditSuccessfulSync("scheduler", &SyncResult{SourceBindingsMissing: 1}) {
+		t.Fatal("persistent missing binding should not be audited")
+	}
+	if !shouldAuditSuccessfulSync("scheduler", &SyncResult{SourceBindingsUpdated: 1}) {
+		t.Fatal("binding change should be audited")
 	}
 }

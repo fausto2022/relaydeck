@@ -140,8 +140,7 @@ func (s *Service) sync(ctx context.Context, source string) (*SyncResult, error) 
 	if err != nil {
 		return nil, s.recordSyncFailure(target, apiKey, source, fmt.Errorf("refresh source api key groups: %w", err))
 	}
-	if sourceBindings.Updated > 0 || sourceBindings.Missing > 0 ||
-		sourceBindings.Renamed > 0 || sourceBindings.Cleaned > 0 {
+	if sourceBindings.Updated > 0 || sourceBindings.Renamed > 0 || sourceBindings.Cleaned > 0 {
 		pricingChanged = true
 	}
 	s.syncProfitSnapshots(ctx, client, adminTarget, syncedAt)
@@ -188,9 +187,8 @@ func shouldAuditSuccessfulSync(source string, result *SyncResult) bool {
 	}
 	return result.PricingChanged || result.OrphanedMembers > 0 ||
 		len(result.MissingGroups) > 0 || len(result.MissingAccounts) > 0 ||
-		result.SourceBindingsUpdated > 0 || result.SourceBindingsMissing > 0 ||
-		result.SourceBindingsRenamed > 0 || result.SourceBindingsCleaned > 0 ||
-		len(result.SourceBindingWarnings) > 0
+		result.SourceBindingsUpdated > 0 || result.SourceBindingsRenamed > 0 ||
+		result.SourceBindingsCleaned > 0
 }
 
 func mainStationAccountSchedulingChanged(existing, current []storage.MainStationAccountSnapshot) bool {
