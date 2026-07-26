@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
 	"github.com/fausto2022/relaydeck/backend/notify"
@@ -60,9 +61,16 @@ func (s *Service) sendDailyBusinessSummary(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load daily business summary profit: %w", err)
 	}
+	localTime := sampledAt.In(shanghaiLocation())
+	dayStart := time.Date(localTime.Year(), localTime.Month(), localTime.Day(), 0, 0, 0, 0, localTime.Location())
+	healthTokens, err := s.store.SumHealthTokensSince(dayStart)
+	if err != nil {
+		return fmt.Errorf("load daily health tokens: %w", err)
+	}
 	body := notify.MarkdownDetails(
 		"今日经营数据已完成汇总。",
-		notify.Detail("Token 消耗", formatDailyTokenCount(totalTokens)),
+		notify.Detail("今日业务 Token", formatDailyTokenCount(totalTokens)),
+		notify.Detail("今日探活 Token", formatDailyTokenCount(healthTokens)),
 		notify.Detail("今日收入", formatDailyMoney(summary.TodayRevenue)),
 		notify.Detail("今日成本", formatDailyMoney(summary.TodayCost)),
 		notify.Detail("今日利润", formatDailyMoney(summary.TodayProfit)),

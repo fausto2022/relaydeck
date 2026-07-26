@@ -36,6 +36,20 @@ func TestSendDailyBusinessSummary(t *testing.T) {
 	if _, err := service.UpdateConfig(context.Background(), ConfigInput{GuaranteedRevenueRatioBP: &ratio}); err != nil {
 		t.Fatalf("update guaranteed revenue ratio: %v", err)
 	}
+	healthTokens := int64(12_630_000)
+	if err := service.store.AppendHealthCheck(&storage.MainAccountHealthCheck{
+		PoolID: 1, MemberID: 1, RemoteAccountID: 1, Level: "L1", Status: "success",
+		TotalTokens: &healthTokens, StartedAt: now.Add(-time.Hour), FinishedAt: now.Add(-time.Hour), CreatedAt: now.Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("append daily health check: %v", err)
+	}
+	previousDayTokens := int64(5_000_000)
+	if err := service.store.AppendHealthCheck(&storage.MainAccountHealthCheck{
+		PoolID: 1, MemberID: 1, RemoteAccountID: 1, Level: "L1", Status: "success",
+		TotalTokens: &previousDayTokens, StartedAt: now.Add(-24 * time.Hour), FinishedAt: now.Add(-24 * time.Hour), CreatedAt: now.Add(-24 * time.Hour),
+	}); err != nil {
+		t.Fatalf("append previous daily health check: %v", err)
+	}
 
 	messages := make(chan struct {
 		Event   storage.NotificationEvent `json:"event"`
@@ -87,7 +101,7 @@ func TestSendDailyBusinessSummary(t *testing.T) {
 		if message.Subject != "[RelayDeck] 每日经营汇总 · 2026-07-26" {
 			t.Fatalf("notification subject = %q", message.Subject)
 		}
-		for _, want := range []string{"2.25M Token", "$12.50", "$3.00", "$9.50", "$7.00", "80.00%"} {
+		for _, want := range []string{"今日业务 Token", "2.25M Token", "今日探活 Token", "12.63M Token", "$12.50", "$3.00", "$9.50", "$7.00", "80.00%"} {
 			if !strings.Contains(message.Body, want) {
 				t.Fatalf("notification body does not contain %q: %s", want, message.Body)
 			}

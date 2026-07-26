@@ -176,8 +176,21 @@ func (s *Service) sync(ctx context.Context, source string) (*SyncResult, error) 
 			s.log.Warn("mark main station rankings dirty after sync", "err", err)
 		}
 	}
-	_ = s.appendAudit(nil, nil, nil, "main_station_sync", source, true, nil, result, nil, "", "")
+	if shouldAuditSuccessfulSync(source, result) {
+		_ = s.appendAudit(nil, nil, nil, "main_station_sync", source, true, nil, result, nil, "", "")
+	}
 	return result, nil
+}
+
+func shouldAuditSuccessfulSync(source string, result *SyncResult) bool {
+	if source != "scheduler" || result == nil {
+		return true
+	}
+	return result.PricingChanged || result.OrphanedMembers > 0 ||
+		len(result.MissingGroups) > 0 || len(result.MissingAccounts) > 0 ||
+		result.SourceBindingsUpdated > 0 || result.SourceBindingsMissing > 0 ||
+		result.SourceBindingsRenamed > 0 || result.SourceBindingsCleaned > 0 ||
+		len(result.SourceBindingWarnings) > 0
 }
 
 func mainStationAccountSchedulingChanged(existing, current []storage.MainStationAccountSnapshot) bool {

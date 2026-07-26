@@ -176,7 +176,9 @@ func (s *Service) EvaluatePool(ctx context.Context, poolID uint, source string) 
 			s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", pool.ID)
 		}
 	}
-	_ = s.appendAudit(&pool.ID, nil, nil, "pool_profit_evaluate", source, true, nil, result, nil, "", "")
+	if source != "scheduler" {
+		_ = s.appendAudit(&pool.ID, nil, nil, "pool_profit_evaluate", source, true, nil, result, nil, "", "")
+	}
 	return result, nil
 }
 

@@ -196,7 +196,6 @@ func (s *Service) ReconcileAccount(ctx context.Context, remoteAccountID int64, s
 	before := *remote
 	if remote.Schedulable == desired {
 		s.saveRemoteSchedulingSnapshot(remote, remoteAccountID)
-		_ = s.appendAudit(&pool.ID, &member.ID, &remoteAccountID, "schedulable_reconcile", source, true, before, remote, decision, "remote state already matches decision", "")
 		return decision, nil
 	}
 	updated, writeErr := client.SetAccountSchedulable(ctx, adminTarget, remoteAccountID, desired)

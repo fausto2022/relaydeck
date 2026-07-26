@@ -610,6 +610,15 @@ func (r *MainStationStore) SumDailyHealthTokens(memberID uint, since time.Time) 
 	return total, err
 }
 
+func (r *MainStationStore) SumHealthTokensSince(since time.Time) (int64, error) {
+	var total int64
+	err := r.db.Model(&MainAccountHealthCheck{}).
+		Select("COALESCE(SUM(total_tokens), 0)").
+		Where("created_at >= ?", since).
+		Scan(&total).Error
+	return total, err
+}
+
 func (r *MainStationStore) UpdateMemberHealth(memberID uint, fields map[string]any) error {
 	if len(fields) == 0 {
 		return nil
