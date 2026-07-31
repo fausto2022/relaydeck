@@ -184,7 +184,7 @@ func AutoMigrate(db *gorm.DB) error {
 	); err != nil {
 		return err
 	}
-	if err := ensureSQLiteTrendIndexes(db); err != nil {
+	if err := ensureSQLiteIndexes(db); err != nil {
 		return err
 	}
 	if upgradeHealthDefaults {
@@ -197,25 +197,28 @@ func AutoMigrate(db *gorm.DB) error {
 	return migrateLegacyMainStationData(db)
 }
 
-func ensureSQLiteTrendIndexes(db *gorm.DB) error {
+func ensureSQLiteIndexes(db *gorm.DB) error {
 	if db.Dialector.Name() != "sqlite" {
 		return nil
 	}
 	indexes := []struct {
-		name  string
-		table string
+		name       string
+		table      string
+		expression string
 	}{
-		{name: "idx_balance_snapshots_sampled_jd", table: "balance_snapshots"},
-		{name: "idx_cost_snapshots_sampled_jd", table: "cost_snapshots"},
+		{name: "idx_balance_snapshots_sampled_jd", table: "balance_snapshots", expression: "julianday(sampled_at), channel_id, id"},
+		{name: "idx_cost_snapshots_sampled_jd", table: "cost_snapshots", expression: "julianday(sampled_at), channel_id, id"},
+		{name: "idx_main_audit_pool_created_id", table: "main_account_audit_logs", expression: "pool_id, created_at, id"},
 	}
 	for _, index := range indexes {
 		query := fmt.Sprintf(
-			"CREATE INDEX IF NOT EXISTS %s ON %s(julianday(sampled_at), channel_id, id)",
+			"CREATE INDEX IF NOT EXISTS %s ON %s(%s)",
 			index.name,
 			index.table,
+			index.expression,
 		)
 		if err := db.Exec(query).Error; err != nil {
-			return fmt.Errorf("create sqlite trend index %s: %w", index.name, err)
+			return fmt.Errorf("create sqlite index %s: %w", index.name, err)
 		}
 	}
 	return nil

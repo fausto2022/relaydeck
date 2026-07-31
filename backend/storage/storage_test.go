@@ -140,11 +140,12 @@ func openTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestAutoMigrateCreatesSQLiteTrendIndexes(t *testing.T) {
+func TestAutoMigrateCreatesSQLiteIndexes(t *testing.T) {
 	db := openTestDB(t)
 	for _, name := range []string{
 		"idx_balance_snapshots_sampled_jd",
 		"idx_cost_snapshots_sampled_jd",
+		"idx_main_audit_pool_created_id",
 	} {
 		var count int64
 		if err := db.Raw(
