@@ -121,6 +121,7 @@ func sqliteDSN(path string) string {
 	}
 	query.Add("_pragma", "busy_timeout(5000)")
 	query.Add("_pragma", "journal_mode(WAL)")
+	query.Set("_txlock", "immediate")
 	return base + "?" + query.Encode()
 }
 

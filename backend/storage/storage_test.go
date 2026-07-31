@@ -58,6 +58,9 @@ func TestSQLiteDSNPreservesOptionsAndAddsConnectionPragmas(t *testing.T) {
 	if query.Get("mode") != "rwc" {
 		t.Fatalf("mode = %q, want rwc", query.Get("mode"))
 	}
+	if query.Get("_txlock") != "immediate" {
+		t.Fatalf("transaction lock = %q, want immediate", query.Get("_txlock"))
+	}
 	pragmas := query["_pragma"]
 	if !slices.Contains(pragmas, "busy_timeout(5000)") || !slices.Contains(pragmas, "journal_mode(WAL)") {
 		t.Fatalf("pragmas = %#v", pragmas)
@@ -112,6 +115,53 @@ func TestSQLitePoolAllowsReadWhileWriterIsOpen(t *testing.T) {
 	}
 	if busyTimeout != 5000 {
 		t.Fatalf("busy timeout = %d, want 5000", busyTimeout)
+	}
+}
+
+func TestSQLiteTransactionsWaitForActiveWriter(t *testing.T) {
+	db, err := Open(DBConfig{Driver: DBDriverSQLite, Path: filepath.Join(t.TempDir(), "writers.db")})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql.DB: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.Exec("CREATE TABLE writer_test (id INTEGER PRIMARY KEY)").Error; err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin writer transaction: %v", tx.Error)
+	}
+	defer tx.Rollback()
+	if err := tx.Exec("INSERT INTO writer_test (id) VALUES (1)").Error; err != nil {
+		t.Fatalf("insert first row: %v", err)
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		result <- db.Transaction(func(waiting *gorm.DB) error {
+			return waiting.Exec("INSERT INTO writer_test (id) VALUES (2)").Error
+		})
+	}()
+	select {
+	case err := <-result:
+		t.Fatalf("second writer returned before lock release: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := tx.Commit().Error; err != nil {
+		t.Fatalf("commit first writer: %v", err)
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("second writer: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second writer did not continue after lock release")
 	}
 }
 
