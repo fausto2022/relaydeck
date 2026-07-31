@@ -123,6 +123,60 @@ func TestAutoExpansionRequiresMarginStrictlyAboveThreshold(t *testing.T) {
 	}
 }
 
+func TestAutoExpansionSupportsMinimumRateWithoutMarginThreshold(t *testing.T) {
+	fixture := newAutoExpansionTestFixture(t, 1000)
+	fixture.pool.AutoExpandMinMarginBasisPoints = 0
+	fixture.pool.AutoExpandMinRateMicros = 200000
+	if err := fixture.db.Save(fixture.pool).Error; err != nil {
+		t.Fatalf("save minimum rate condition: %v", err)
+	}
+
+	fixture.service.RunAutoExpansion(context.Background())
+
+	if fixture.chatCalls.Load() == 0 || len(fixture.admin.createRequests) != 1 {
+		t.Fatalf("minimum-rate candidate was not added: chat=%d accounts=%d", fixture.chatCalls.Load(), len(fixture.admin.createRequests))
+	}
+}
+
+func TestAutoExpansionRequiresRateAndMarginWhenBothConfigured(t *testing.T) {
+	fixture := newAutoExpansionTestFixture(t, 1000)
+	fixture.pool.AutoExpandMinRateMicros = 200001
+	if err := fixture.db.Save(fixture.pool).Error; err != nil {
+		t.Fatalf("save combined conditions: %v", err)
+	}
+
+	fixture.service.RunAutoExpansion(context.Background())
+
+	if fixture.chatCalls.Load() != 0 || len(fixture.channels.createdKeys) != 0 || len(fixture.admin.createRequests) != 0 {
+		t.Fatalf("candidate below minimum rate was tested: chat=%d keys=%d accounts=%d", fixture.chatCalls.Load(), len(fixture.channels.createdKeys), len(fixture.admin.createRequests))
+	}
+}
+
+func TestValidateAutoExpandConditions(t *testing.T) {
+	tests := []struct {
+		name      string
+		enabled   bool
+		minMargin int64
+		minRate   int64
+		wantErr   bool
+	}{
+		{name: "disabled without conditions"},
+		{name: "enabled without conditions", enabled: true, wantErr: true},
+		{name: "margin only", enabled: true, minMargin: 1},
+		{name: "rate only", enabled: true, minRate: 1},
+		{name: "both", enabled: true, minMargin: 1, minRate: 1},
+		{name: "negative rate", minRate: -1, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateAutoExpandConditions(tt.enabled, tt.minMargin, tt.minRate)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateAutoExpandConditions() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestAutoExpansionOnlyUsesSelectedCustomCategory(t *testing.T) {
 	fixture := newAutoExpansionTestFixture(t, 1000)
 	config := rateranking.DefaultConfig()

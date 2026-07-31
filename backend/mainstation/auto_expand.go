@@ -53,6 +53,16 @@ func validateAutoExpandMarginBasisPoints(value int64) error {
 	return nil
 }
 
+func validateAutoExpandConditions(enabled bool, minMarginBasisPoints, minRateMultiplierMicros int64) error {
+	if minRateMultiplierMicros < 0 {
+		return errors.New("自动扩池最低倍率不能小于 0")
+	}
+	if enabled && minMarginBasisPoints == 0 && minRateMultiplierMicros == 0 {
+		return errors.New("开启自动扩池时，最低倍率和最低利润率至少填写一项")
+	}
+	return nil
+}
+
 func (s *Service) validateAutoExpansionCategory(ctx context.Context, ruleID *uint, platform string) error {
 	_, err := s.autoExpansionCategory(ctx, ruleID, platform)
 	return err
@@ -110,7 +120,10 @@ func (s *Service) RunAutoExpansion(ctx context.Context) {
 			continue
 		}
 		runAt := s.now()
-		runErr := s.expandPoolFromRates(ctx, pool, runAt)
+		runErr := validateAutoExpandConditions(true, pool.AutoExpandMinMarginBasisPoints, pool.AutoExpandMinRateMicros)
+		if runErr == nil {
+			runErr = s.expandPoolFromRates(ctx, pool, runAt)
+		}
 		errText := ""
 		if runErr != nil {
 			errText = sanitizeText(runErr.Error())
@@ -174,7 +187,7 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 		}
 		candidate := &candidates[i]
 		tested++
-		evidence := autoExpansionEvidence(group, candidate, saleMicros, pool.AutoExpandMinMarginBasisPoints, platform, model, category.rule)
+		evidence := autoExpansionEvidence(group, candidate, saleMicros, pool.AutoExpandMinMarginBasisPoints, pool.AutoExpandMinRateMicros, platform, model, category.rule)
 		result, testErr := s.quickTestRate(ctx, candidate.channel.ID, candidate.rate.ID, RateQuickTestInput{
 			Platform: platform,
 			Model:    model,
@@ -295,8 +308,11 @@ func (s *Service) autoExpansionCandidates(
 		if costMicros <= 0 || costMicros >= saleMicros {
 			continue
 		}
+		if pool.AutoExpandMinRateMicros > 0 && costMicros < pool.AutoExpandMinRateMicros {
+			continue
+		}
 		marginBasisPoints := profitBasisPoints(saleMicros, costMicros)
-		if marginBasisPoints <= pool.AutoExpandMinMarginBasisPoints {
+		if pool.AutoExpandMinMarginBasisPoints > 0 && marginBasisPoints <= pool.AutoExpandMinMarginBasisPoints {
 			continue
 		}
 		attempt, attemptExists := attemptsByRateID[rate.ID]
@@ -344,23 +360,24 @@ func (s *Service) saveAutoExpansionAttempt(
 func autoExpansionEvidence(
 	group *storage.UpstreamSyncTargetGroup,
 	candidate *autoExpansionCandidate,
-	saleMicros, threshold int64,
+	saleMicros, marginThreshold, rateThreshold int64,
 	platform, model string,
 	categoryRule *rateranking.Rule,
 ) map[string]any {
 	evidence := map[string]any{
-		"target_group_id":             group.ID,
-		"target_group":                group.Name,
-		"channel_id":                  candidate.channel.ID,
-		"channel":                     candidate.channel.Name,
-		"rate_id":                     candidate.rate.ID,
-		"source_group":                candidate.rate.ModelName,
-		"platform":                    platform,
-		"model":                       model,
-		"sale_multiplier_micros":      saleMicros,
-		"cost_multiplier_micros":      candidate.costMicros,
-		"margin_basis_points":         candidate.marginBasisPoints,
-		"minimum_margin_basis_points": threshold,
+		"target_group_id":                group.ID,
+		"target_group":                   group.Name,
+		"channel_id":                     candidate.channel.ID,
+		"channel":                        candidate.channel.Name,
+		"rate_id":                        candidate.rate.ID,
+		"source_group":                   candidate.rate.ModelName,
+		"platform":                       platform,
+		"model":                          model,
+		"sale_multiplier_micros":         saleMicros,
+		"cost_multiplier_micros":         candidate.costMicros,
+		"margin_basis_points":            candidate.marginBasisPoints,
+		"minimum_margin_basis_points":    marginThreshold,
+		"minimum_rate_multiplier_micros": rateThreshold,
 	}
 	if categoryRule != nil {
 		evidence["category_rule_id"] = categoryRule.ID

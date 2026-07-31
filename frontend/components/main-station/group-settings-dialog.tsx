@@ -67,7 +67,8 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
   const [rankingIntervalSeconds, setRankingIntervalSeconds] = useState(0)
   const [minimumMarginPercent, setMinimumMarginPercent] = useState("")
   const [autoExpandEnabled, setAutoExpandEnabled] = useState(false)
-  const [autoExpandMinMarginPercent, setAutoExpandMinMarginPercent] = useState(0)
+  const [autoExpandMinMarginPercent, setAutoExpandMinMarginPercent] = useState("")
+  const [autoExpandMinRateMultiplier, setAutoExpandMinRateMultiplier] = useState("")
   const [autoExpandCategoryRuleID, setAutoExpandCategoryRuleID] = useState(ALL_PROVIDER_RATES)
   const [rateRankingConfig, setRateRankingConfig] = useState<RateRankingConfig | null>(null)
   const [rateRankingLoading, setRateRankingLoading] = useState(false)
@@ -85,7 +86,8 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
     setRankingIntervalSeconds(workspace.ranking_interval_seconds ?? 0)
     setMinimumMarginPercent(workspace.minimum_margin_basis_points == null ? "" : String(workspace.minimum_margin_basis_points / 100))
     setAutoExpandEnabled(workspace.auto_expand_enabled ?? false)
-    setAutoExpandMinMarginPercent((workspace.auto_expand_min_margin_basis_points ?? 0) / 100)
+    setAutoExpandMinMarginPercent(workspace.auto_expand_min_margin_basis_points > 0 ? String(workspace.auto_expand_min_margin_basis_points / 100) : "")
+    setAutoExpandMinRateMultiplier(workspace.auto_expand_min_rate_multiplier_micros > 0 ? String(workspace.auto_expand_min_rate_multiplier_micros / 1_000_000) : "")
     setAutoExpandCategoryRuleID(workspace.auto_expand_category_rule_id == null ? ALL_PROVIDER_RATES : String(workspace.auto_expand_category_rule_id))
     setAdvancedOpen(false)
   }, [open, workspace])
@@ -120,8 +122,18 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
       toast.error("分组重排间隔必须为 0，或在 5 到 86400 秒之间")
       return
     }
-    if (!Number.isFinite(autoExpandMinMarginPercent) || autoExpandMinMarginPercent < 0 || autoExpandMinMarginPercent > 99) {
-      toast.error("自动扩池最低利润率必须在 0% 到 99% 之间")
+    const autoExpandMarginValue = autoExpandMinMarginPercent.trim() === "" ? null : Number(autoExpandMinMarginPercent)
+    const autoExpandRateValue = autoExpandMinRateMultiplier.trim() === "" ? null : Number(autoExpandMinRateMultiplier)
+    if (autoExpandMarginValue != null && (!Number.isFinite(autoExpandMarginValue) || autoExpandMarginValue <= 0 || autoExpandMarginValue > 99)) {
+      toast.error("自动扩池最低利润率必须大于 0% 且不超过 99%")
+      return
+    }
+    if (autoExpandRateValue != null && (!Number.isFinite(autoExpandRateValue) || autoExpandRateValue <= 0)) {
+      toast.error("自动扩池最低倍率必须大于 0")
+      return
+    }
+    if (autoExpandEnabled && autoExpandMarginValue == null && autoExpandRateValue == null) {
+      toast.error("开启自动扩池时，最低倍率和最低利润率至少填写一项")
       return
     }
     const minimumMarginValue = minimumMarginPercent.trim() === "" ? null : Number(minimumMarginPercent)
@@ -143,7 +155,8 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
           ranking_interval_seconds: rankingIntervalSeconds,
           minimum_margin_basis_points: minimumMarginValue == null ? null : Math.round(minimumMarginValue * 100),
           auto_expand_enabled: autoExpandEnabled,
-          auto_expand_min_margin_basis_points: Math.round(autoExpandMinMarginPercent * 100),
+          auto_expand_min_margin_basis_points: autoExpandMarginValue == null ? 0 : Math.round(autoExpandMarginValue * 100),
+          auto_expand_min_rate_multiplier_micros: autoExpandRateValue == null ? 0 : Math.round(autoExpandRateValue * 1_000_000),
           auto_expand_category_rule_id: autoExpandCategoryRuleID === ALL_PROVIDER_RATES ? null : Number(autoExpandCategoryRuleID),
         }),
       })
@@ -246,19 +259,36 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
               <p className="text-xs text-muted-foreground">选择自定义分类后，只会测试命中该分类关键词的上游分组。</p>
               {!selectedCategoryExists ? <p className="text-xs text-destructive">原分类已删除、停用或更改类型，自动扩池将暂停，保存前请重新选择。</p> : null}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="group-auto-expand-margin">自动扩池最低利润率（%）</Label>
-              <Input
-                id="group-auto-expand-margin"
-                type="number"
-                min={0}
-                max={99}
-                step={0.1}
-                value={autoExpandMinMarginPercent}
-                disabled={!autoExpandEnabled}
-                onChange={(event) => setAutoExpandMinMarginPercent(Number(event.target.value))}
-              />
-              <p className="text-xs text-muted-foreground">利润率必须严格高于该值；每轮最多测试 3 个候选，连续 3 次通过后最多新增 1 个账号。</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="group-auto-expand-rate">最低有效倍率</Label>
+                <Input
+                  id="group-auto-expand-rate"
+                  type="number"
+                  min={0.000001}
+                  step={0.01}
+                  value={autoExpandMinRateMultiplier}
+                  placeholder="可留空"
+                  disabled={!autoExpandEnabled}
+                  onChange={(event) => setAutoExpandMinRateMultiplier(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="group-auto-expand-margin">自动扩池最低利润率（%）</Label>
+                <Input
+                  id="group-auto-expand-margin"
+                  type="number"
+                  min={0.01}
+                  max={99}
+                  step={0.1}
+                  value={autoExpandMinMarginPercent}
+                  placeholder="可留空"
+                  disabled={!autoExpandEnabled}
+                  onChange={(event) => setAutoExpandMinMarginPercent(event.target.value)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground sm:col-span-2">至少填写一项；两项都填时必须同时满足。有效倍率包含渠道充值倍率换算，倍率达到最低值且利润率严格高于最低值才会进入测试。</p>
+              <p className="text-xs text-muted-foreground sm:col-span-2">每轮最多测试 3 个候选，连续 3 次通过后最多新增 1 个账号。</p>
             </div>
             {workspace?.last_auto_expand_at || workspace?.last_auto_expand_error ? (
               <div className="text-xs text-muted-foreground">

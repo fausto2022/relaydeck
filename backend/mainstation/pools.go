@@ -151,6 +151,7 @@ func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO,
 			LastRankingError:               pool.LastRankingError,
 			AutoExpandEnabled:              pool.AutoExpandEnabled,
 			AutoExpandMinMarginBasisPoints: pool.AutoExpandMinMarginBasisPoints,
+			AutoExpandMinRateMicros:        pool.AutoExpandMinRateMicros,
 			AutoExpandCategoryRuleID:       pool.AutoExpandCategoryRuleID,
 			LastAutoExpandAt:               pool.LastAutoExpandAt,
 			LastAutoExpandError:            pool.LastAutoExpandError,
@@ -273,6 +274,9 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	if err := validateAutoExpandMarginBasisPoints(in.AutoExpandMinMarginBasisPoints); err != nil {
 		return nil, err
 	}
+	if err := validateAutoExpandConditions(in.AutoExpandEnabled, in.AutoExpandMinMarginBasisPoints, in.AutoExpandMinRateMicros); err != nil {
+		return nil, err
+	}
 	platform := normalizeHealthPlatform(pool.Platform)
 	if in.AutoExpandEnabled {
 		if err := s.validateAutoExpansionCategory(ctx, in.AutoExpandCategoryRuleID, platform); err != nil {
@@ -289,6 +293,7 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	pool.MinimumMarginBasisPoints = copyOptionalInt64(in.MinimumMarginBasisPoints)
 	pool.AutoExpandEnabled = in.AutoExpandEnabled
 	pool.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
+	pool.AutoExpandMinRateMicros = in.AutoExpandMinRateMicros
 	pool.AutoExpandCategoryRuleID = copyOptionalUint(in.AutoExpandCategoryRuleID)
 	pool.HealthPolicyJSON = strings.TrimSpace(in.HealthPolicy)
 	pool.MarginPolicyJSON = marginPolicy
@@ -511,8 +516,12 @@ func (s *Service) poolFromInput(existing *storage.MainAccountPool, in PoolInput)
 	if err := validateAutoExpandMarginBasisPoints(in.AutoExpandMinMarginBasisPoints); err != nil {
 		return nil, nil, err
 	}
+	if err := validateAutoExpandConditions(in.AutoExpandEnabled, in.AutoExpandMinMarginBasisPoints, in.AutoExpandMinRateMicros); err != nil {
+		return nil, nil, err
+	}
 	item.AutoExpandEnabled = in.AutoExpandEnabled
 	item.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
+	item.AutoExpandMinRateMicros = in.AutoExpandMinRateMicros
 	item.AutoExpandCategoryRuleID = copyOptionalUint(in.AutoExpandCategoryRuleID)
 	if item.AutoExpandEnabled {
 		platform := normalizeHealthPlatform(item.Platform)
