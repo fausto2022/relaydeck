@@ -3,6 +3,7 @@ package storage
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,9 @@ type DBDriver string
 const (
 	DBDriverSQLite DBDriver = "sqlite"
 	DBDriverMySQL  DBDriver = "mysql"
+
+	sqliteMaxOpenConns = 4
+	sqliteMaxIdleConns = 4
 )
 
 type DBConfig struct {
@@ -77,7 +81,7 @@ func Open(cfg DBConfig) (*gorm.DB, error) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return nil, fmt.Errorf("create sqlite dir: %w", err)
 		}
-		dialector = sqliteDriver.Open(path)
+		dialector = sqliteDriver.Open(sqliteDSN(path))
 	case DBDriverMySQL:
 		dialector = mysqlDriver.Open(cfg.MySQLDSN())
 	default:
@@ -97,20 +101,27 @@ func Open(cfg DBConfig) (*gorm.DB, error) {
 
 	switch driver {
 	case DBDriverSQLite:
-		if err := db.Exec("PRAGMA journal_mode=WAL").Error; err != nil {
-			return nil, fmt.Errorf("set sqlite journal mode: %w", err)
-		}
-		if err := db.Exec("PRAGMA busy_timeout=5000").Error; err != nil {
-			return nil, fmt.Errorf("set sqlite busy timeout: %w", err)
-		}
-		sqlDB.SetMaxOpenConns(1)
-		sqlDB.SetMaxIdleConns(1)
+		// WAL allows readers to continue while a background task is writing. The
+		// DSN applies both pragmas to every connection created by database/sql.
+		sqlDB.SetMaxOpenConns(sqliteMaxOpenConns)
+		sqlDB.SetMaxIdleConns(sqliteMaxIdleConns)
 	default:
 		sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 		sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	}
 
 	return db, nil
+}
+
+func sqliteDSN(path string) string {
+	base, rawQuery, _ := strings.Cut(path, "?")
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		query = make(url.Values)
+	}
+	query.Add("_pragma", "busy_timeout(5000)")
+	query.Add("_pragma", "journal_mode(WAL)")
+	return base + "?" + query.Encode()
 }
 
 func resolveSQLitePath(path string) string {

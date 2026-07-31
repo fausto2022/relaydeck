@@ -1,9 +1,13 @@
 package storage
 
 import (
+	"context"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -39,6 +43,75 @@ func TestResolveSQLitePathUsesLegacyDatabaseDuringRenameUpgrade(t *testing.T) {
 	}
 	if got := resolveSQLitePath(filepath.Join(dir, "relaydeck.db")); got != legacyPath {
 		t.Fatalf("resolveSQLitePath() = %q, want %q", got, legacyPath)
+	}
+}
+
+func TestSQLiteDSNPreservesOptionsAndAddsConnectionPragmas(t *testing.T) {
+	dsn := sqliteDSN(`C:\data\relaydeck.db?mode=rwc`)
+	if !strings.HasPrefix(dsn, `C:\data\relaydeck.db?`) {
+		t.Fatalf("sqliteDSN() = %q", dsn)
+	}
+	query, err := url.ParseQuery(strings.SplitN(dsn, "?", 2)[1])
+	if err != nil {
+		t.Fatalf("parse sqlite DSN: %v", err)
+	}
+	if query.Get("mode") != "rwc" {
+		t.Fatalf("mode = %q, want rwc", query.Get("mode"))
+	}
+	pragmas := query["_pragma"]
+	if !slices.Contains(pragmas, "busy_timeout(5000)") || !slices.Contains(pragmas, "journal_mode(WAL)") {
+		t.Fatalf("pragmas = %#v", pragmas)
+	}
+}
+
+func TestSQLitePoolAllowsReadWhileWriterIsOpen(t *testing.T) {
+	db, err := Open(DBConfig{Driver: DBDriverSQLite, Path: filepath.Join(t.TempDir(), "pool.db")})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql.DB: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if got := sqlDB.Stats().MaxOpenConnections; got != sqliteMaxOpenConns {
+		t.Fatalf("max open connections = %d, want %d", got, sqliteMaxOpenConns)
+	}
+	if err := db.Exec("CREATE TABLE pool_test (id INTEGER PRIMARY KEY)").Error; err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	ctx := context.Background()
+	conn, err := sqlDB.Conn(ctx)
+	if err != nil {
+		t.Fatalf("get writer connection: %v", err)
+	}
+	defer conn.Close()
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin writer transaction: %v", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, "INSERT INTO pool_test (id) VALUES (1)"); err != nil {
+		t.Fatalf("insert uncommitted row: %v", err)
+	}
+
+	readCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	var count int
+	if err := sqlDB.QueryRowContext(readCtx, "SELECT COUNT(*) FROM pool_test").Scan(&count); err != nil {
+		t.Fatalf("read while writer is open: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("visible rows = %d, want 0", count)
+	}
+
+	var busyTimeout int
+	if err := sqlDB.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&busyTimeout); err != nil {
+		t.Fatalf("read busy timeout: %v", err)
+	}
+	if busyTimeout != 5000 {
+		t.Fatalf("busy timeout = %d, want 5000", busyTimeout)
 	}
 }
 
