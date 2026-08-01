@@ -116,6 +116,14 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 		t.Fatalf("load timezone: %v", err)
 	}
 	today := time.Now().In(location)
+	for _, snapshot := range []storage.CostSnapshot{
+		{ChannelID: 1, TodayCost: today1, SampledAt: today},
+		{ChannelID: 2, TodayCost: today2, SampledAt: today},
+	} {
+		if err := rates.AppendCost(&snapshot); err != nil {
+			t.Fatalf("save cost snapshot: %v", err)
+		}
+	}
 	for _, snapshot := range []storage.MainStationProfitSnapshot{
 		{Day: today.Format("2006-01-02"), Revenue: 10, Cost: 600, SampledAt: today},
 		{Day: today.AddDate(0, 0, -1).Format("2006-01-02"), Revenue: 7, Cost: 500, SampledAt: today},
@@ -203,6 +211,48 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 	}
 	if change.RawOldRatio == nil || *change.RawOldRatio != 0.45 || change.RawNewRatio != 0.26 || !change.RechargeAdjusted {
 		t.Fatalf("raw rate change = %#v", change)
+	}
+}
+
+func TestDashboardSummaryResetsStaleDisabledChannelCost(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := openTestDB(t)
+	channels := storage.NewChannels(db)
+	rates := storage.NewRates(db)
+	staleCost := 12.7289
+	channel := &storage.Channel{
+		Name: "disabled", Type: storage.ChannelTypeSub2API, SiteURL: "https://disabled.example.com",
+		Username: "user", PasswordCipher: "cipher", MonitorEnabled: false, TodayCost: &staleCost,
+	}
+	if err := channels.Create(channel); err != nil {
+		t.Fatalf("create disabled channel: %v", err)
+	}
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load timezone: %v", err)
+	}
+	if _, err := rates.ResetStaleTodayCostsAt(time.Now().In(location)); err != nil {
+		t.Fatalf("reset stale today costs: %v", err)
+	}
+
+	r := gin.New()
+	registerDashboard(r.Group("/api"), &Deps{Channels: channels, Rates: rates})
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard/summary", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			TodayTotalCost float64 `json:"today_total_cost"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Data.TodayTotalCost != 0 {
+		t.Fatalf("today total cost = %v, want 0", resp.Data.TodayTotalCost)
 	}
 }
 

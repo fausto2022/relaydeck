@@ -152,6 +152,27 @@ func (r *Rates) AppendCost(s *CostSnapshot) error {
 	return r.db.Create(s).Error
 }
 
+// ResetStaleTodayCostsAt 清零当天尚无消费采样的渠道，避免停用渠道跨日保留昨日消费。
+func (r *Rates) ResetStaleTodayCostsAt(now time.Time) (int64, error) {
+	today := dayStart(now)
+	timeExpression := "cost_snapshots.sampled_at"
+	boundExpression := "?"
+	if r.db.Dialector.Name() == "sqlite" {
+		timeExpression = "julianday(cost_snapshots.sampled_at)"
+		boundExpression = "julianday(?)"
+	}
+	query := fmt.Sprintf(
+		"NOT EXISTS (SELECT 1 FROM cost_snapshots WHERE cost_snapshots.channel_id = channels.id AND %s >= %s)",
+		timeExpression,
+		boundExpression,
+	)
+	result := r.db.Model(&Channel{}).
+		Where("today_cost IS NOT NULL AND today_cost <> 0").
+		Where(query, today).
+		Update("today_cost", 0)
+	return result.RowsAffected, result.Error
+}
+
 // CostHistorySince 返回指定渠道从 since 开始的最近消费采样，结果按时间升序排列。
 func (r *Rates) CostHistorySince(channelID uint, since time.Time, limit int) ([]CostSnapshot, error) {
 	if limit <= 0 {

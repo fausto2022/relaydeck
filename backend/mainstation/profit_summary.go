@@ -131,7 +131,6 @@ func guaranteedNetRevenue(revenue, cost float64, ratioBasisPoints int64) float64
 }
 
 func (s *Service) applyUpstreamCosts(summary *ProfitSummary, days int, todayKey string) error {
-	var trendTodayCost float64
 	if s.rates != nil {
 		trend, err := s.rates.AggregateCostTrendAt(days, s.now())
 		if err != nil {
@@ -140,24 +139,10 @@ func (s *Service) applyUpstreamCosts(summary *ProfitSummary, days int, todayKey 
 		for _, item := range trend {
 			summary.SevenDayCost += item.Cost
 			if item.Day.Format("2006-01-02") == todayKey {
-				trendTodayCost = item.Cost
+				summary.TodayCost = item.Cost
 			}
 		}
 	}
-	if s.channels == nil {
-		summary.TodayCost = trendTodayCost
-		return nil
-	}
-	channels, err := s.channels.List()
-	if err != nil {
-		return err
-	}
-	for _, channel := range channels {
-		if channel.TodayCost != nil {
-			summary.TodayCost += *channel.TodayCost
-		}
-	}
-	summary.SevenDayCost += summary.TodayCost - trendTodayCost
 	return nil
 }
 

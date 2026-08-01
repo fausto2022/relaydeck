@@ -105,6 +105,38 @@ func TestSyncUsesActualCostWithoutAccountCost(t *testing.T) {
 	}
 }
 
+func TestProfitSummaryIgnoresStaleDisabledChannelCostAfterMidnight(t *testing.T) {
+	service, db, _, _ := newTestService(t)
+	now := time.Date(2026, 8, 2, 0, 15, 0, 0, shanghaiLocation())
+	service.now = func() time.Time { return now }
+	staleCost := 12.7289
+	channel := &storage.Channel{
+		Name: "disabled-source", Type: storage.ChannelTypeSub2API, SiteURL: "https://source.example.com",
+		Username: "user", PasswordCipher: "cipher", MonitorEnabled: false, TodayCost: &staleCost,
+	}
+	if err := storage.NewChannels(db).Create(channel); err != nil {
+		t.Fatalf("create disabled source: %v", err)
+	}
+	if err := storage.NewRates(db).AppendCost(&storage.CostSnapshot{
+		ChannelID: channel.ID, TodayCost: staleCost, SampledAt: now.Add(-30 * time.Minute),
+	}); err != nil {
+		t.Fatalf("append yesterday cost: %v", err)
+	}
+	if err := storage.NewMainStationStore(db).UpsertProfitSnapshot(&storage.MainStationProfitSnapshot{
+		Day: now.Format("2006-01-02"), Revenue: 20.21, SampledAt: now,
+	}); err != nil {
+		t.Fatalf("save profit snapshot: %v", err)
+	}
+
+	summary, err := service.ProfitSummary(7)
+	if err != nil {
+		t.Fatalf("profit summary: %v", err)
+	}
+	if summary.TodayCost != 0 || summary.TodayProfit != 20.21 {
+		t.Fatalf("stale cost should be ignored after midnight: %#v", summary)
+	}
+}
+
 func profitFloat64(value float64) *float64 { return &value }
 
 func seedProfitCosts(t *testing.T, db *gorm.DB, now time.Time, dailyCost float64) *storage.Channel {

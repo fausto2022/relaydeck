@@ -62,6 +62,7 @@ type databaseBackupService interface {
 const (
 	mainStationTaskTimeout   = 2 * time.Minute
 	dailyBusinessSummaryCron = "CRON_TZ=Asia/Shanghai 0 55 23 * * *"
+	resetTodayCostsCron      = "CRON_TZ=Asia/Shanghai 0 0 0 * * *"
 )
 
 func New(
@@ -98,6 +99,12 @@ func New(
 }
 
 func (s *Scheduler) Start() error {
+	s.resetStaleTodayCosts()
+	if s.rates != nil {
+		if _, err := s.cron.AddFunc(resetTodayCostsCron, s.resetStaleTodayCosts); err != nil {
+			return err
+		}
+	}
 	if s.cfg.BalanceCron != "" {
 		if _, err := s.cron.AddFunc(s.cfg.BalanceCron, s.runBalance); err != nil {
 			return err
@@ -187,6 +194,7 @@ func (s *Scheduler) runBalance() {
 		return
 	}
 	defer s.balanceMu.Unlock()
+	s.resetStaleTodayCosts()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	s.monitor.ScanAllBalances(ctx)
@@ -194,6 +202,18 @@ func (s *Scheduler) runBalance() {
 		if _, err := captcha.RefreshAllBalancesWithProxy(ctx, s.captchas, s.cipher, s.log, s.proxy); err != nil {
 			s.log.Warn("refresh captcha balances failed", "err", err)
 		}
+	}
+}
+
+func (s *Scheduler) resetStaleTodayCosts() {
+	if s.rates == nil {
+		return
+	}
+	reset, err := s.rates.ResetStaleTodayCostsAt(time.Now())
+	if err != nil {
+		s.log.Warn("reset stale today costs failed", "err", err)
+	} else if reset > 0 {
+		s.log.Info("stale today costs reset", "channels", reset)
 	}
 }
 

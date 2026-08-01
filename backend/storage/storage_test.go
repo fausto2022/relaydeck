@@ -35,6 +35,53 @@ func TestRatesUpsertRefreshesPlatform(t *testing.T) {
 	}
 }
 
+func TestResetStaleTodayCostsAt(t *testing.T) {
+	db := openTestDB(t)
+	channels := NewChannels(db)
+	rates := NewRates(db)
+	location := loadTrendLocation()
+	now := time.Date(2026, 8, 2, 0, 15, 0, 0, location)
+	staleCost := 12.7289
+	currentCost := 3.25
+	stale := &Channel{Name: "stale", Type: ChannelTypeSub2API, SiteURL: "https://stale.example.com", Username: "user", PasswordCipher: "cipher", MonitorEnabled: false, TodayCost: &staleCost}
+	current := &Channel{Name: "current", Type: ChannelTypeSub2API, SiteURL: "https://current.example.com", Username: "user", PasswordCipher: "cipher", MonitorEnabled: true, TodayCost: &currentCost}
+	for _, channel := range []*Channel{stale, current} {
+		if err := channels.Create(channel); err != nil {
+			t.Fatalf("create channel: %v", err)
+		}
+	}
+	for _, snapshot := range []CostSnapshot{
+		{ChannelID: stale.ID, TodayCost: staleCost, SampledAt: now.Add(-30 * time.Minute)},
+		{ChannelID: current.ID, TodayCost: currentCost, SampledAt: now.Add(-5 * time.Minute)},
+	} {
+		if err := rates.AppendCost(&snapshot); err != nil {
+			t.Fatalf("append cost: %v", err)
+		}
+	}
+
+	reset, err := rates.ResetStaleTodayCostsAt(now)
+	if err != nil {
+		t.Fatalf("reset stale today costs: %v", err)
+	}
+	if reset != 1 {
+		t.Fatalf("reset rows = %d, want 1", reset)
+	}
+	gotStale, err := channels.FindByID(stale.ID)
+	if err != nil {
+		t.Fatalf("load stale channel: %v", err)
+	}
+	gotCurrent, err := channels.FindByID(current.ID)
+	if err != nil {
+		t.Fatalf("load current channel: %v", err)
+	}
+	if gotStale.TodayCost == nil || *gotStale.TodayCost != 0 {
+		t.Fatalf("stale today cost = %#v, want 0", gotStale.TodayCost)
+	}
+	if gotCurrent.TodayCost == nil || *gotCurrent.TodayCost != currentCost {
+		t.Fatalf("current today cost = %#v, want %v", gotCurrent.TodayCost, currentCost)
+	}
+}
+
 func TestResolveSQLitePathUsesLegacyDatabaseDuringRenameUpgrade(t *testing.T) {
 	dir := t.TempDir()
 	legacyPath := filepath.Join(dir, "upstream-ops.db")
