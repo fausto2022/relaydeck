@@ -152,6 +152,27 @@ func TestAutoExpansionRequiresRateAndMarginWhenBothConfigured(t *testing.T) {
 	}
 }
 
+func TestAutoExpansionSkipsBlockedGroupKeywords(t *testing.T) {
+	fixture := newAutoExpansionTestFixture(t, 1000)
+	fixture.rate.ModelName = "OpenAI FREE Tier"
+	fixture.pool.AutoExpandBlockedKeywords = "公益, free\n测试;FREE"
+	if err := fixture.saveRate(); err != nil {
+		t.Fatalf("save blocked candidate: %v", err)
+	}
+	if err := fixture.db.Save(fixture.pool).Error; err != nil {
+		t.Fatalf("save blocked keywords: %v", err)
+	}
+
+	fixture.service.RunAutoExpansion(context.Background())
+
+	if fixture.chatCalls.Load() != 0 || len(fixture.channels.createdKeys) != 0 || len(fixture.admin.createRequests) != 0 {
+		t.Fatalf("blocked candidate was tested: chat=%d keys=%d accounts=%d", fixture.chatCalls.Load(), len(fixture.channels.createdKeys), len(fixture.admin.createRequests))
+	}
+	if got := normalizeAutoExpandBlockedKeywords(fixture.pool.AutoExpandBlockedKeywords); got != "公益\nfree\n测试" {
+		t.Fatalf("normalized blocked keywords = %q", got)
+	}
+}
+
 func TestValidateAutoExpandConditions(t *testing.T) {
 	tests := []struct {
 		name      string

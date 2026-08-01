@@ -162,6 +162,7 @@ type GroupWorkspaceDTO struct {
 	AutoExpandMinMarginBasisPoints int64                           `json:"auto_expand_min_margin_basis_points"`
 	AutoExpandMinRateMicros        int64                           `json:"auto_expand_min_rate_multiplier_micros"`
 	AutoExpandCategoryRuleID       *uint                           `json:"auto_expand_category_rule_id,omitempty"`
+	AutoExpandBlockedKeywords      string                          `json:"auto_expand_blocked_keywords"`
 	LastAutoExpandAt               *time.Time                      `json:"last_auto_expand_at,omitempty"`
 	LastAutoExpandError            string                          `json:"last_auto_expand_error,omitempty"`
 	AccountCount                   int                             `json:"account_count"`
@@ -229,6 +230,7 @@ type GroupSettingsInput struct {
 	AutoExpandMinMarginBasisPoints int64  `json:"auto_expand_min_margin_basis_points"`
 	AutoExpandMinRateMicros        int64  `json:"auto_expand_min_rate_multiplier_micros"`
 	AutoExpandCategoryRuleID       *uint  `json:"auto_expand_category_rule_id"`
+	AutoExpandBlockedKeywords      string `json:"auto_expand_blocked_keywords"`
 }
 
 type Page[T any] struct {
@@ -255,6 +257,7 @@ type PoolInput struct {
 	AutoExpandMinMarginBasisPoints int64  `json:"auto_expand_min_margin_basis_points"`
 	AutoExpandMinRateMicros        int64  `json:"auto_expand_min_rate_multiplier_micros"`
 	AutoExpandCategoryRuleID       *uint  `json:"auto_expand_category_rule_id"`
+	AutoExpandBlockedKeywords      string `json:"auto_expand_blocked_keywords"`
 	TargetGroupIDs                 []uint `json:"target_group_ids"`
 }
 

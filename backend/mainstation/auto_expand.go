@@ -63,6 +63,40 @@ func validateAutoExpandConditions(enabled bool, minMarginBasisPoints, minRateMul
 	return nil
 }
 
+func autoExpandBlockedKeywords(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '，' || r == ';' || r == '；' || r == '\n' || r == '\r'
+	})
+	keywords := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		keyword := strings.ToLower(strings.TrimSpace(part))
+		if keyword == "" {
+			continue
+		}
+		if _, exists := seen[keyword]; exists {
+			continue
+		}
+		seen[keyword] = struct{}{}
+		keywords = append(keywords, keyword)
+	}
+	return keywords
+}
+
+func normalizeAutoExpandBlockedKeywords(value string) string {
+	return strings.Join(autoExpandBlockedKeywords(value), "\n")
+}
+
+func isAutoExpansionBlocked(groupName string, keywords []string) bool {
+	groupName = strings.ToLower(groupName)
+	for _, keyword := range keywords {
+		if strings.Contains(groupName, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) validateAutoExpansionCategory(ctx context.Context, ruleID *uint, platform string) error {
 	_, err := s.autoExpansionCategory(ctx, ruleID, platform)
 	return err
@@ -291,6 +325,7 @@ func (s *Service) autoExpansionCandidates(
 		attemptsByRateID[attempts[i].RateID] = attempts[i]
 	}
 	candidates := make([]autoExpansionCandidate, 0)
+	blockedKeywords := autoExpandBlockedKeywords(pool.AutoExpandBlockedKeywords)
 	for j := range rates {
 		rate := rates[j]
 		channel, ok := channelsByID[rate.ChannelID]
@@ -298,6 +333,9 @@ func (s *Service) autoExpansionCandidates(
 			continue
 		}
 		if rate.LastSeenAt.IsZero() || rate.LastSeenAt.Before(now.Add(-autoExpansionRateFreshness)) || classifyAutoExpansionRate(rate) != platform {
+			continue
+		}
+		if isAutoExpansionBlocked(rate.ModelName, blockedKeywords) {
 			continue
 		}
 		if category.rule != nil && category.classifier.ClassifyWithProvider(platform, rate.ModelName, rate.Description).RuleID != category.rule.ID {

@@ -83,6 +83,7 @@ func TestEmptyDatabaseCreatesMainStationSchemaWithoutConfiguration(t *testing.T)
 	if !db.Migrator().HasColumn(&MainStationConfig{}, "minimum_margin_basis_points") ||
 		!db.Migrator().HasColumn(&MainAccountPool{}, "minimum_margin_basis_points") ||
 		!db.Migrator().HasColumn(&MainAccountPool{}, "auto_expand_category_rule_id") ||
+		!db.Migrator().HasColumn(&MainAccountPool{}, "auto_expand_blocked_keywords") ||
 		!db.Migrator().HasColumn(&MainAccountPool{}, "last_availability_status") ||
 		!db.Migrator().HasColumn(&MainStationConfig{}, "guaranteed_revenue_ratio_basis_points") {
 		t.Fatal("main station financial configuration columns were not created")

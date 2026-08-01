@@ -153,6 +153,7 @@ func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO,
 			AutoExpandMinMarginBasisPoints: pool.AutoExpandMinMarginBasisPoints,
 			AutoExpandMinRateMicros:        pool.AutoExpandMinRateMicros,
 			AutoExpandCategoryRuleID:       pool.AutoExpandCategoryRuleID,
+			AutoExpandBlockedKeywords:      pool.AutoExpandBlockedKeywords,
 			LastAutoExpandAt:               pool.LastAutoExpandAt,
 			LastAutoExpandError:            pool.LastAutoExpandError,
 			AccountCount:                   accountCount,
@@ -295,6 +296,7 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	pool.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
 	pool.AutoExpandMinRateMicros = in.AutoExpandMinRateMicros
 	pool.AutoExpandCategoryRuleID = copyOptionalUint(in.AutoExpandCategoryRuleID)
+	pool.AutoExpandBlockedKeywords = normalizeAutoExpandBlockedKeywords(in.AutoExpandBlockedKeywords)
 	pool.HealthPolicyJSON = strings.TrimSpace(in.HealthPolicy)
 	pool.MarginPolicyJSON = marginPolicy
 	if err := s.store.UpdatePool(pool, []uint{group.ID}); err != nil {
@@ -523,6 +525,7 @@ func (s *Service) poolFromInput(existing *storage.MainAccountPool, in PoolInput)
 	item.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
 	item.AutoExpandMinRateMicros = in.AutoExpandMinRateMicros
 	item.AutoExpandCategoryRuleID = copyOptionalUint(in.AutoExpandCategoryRuleID)
+	item.AutoExpandBlockedKeywords = normalizeAutoExpandBlockedKeywords(in.AutoExpandBlockedKeywords)
 	if item.AutoExpandEnabled {
 		platform := normalizeHealthPlatform(item.Platform)
 		if err := s.validateAutoExpansionCategory(context.Background(), item.AutoExpandCategoryRuleID, platform); err != nil {

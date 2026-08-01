@@ -70,6 +70,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
   const [autoExpandMinMarginPercent, setAutoExpandMinMarginPercent] = useState("")
   const [autoExpandMinRateMultiplier, setAutoExpandMinRateMultiplier] = useState("")
   const [autoExpandCategoryRuleID, setAutoExpandCategoryRuleID] = useState(ALL_PROVIDER_RATES)
+  const [autoExpandBlockedKeywords, setAutoExpandBlockedKeywords] = useState("")
   const [rateRankingConfig, setRateRankingConfig] = useState<RateRankingConfig | null>(null)
   const [rateRankingLoading, setRateRankingLoading] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -89,6 +90,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
     setAutoExpandMinMarginPercent(workspace.auto_expand_min_margin_basis_points > 0 ? String(workspace.auto_expand_min_margin_basis_points / 100) : "")
     setAutoExpandMinRateMultiplier(workspace.auto_expand_min_rate_multiplier_micros > 0 ? String(workspace.auto_expand_min_rate_multiplier_micros / 1_000_000) : "")
     setAutoExpandCategoryRuleID(workspace.auto_expand_category_rule_id == null ? ALL_PROVIDER_RATES : String(workspace.auto_expand_category_rule_id))
+    setAutoExpandBlockedKeywords(workspace.auto_expand_blocked_keywords ?? "")
     setAdvancedOpen(false)
   }, [open, workspace])
 
@@ -158,6 +160,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
           auto_expand_min_margin_basis_points: autoExpandMarginValue == null ? 0 : Math.round(autoExpandMarginValue * 100),
           auto_expand_min_rate_multiplier_micros: autoExpandRateValue == null ? 0 : Math.round(autoExpandRateValue * 1_000_000),
           auto_expand_category_rule_id: autoExpandCategoryRuleID === ALL_PROVIDER_RATES ? null : Number(autoExpandCategoryRuleID),
+          auto_expand_blocked_keywords: autoExpandBlockedKeywords,
         }),
       })
       onSaved(saved)
@@ -289,6 +292,18 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
               </div>
               <p className="text-xs text-muted-foreground sm:col-span-2">至少填写一项；两项都填时必须同时满足。有效倍率包含渠道充值倍率换算，倍率达到最低值且利润率严格高于最低值才会进入测试。</p>
               <p className="text-xs text-muted-foreground sm:col-span-2">每轮最多测试 3 个候选，连续 3 次通过后最多新增 1 个账号。</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="group-auto-expand-blocked-keywords">禁止扩池关键词</Label>
+              <Textarea
+                id="group-auto-expand-blocked-keywords"
+                value={autoExpandBlockedKeywords}
+                placeholder="例如：free, 公益, 测试"
+                disabled={!autoExpandEnabled}
+                onChange={(event) => setAutoExpandBlockedKeywords(event.target.value)}
+                rows={2}
+              />
+              <p className="text-xs text-muted-foreground">支持逗号或换行分隔，不区分大小写；上游分组名称包含任一关键词时不会进入测试或扩池。</p>
             </div>
             {workspace?.last_auto_expand_at || workspace?.last_auto_expand_error ? (
               <div className="text-xs text-muted-foreground">

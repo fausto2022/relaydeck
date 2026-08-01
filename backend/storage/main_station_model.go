@@ -110,6 +110,7 @@ type MainAccountPool struct {
 	AutoExpandMinMarginBasisPoints int64      `gorm:"not null;default:0" json:"auto_expand_min_margin_basis_points"`
 	AutoExpandMinRateMicros        int64      `gorm:"column:auto_expand_min_rate_multiplier_micros;not null;default:0" json:"auto_expand_min_rate_multiplier_micros"`
 	AutoExpandCategoryRuleID       *uint      `json:"auto_expand_category_rule_id,omitempty"`
+	AutoExpandBlockedKeywords      string     `gorm:"type:text" json:"auto_expand_blocked_keywords,omitempty"`
 	LastAutoExpandAt               *time.Time `json:"last_auto_expand_at,omitempty"`
 	LastAutoExpandError            string     `gorm:"type:text" json:"last_auto_expand_error,omitempty"`
 	LastStatus                     string     `gorm:"size:32;not null;default:'unknown';index" json:"last_status"`
