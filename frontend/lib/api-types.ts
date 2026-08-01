@@ -853,6 +853,7 @@ export interface MainStationGroupWorkspace {
   auto_expand_min_rate_multiplier_micros: number
   auto_expand_category_rule_id?: number | null
   auto_expand_blocked_keywords: string
+  disabled_cleanup_seconds: number
   last_auto_expand_at?: string | null
   last_auto_expand_error?: string
   last_status: "healthy" | "degraded" | "critical" | "unknown" | string
@@ -870,6 +871,7 @@ export interface MainStationMember {
   source_group_id?: number | null
   source_group_name?: string
   source_api_key_id?: number | null
+  source_api_key_name?: string
   source_api_key_managed: boolean
   remote_account_id?: number | null
   remote_account_name?: string

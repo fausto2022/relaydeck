@@ -33,8 +33,9 @@ type expiringMaintenanceMainStation struct {
 	rankingContextErr error
 }
 
-func (f *expiringMaintenanceMainStation) RunDueHealthChecks(context.Context)      {}
-func (f *expiringMaintenanceMainStation) CleanupTemporaryAPIKeys(context.Context) {}
+func (f *expiringMaintenanceMainStation) RunDueHealthChecks(context.Context)            {}
+func (f *expiringMaintenanceMainStation) CleanupTemporaryAPIKeys(context.Context)       {}
+func (f *expiringMaintenanceMainStation) CleanupDisabledManagedMembers(context.Context) {}
 func (f *expiringMaintenanceMainStation) SyncForScheduler(ctx context.Context) bool {
 	f.syncContext = ctx
 	return false
@@ -48,13 +49,14 @@ func (f *expiringMaintenanceMainStation) RunAutoExpansion(context.Context)    {}
 func (f *expiringMaintenanceMainStation) SendDailyBusinessSummary(context.Context) {
 }
 
-func (f *pricingSyncMainStation) RunDueHealthChecks(context.Context)         {}
-func (f *pricingSyncMainStation) CleanupTemporaryAPIKeys(context.Context)    {}
-func (f *pricingSyncMainStation) SyncForScheduler(context.Context) bool      { return f.pricingChanged }
-func (f *pricingSyncMainStation) RunDueSchedulingReconciles(context.Context) {}
-func (f *pricingSyncMainStation) RunDueRankings(context.Context)             {}
-func (f *pricingSyncMainStation) RunProfitEvaluation(context.Context)        { f.profitCalls.Add(1) }
-func (f *pricingSyncMainStation) RunAutoExpansion(context.Context)           {}
+func (f *pricingSyncMainStation) RunDueHealthChecks(context.Context)            {}
+func (f *pricingSyncMainStation) CleanupTemporaryAPIKeys(context.Context)       {}
+func (f *pricingSyncMainStation) CleanupDisabledManagedMembers(context.Context) {}
+func (f *pricingSyncMainStation) SyncForScheduler(context.Context) bool         { return f.pricingChanged }
+func (f *pricingSyncMainStation) RunDueSchedulingReconciles(context.Context)    {}
+func (f *pricingSyncMainStation) RunDueRankings(context.Context)                {}
+func (f *pricingSyncMainStation) RunProfitEvaluation(context.Context)           { f.profitCalls.Add(1) }
+func (f *pricingSyncMainStation) RunAutoExpansion(context.Context)              {}
 func (f *pricingSyncMainStation) SendDailyBusinessSummary(context.Context) {
 	f.dailySummaryCalls.Add(1)
 }
@@ -66,7 +68,10 @@ func (f *blockingMainStation) RunDueHealthChecks(context.Context) {
 	<-f.release
 }
 
-func (f *blockingMainStation) CleanupTemporaryAPIKeys(context.Context)    { f.maintenanceCalls.Add(1) }
+func (f *blockingMainStation) CleanupTemporaryAPIKeys(context.Context) { f.maintenanceCalls.Add(1) }
+func (f *blockingMainStation) CleanupDisabledManagedMembers(context.Context) {
+	f.maintenanceCalls.Add(1)
+}
 func (f *blockingMainStation) SyncForScheduler(context.Context) bool      { return false }
 func (f *blockingMainStation) RunDueSchedulingReconciles(context.Context) {}
 func (f *blockingMainStation) RunDueRankings(context.Context)             {}
@@ -237,8 +242,8 @@ func TestMainStationMaintenanceRunsWhileHealthChecksAreBlocked(t *testing.T) {
 	s.runMainStationMaintenance()
 	close(mainStation.release)
 	<-done
-	if calls := mainStation.maintenanceCalls.Load(); calls != 1 {
-		t.Fatalf("maintenance calls while health blocked = %d, want 1", calls)
+	if calls := mainStation.maintenanceCalls.Load(); calls != 2 {
+		t.Fatalf("maintenance calls while health blocked = %d, want 2", calls)
 	}
 }
 

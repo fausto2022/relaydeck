@@ -787,7 +787,7 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		admin.accounts[0].Concurrency != originalAccount.Concurrency {
 		t.Fatalf("original duplicate account was modified: got=%#v want=%#v", admin.accounts[0], originalAccount)
 	}
-	if channels.createdKeys[0].Name != "source-group" {
+	if !strings.HasPrefix(channels.createdKeys[0].Name, "source-group-") || len([]rune(channels.createdKeys[0].Name)) != len([]rune("source-group-"))+4 {
 		t.Fatalf("managed source api key name = %q", channels.createdKeys[0].Name)
 	}
 	request := admin.createRequests[0]
@@ -968,7 +968,7 @@ func TestEnsureManagedSourceAPIKeyRecreatesMissingRemoteKey(t *testing.T) {
 	if secret != channels.secret || member.SourceAPIKeyID == nil || *member.SourceAPIKeyID != 88 {
 		t.Fatalf("recreated key: secret=%q member=%#v", secret, member)
 	}
-	if len(channels.createdKeys) != 1 || channels.createdKeys[0].Name != "source-group" {
+	if len(channels.createdKeys) != 1 || !strings.HasPrefix(channels.createdKeys[0].Name, "source-group-") || len([]rune(channels.createdKeys[0].Name)) != len([]rune("source-group-"))+4 {
 		t.Fatalf("created keys = %#v", channels.createdKeys)
 	}
 	stored, err := service.store.FindMember(pool.ID, member.ID)

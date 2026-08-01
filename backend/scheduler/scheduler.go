@@ -42,6 +42,7 @@ type Scheduler struct {
 type mainStationHealthService interface {
 	RunDueHealthChecks(ctx context.Context)
 	CleanupTemporaryAPIKeys(ctx context.Context)
+	CleanupDisabledManagedMembers(ctx context.Context)
 	SyncForScheduler(ctx context.Context) bool
 	RunDueSchedulingReconciles(ctx context.Context)
 	RunDueRankings(ctx context.Context)
@@ -157,6 +158,7 @@ func (s *Scheduler) runMainStationMaintenance() {
 		s.runMainStationTask(s.mainStation.RunProfitEvaluation)
 	}
 	s.runMainStationTask(s.mainStation.RunDueSchedulingReconciles)
+	s.runMainStationTask(s.mainStation.CleanupDisabledManagedMembers)
 	s.runMainStationTask(s.mainStation.RunDueRankings)
 }
 

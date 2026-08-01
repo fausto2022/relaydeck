@@ -2,6 +2,7 @@ package mainstation
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +16,11 @@ import (
 	"gorm.io/gorm"
 )
 
-const managedAccountPoolModeRetryCount = 10
+const (
+	managedAccountPoolModeRetryCount = 10
+	minimumDisabledCleanupSeconds    = 3600
+	maximumDisabledCleanupSeconds    = 365 * 24 * 3600
+)
 
 func managedAccountPoolModeRetryStatusCodes() []int {
 	return []int{400, 401, 403, 429, 502, 503, 524}
@@ -154,6 +159,7 @@ func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO,
 			AutoExpandMinRateMicros:        pool.AutoExpandMinRateMicros,
 			AutoExpandCategoryRuleID:       pool.AutoExpandCategoryRuleID,
 			AutoExpandBlockedKeywords:      pool.AutoExpandBlockedKeywords,
+			DisabledCleanupSeconds:         pool.DisabledCleanupSeconds,
 			LastAutoExpandAt:               pool.LastAutoExpandAt,
 			LastAutoExpandError:            pool.LastAutoExpandError,
 			AccountCount:                   accountCount,
@@ -255,6 +261,7 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	}
 	before := *pool
 	enabledChanged := false
+	cleanupChanged := pool.DisabledCleanupSeconds != in.DisabledCleanupSeconds
 	if in.Enabled != nil {
 		enabledChanged = pool.Enabled != *in.Enabled
 		pool.Enabled = *in.Enabled
@@ -278,6 +285,9 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	if err := validateAutoExpandConditions(in.AutoExpandEnabled, in.AutoExpandMinMarginBasisPoints, in.AutoExpandMinRateMicros); err != nil {
 		return nil, err
 	}
+	if err := validateDisabledCleanupSeconds(in.DisabledCleanupSeconds); err != nil {
+		return nil, err
+	}
 	platform := normalizeHealthPlatform(pool.Platform)
 	if in.AutoExpandEnabled {
 		if err := s.validateAutoExpansionCategory(ctx, in.AutoExpandCategoryRuleID, platform); err != nil {
@@ -297,6 +307,7 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	pool.AutoExpandMinRateMicros = in.AutoExpandMinRateMicros
 	pool.AutoExpandCategoryRuleID = copyOptionalUint(in.AutoExpandCategoryRuleID)
 	pool.AutoExpandBlockedKeywords = normalizeAutoExpandBlockedKeywords(in.AutoExpandBlockedKeywords)
+	pool.DisabledCleanupSeconds = in.DisabledCleanupSeconds
 	pool.HealthPolicyJSON = strings.TrimSpace(in.HealthPolicy)
 	pool.MarginPolicyJSON = marginPolicy
 	if err := s.store.UpdatePool(pool, []uint{group.ID}); err != nil {
@@ -306,7 +317,7 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 		return nil, err
 	}
 	var schedulingErr error
-	if enabledChanged {
+	if enabledChanged || cleanupChanged {
 		schedulingErr = s.reconcilePoolScheduling(ctx, pool.ID, "manual")
 		if schedulingErr != nil {
 			if s.log != nil {
@@ -521,11 +532,15 @@ func (s *Service) poolFromInput(existing *storage.MainAccountPool, in PoolInput)
 	if err := validateAutoExpandConditions(in.AutoExpandEnabled, in.AutoExpandMinMarginBasisPoints, in.AutoExpandMinRateMicros); err != nil {
 		return nil, nil, err
 	}
+	if err := validateDisabledCleanupSeconds(in.DisabledCleanupSeconds); err != nil {
+		return nil, nil, err
+	}
 	item.AutoExpandEnabled = in.AutoExpandEnabled
 	item.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
 	item.AutoExpandMinRateMicros = in.AutoExpandMinRateMicros
 	item.AutoExpandCategoryRuleID = copyOptionalUint(in.AutoExpandCategoryRuleID)
 	item.AutoExpandBlockedKeywords = normalizeAutoExpandBlockedKeywords(in.AutoExpandBlockedKeywords)
+	item.DisabledCleanupSeconds = in.DisabledCleanupSeconds
 	if item.AutoExpandEnabled {
 		platform := normalizeHealthPlatform(item.Platform)
 		if err := s.validateAutoExpansionCategory(context.Background(), item.AutoExpandCategoryRuleID, platform); err != nil {
@@ -1203,7 +1218,10 @@ func (s *Service) ensureManagedSourceAPIKey(ctx context.Context, pool *storage.M
 		}
 		member.SourceAPIKeyID = nil
 	}
-	name := managedSourceAPIKeyName(member)
+	name, err := s.uniqueManagedSourceAPIKeyName(ctx, member)
+	if err != nil {
+		return "", fmt.Errorf("generate managed source api key name: %w", err)
+	}
 	createRequest := connector.APIKeyCreateRequest{
 		Name:    name,
 		Group:   member.SourceGroupName,
@@ -1222,6 +1240,7 @@ func (s *Service) ensureManagedSourceAPIKey(ctx context.Context, pool *storage.M
 	keyID := key.ID
 	member.AccountName = s.managedAutomaticName(pool, member)
 	member.SourceAPIKeyID = &keyID
+	member.SourceAPIKeyName = name
 	member.SourceAPIKeyManaged = true
 	if err := s.store.UpdateMember(member); err != nil {
 		cleanupErr := s.channelSvc.DeleteAPIKey(context.Background(), member.SourceChannelID, keyID)
@@ -1484,6 +1503,9 @@ func (s *Service) managedAutomaticName(pool *storage.MainAccountPool, member *st
 
 func managedSourceAPIKeyName(member *storage.MainAccountPoolMember) string {
 	if member != nil {
+		if keyName := strings.TrimSpace(member.SourceAPIKeyName); keyName != "" {
+			return compactName(keyName, 120)
+		}
 		if groupName := strings.TrimSpace(member.SourceGroupName); groupName != "" {
 			return compactName(groupName, 120)
 		}
@@ -1492,6 +1514,55 @@ func managedSourceAPIKeyName(member *storage.MainAccountPoolMember) string {
 		}
 	}
 	return "默认分组"
+}
+
+func newManagedSourceAPIKeyName(member *storage.MainAccountPoolMember) (string, error) {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	raw := make([]byte, 4)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	for i := range raw {
+		raw[i] = alphabet[int(raw[i])%len(alphabet)]
+	}
+	base := compactName(managedSourceAPIKeyName(member), 115)
+	return base + "-" + string(raw), nil
+}
+
+func (s *Service) uniqueManagedSourceAPIKeyName(ctx context.Context, member *storage.MainAccountPoolMember) (string, error) {
+	for attempt := 0; attempt < 8; attempt++ {
+		name, err := newManagedSourceAPIKeyName(member)
+		if err != nil {
+			return "", err
+		}
+		page, err := s.channelSvc.ListAPIKeys(ctx, member.SourceChannelID, connector.APIKeyQuery{Page: 1, PageSize: 20, Search: name})
+		if err != nil {
+			return "", fmt.Errorf("check managed source api key name: %w", err)
+		}
+		duplicate := false
+		if page != nil {
+			for i := range page.Items {
+				if strings.EqualFold(strings.TrimSpace(page.Items[i].Name), name) {
+					duplicate = true
+					break
+				}
+			}
+		}
+		if !duplicate {
+			return name, nil
+		}
+	}
+	return "", errors.New("生成唯一的上游 Key 名称失败，请重试")
+}
+
+func validateDisabledCleanupSeconds(value int) error {
+	if value == 0 {
+		return nil
+	}
+	if value < minimumDisabledCleanupSeconds || value > maximumDisabledCleanupSeconds {
+		return errors.New("停用账号自动清理时间必须为 0，或在 1 小时到 365 天之间")
+	}
+	return nil
 }
 
 func missingRemoteResource(err error) bool {

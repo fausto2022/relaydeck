@@ -188,6 +188,19 @@ func (s *Service) ReconcileAccount(ctx context.Context, remoteAccountID int64, s
 	}
 	bindingValid := member.BindingStatus == "verified" || member.BindingStatus == "manual_confirmed"
 	desired := config.Enabled && pool.Enabled && member.Enabled && strings.EqualFold(remote.Status, "active") && bindingValid && len(locks) == 0
+	cleanupEligible := config.Enabled && pool.Enabled && !desired
+	if cleanupEligible && member.DisabledSince == nil {
+		disabledSince := startedAt
+		if err := s.store.UpdateMemberDisabledSince(member.ID, &disabledSince); err != nil {
+			return nil, err
+		}
+		member.DisabledSince = &disabledSince
+	} else if !cleanupEligible && member.DisabledSince != nil {
+		if err := s.store.UpdateMemberDisabledSince(member.ID, nil); err != nil {
+			return nil, err
+		}
+		member.DisabledSince = nil
+	}
 	reason := schedulingReason(config.Enabled, pool.Enabled, member.Enabled, remote.Status, bindingValid, locks)
 	decision = &SchedulingDecision{
 		RemoteAccountID: remoteAccountID, DesiredSchedulable: desired, RemoteSchedulable: remote.Schedulable,

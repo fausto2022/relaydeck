@@ -159,6 +159,13 @@ func (s *Service) refreshSourceAPIKeyGroups(
 				continue
 			}
 			groupChanged := !sameOptionalInt64(member.SourceGroupID, resolution.ID) || member.SourceGroupName != resolution.Name
+			if member.SourceAPIKeyManaged {
+				if groupChanged {
+					member.SourceAPIKeyName = renamedManagedSourceAPIKeyName(member, member.SourceGroupName, resolution.Name, key.Name)
+				} else if strings.TrimSpace(member.SourceAPIKeyName) == "" {
+					member.SourceAPIKeyName = strings.TrimSpace(key.Name)
+				}
+			}
 			member.SourceGroupID = copyOptionalInt64(resolution.ID)
 			member.SourceGroupName = resolution.Name
 			if groupChanged {
@@ -196,7 +203,7 @@ func (s *Service) refreshSourceAPIKeyGroups(
 					}
 				}
 			}
-			memberChanged := groupChanged || member.SourceAPIKeyManaged != before.SourceAPIKeyManaged || member.AccountName != before.AccountName || member.RemoteAccountName != before.RemoteAccountName
+			memberChanged := groupChanged || member.SourceAPIKeyManaged != before.SourceAPIKeyManaged || member.SourceAPIKeyName != before.SourceAPIKeyName || member.AccountName != before.AccountName || member.RemoteAccountName != before.RemoteAccountName
 			if memberChanged {
 				if err := s.store.UpdateMember(member); err != nil {
 					return result, fmt.Errorf("update member %d source binding: %w", member.ID, err)
@@ -216,6 +223,38 @@ func (s *Service) refreshSourceAPIKeyGroups(
 		}
 	}
 	return result, nil
+}
+
+func renamedManagedSourceAPIKeyName(member *storage.MainAccountPoolMember, oldGroupName, newGroupName, currentKeyName string) string {
+	base := compactName(newGroupName, 115)
+	oldBase := compactName(oldGroupName, 120)
+	current := strings.TrimSpace(currentKeyName)
+	if len([]rune(current)) > len([]rune(oldBase))+1 && strings.HasPrefix(strings.ToLower(current), strings.ToLower(oldBase)+"-") {
+		runes := []rune(current)
+		suffix := string(runes[len([]rune(oldBase))+1:])
+		if isManagedKeySuffix(suffix) {
+			return base + "-" + suffix
+		}
+	}
+	if member != nil {
+		copy := *member
+		copy.SourceAPIKeyName = ""
+		copy.SourceGroupName = newGroupName
+		return managedSourceAPIKeyName(&copy)
+	}
+	return base
+}
+
+func isManagedKeySuffix(value string) bool {
+	if len([]rune(value)) != 4 {
+		return false
+	}
+	for _, r := range value {
+		if !strings.ContainsRune("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", r) {
+			return false
+		}
+	}
+	return true
 }
 
 func resolveSourceAPIKeyGroup(key *connector.APIKey, groups []connector.APIKeyGroup, authoritative bool) sourceGroupResolution {

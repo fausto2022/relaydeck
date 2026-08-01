@@ -71,6 +71,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
   const [autoExpandMinRateMultiplier, setAutoExpandMinRateMultiplier] = useState("")
   const [autoExpandCategoryRuleID, setAutoExpandCategoryRuleID] = useState(ALL_PROVIDER_RATES)
   const [autoExpandBlockedKeywords, setAutoExpandBlockedKeywords] = useState("")
+  const [disabledCleanupHours, setDisabledCleanupHours] = useState("0")
   const [rateRankingConfig, setRateRankingConfig] = useState<RateRankingConfig | null>(null)
   const [rateRankingLoading, setRateRankingLoading] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -91,6 +92,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
     setAutoExpandMinRateMultiplier(workspace.auto_expand_min_rate_multiplier_micros > 0 ? String(workspace.auto_expand_min_rate_multiplier_micros / 1_000_000) : "")
     setAutoExpandCategoryRuleID(workspace.auto_expand_category_rule_id == null ? ALL_PROVIDER_RATES : String(workspace.auto_expand_category_rule_id))
     setAutoExpandBlockedKeywords(workspace.auto_expand_blocked_keywords ?? "")
+    setDisabledCleanupHours(String((workspace.disabled_cleanup_seconds ?? 0) / 3600))
     setAdvancedOpen(false)
   }, [open, workspace])
 
@@ -138,6 +140,11 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
       toast.error("开启自动扩池时，最低倍率和最低利润率至少填写一项")
       return
     }
+    const disabledCleanupHoursValue = Number(disabledCleanupHours)
+    if (!Number.isFinite(disabledCleanupHoursValue) || disabledCleanupHoursValue < 0 || (disabledCleanupHoursValue > 0 && disabledCleanupHoursValue < 1) || disabledCleanupHoursValue > 8760) {
+      toast.error("停用账号自动清理时间必须为 0，或在 1 到 8760 小时之间")
+      return
+    }
     const minimumMarginValue = minimumMarginPercent.trim() === "" ? null : Number(minimumMarginPercent)
     if (minimumMarginValue != null && (!Number.isFinite(minimumMarginValue) || minimumMarginValue < 0 || minimumMarginValue > 99)) {
       toast.error("本分组最低利润率必须在 0% 到 99% 之间")
@@ -161,6 +168,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
           auto_expand_min_rate_multiplier_micros: autoExpandRateValue == null ? 0 : Math.round(autoExpandRateValue * 1_000_000),
           auto_expand_category_rule_id: autoExpandCategoryRuleID === ALL_PROVIDER_RATES ? null : Number(autoExpandCategoryRuleID),
           auto_expand_blocked_keywords: autoExpandBlockedKeywords,
+          disabled_cleanup_seconds: Math.round(disabledCleanupHoursValue * 3600),
         }),
       })
       onSaved(saved)
@@ -230,6 +238,19 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
               onChange={(event) => setMinimumMarginPercent(event.target.value)}
             />
             <p className="text-xs text-muted-foreground">留空继承全局；实际利润率等于最低要求时仍算正常，低于要求才判定利润不足。</p>
+          </div>
+          <div className="space-y-2 border-t pt-4 sm:col-span-2">
+            <Label htmlFor="group-disabled-cleanup">停用账号自动清理（小时）</Label>
+            <Input
+              id="group-disabled-cleanup"
+              type="number"
+              min={0}
+              max={8760}
+              step={1}
+              value={disabledCleanupHours}
+              onChange={(event) => setDisabledCleanupHours(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">填 0 关闭。账号自身持续停用到期后，将删除主站托管账号、其精确绑定的程序托管 Key 和本地成员；关闭整个主站或分组不会触发清理，人工接管资源不会自动删除。</p>
           </div>
           <div className="space-y-4 border-t pt-4 sm:col-span-2">
             <div className="flex items-center justify-between gap-4">

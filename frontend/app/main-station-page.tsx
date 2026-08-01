@@ -946,6 +946,7 @@ function actionLabel(action: string) {
     member_managed_sync: "同步账号",
     member_source_group_sync: "同步上游 Key 分组",
     member_auto_cleanup: "自动清理失效账号",
+    member_disabled_cleanup: "自动清理长期停用账号",
     member_update: "更新账号",
     member_delete: "删除账号",
     member_unbind: "解除接管",

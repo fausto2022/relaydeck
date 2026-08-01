@@ -73,36 +73,38 @@ type adminClient interface {
 }
 
 type Service struct {
-	store            *storage.MainStationStore
-	targets          *storage.UpstreamSyncTargets
-	targetGroups     *storage.UpstreamSyncTargetGroups
-	channels         *storage.Channels
-	rates            *storage.Rates
-	managedAccounts  *storage.UpstreamSyncManagedAccounts
-	cipher           *crypto.Cipher
-	channelSvc       channelService
-	log              *slog.Logger
-	dispatcher       *notify.Dispatcher
-	rateRanking      *rateranking.Service
-	adminFactory     func() adminClient
-	healthMu         sync.Mutex
-	healthRunning    map[string]struct{}
-	healthGlobal     chan struct{}
-	healthChannels   map[uint]chan struct{}
-	healthScheduleMu sync.Mutex
-	syncScheduleMu   sync.Mutex
-	rateTestMu       sync.Mutex
-	rateTests        map[string]struct{}
-	autoExpandMu     sync.Mutex
-	tempCleanupMu    sync.Mutex
-	tempCleanupAt    time.Time
-	probeConfigMu    sync.RWMutex
-	proxyConfig      config.ProxyConfig
-	probeTimeout     time.Duration
-	probeUserAgent   string
-	now              func() time.Time
-	scheduleLocks    sync.Map
-	rankingLocks     sync.Map
+	store             *storage.MainStationStore
+	targets           *storage.UpstreamSyncTargets
+	targetGroups      *storage.UpstreamSyncTargetGroups
+	channels          *storage.Channels
+	rates             *storage.Rates
+	managedAccounts   *storage.UpstreamSyncManagedAccounts
+	cipher            *crypto.Cipher
+	channelSvc        channelService
+	log               *slog.Logger
+	dispatcher        *notify.Dispatcher
+	rateRanking       *rateranking.Service
+	adminFactory      func() adminClient
+	healthMu          sync.Mutex
+	healthRunning     map[string]struct{}
+	healthGlobal      chan struct{}
+	healthChannels    map[uint]chan struct{}
+	healthScheduleMu  sync.Mutex
+	syncScheduleMu    sync.Mutex
+	rateTestMu        sync.Mutex
+	rateTests         map[string]struct{}
+	autoExpandMu      sync.Mutex
+	tempCleanupMu     sync.Mutex
+	tempCleanupAt     time.Time
+	disabledCleanupMu sync.Mutex
+	disabledCleanupAt time.Time
+	probeConfigMu     sync.RWMutex
+	proxyConfig       config.ProxyConfig
+	probeTimeout      time.Duration
+	probeUserAgent    string
+	now               func() time.Time
+	scheduleLocks     sync.Map
+	rankingLocks      sync.Map
 }
 
 func (s *Service) SetDispatcher(dispatcher *notify.Dispatcher) {

@@ -111,6 +111,7 @@ type MainAccountPool struct {
 	AutoExpandMinRateMicros        int64      `gorm:"column:auto_expand_min_rate_multiplier_micros;not null;default:0" json:"auto_expand_min_rate_multiplier_micros"`
 	AutoExpandCategoryRuleID       *uint      `json:"auto_expand_category_rule_id,omitempty"`
 	AutoExpandBlockedKeywords      string     `gorm:"type:text" json:"auto_expand_blocked_keywords,omitempty"`
+	DisabledCleanupSeconds         int        `gorm:"not null;default:0" json:"disabled_cleanup_seconds"`
 	LastAutoExpandAt               *time.Time `json:"last_auto_expand_at,omitempty"`
 	LastAutoExpandError            string     `gorm:"type:text" json:"last_auto_expand_error,omitempty"`
 	LastStatus                     string     `gorm:"size:32;not null;default:'unknown';index" json:"last_status"`
@@ -139,6 +140,7 @@ type MainAccountPoolMember struct {
 	SourceGroupID            *int64     `json:"source_group_id,omitempty"`
 	SourceGroupName          string     `gorm:"size:256;not null;default:''" json:"source_group_name,omitempty"`
 	SourceAPIKeyID           *int64     `json:"source_api_key_id,omitempty"`
+	SourceAPIKeyName         string     `gorm:"size:256;not null;default:''" json:"source_api_key_name,omitempty"`
 	SourceAPIKeyManaged      bool       `gorm:"not null;default:false;index" json:"source_api_key_managed"`
 	RemoteAccountID          *int64     `gorm:"uniqueIndex" json:"remote_account_id,omitempty"`
 	RemoteAccountName        string     `gorm:"size:256;not null;default:''" json:"remote_account_name,omitempty"`
@@ -173,6 +175,7 @@ type MainAccountPoolMember struct {
 	SchedulingDirtyAt        *time.Time `json:"scheduling_dirty_at,omitempty"`
 	LastSchedulingAt         *time.Time `json:"last_scheduling_at,omitempty"`
 	LastSchedulingError      string     `gorm:"type:text" json:"last_scheduling_error,omitempty"`
+	DisabledSince            *time.Time `gorm:"index" json:"disabled_since,omitempty"`
 	CreatedAt                time.Time  `json:"created_at"`
 	UpdatedAt                time.Time  `json:"updated_at"`
 }

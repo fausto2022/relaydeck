@@ -156,6 +156,22 @@ func (r *MainStationStore) CompleteMemberScheduling(memberID uint, startedAt, fi
 	return r.db.Model(&MainAccountPoolMember{}).Where("id = ?", memberID).Updates(updates).Error
 }
 
+func (r *MainStationStore) UpdateMemberDisabledSince(memberID uint, disabledSince *time.Time) error {
+	return r.db.Model(&MainAccountPoolMember{}).Where("id = ?", memberID).Update("disabled_since", disabledSince).Error
+}
+
+func (r *MainStationStore) ListDisabledManagedMembersForCleanup() ([]MainAccountPoolMember, error) {
+	var list []MainAccountPoolMember
+	err := r.db.Table("main_account_pool_members AS members").
+		Select("members.*").
+		Joins("JOIN main_account_pools AS pools ON pools.id = members.pool_id").
+		Where("pools.disabled_cleanup_seconds > 0 AND members.disabled_since IS NOT NULL").
+		Where("members.ownership_mode = ? AND members.source_api_key_managed = ?", "managed", true).
+		Where("members.remote_account_id IS NOT NULL AND members.source_api_key_id IS NOT NULL").
+		Order("members.disabled_since ASC, members.id ASC").Find(&list).Error
+	return list, err
+}
+
 func (r *MainStationStore) ListSchedulingDirtyMembers() ([]MainAccountPoolMember, error) {
 	var list []MainAccountPoolMember
 	err := r.db.Where("scheduling_dirty_at IS NOT NULL AND remote_account_id IS NOT NULL").
@@ -954,6 +970,9 @@ func applyPoolDefaults(item *MainAccountPool) {
 	}
 	if item.AutoExpandMinMarginBasisPoints < 0 {
 		item.AutoExpandMinMarginBasisPoints = 0
+	}
+	if item.DisabledCleanupSeconds < 0 {
+		item.DisabledCleanupSeconds = 0
 	}
 	if item.MinimumMarginBasisPoints != nil && *item.MinimumMarginBasisPoints < 0 {
 		value := int64(0)
