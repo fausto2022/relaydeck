@@ -1283,6 +1283,37 @@ func TestDeleteManagedMemberToleratesAlreadyMissingRemoteResources(t *testing.T)
 	}
 }
 
+func TestDeleteBoundMemberDeletesMainStationAccountOnly(t *testing.T) {
+	service, _, admin, channels, member := createSourceBindingSyncFixture(t)
+	if err := service.DeleteMember(context.Background(), member.PoolID, member.ID, DeleteMemberInput{
+		Confirm: true, DeleteRemoteAccount: true,
+	}); err != nil {
+		t.Fatalf("delete bound main station account: %v", err)
+	}
+	if len(admin.deletedAccounts) != 1 || admin.deletedAccounts[0] != *member.RemoteAccountID || len(channels.deletedKeys) != 0 {
+		t.Fatalf("deleted resources: accounts=%v keys=%v", admin.deletedAccounts, channels.deletedKeys)
+	}
+	if _, err := service.store.FindMember(member.PoolID, member.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("deleted member lookup error = %v", err)
+	}
+}
+
+func TestDeleteBoundMemberDeletesMainStationAccountAndSourceKey(t *testing.T) {
+	service, _, admin, channels, member := createSourceBindingSyncFixture(t)
+	if err := service.DeleteMember(context.Background(), member.PoolID, member.ID, DeleteMemberInput{
+		Confirm: true, DeleteRemoteAccount: true, DeleteSourceAPIKey: true,
+	}); err != nil {
+		t.Fatalf("delete bound account and source key: %v", err)
+	}
+	if len(admin.deletedAccounts) != 1 || admin.deletedAccounts[0] != *member.RemoteAccountID ||
+		len(channels.deletedKeys) != 1 || channels.deletedKeys[0] != *member.SourceAPIKeyID {
+		t.Fatalf("deleted resources: accounts=%v keys=%v", admin.deletedAccounts, channels.deletedKeys)
+	}
+	if _, err := service.store.FindMember(member.PoolID, member.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("deleted member lookup error = %v", err)
+	}
+}
+
 func TestUpdateGroupEnabledReconcilesAllMembers(t *testing.T) {
 	service, _, admin, pool, _ := createBoundSchedulingMember(t)
 	admin.schedulableCalls = nil

@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner"
 import { AccountSettingsDialog } from "@/components/main-station/account-settings-dialog"
 import { BindingRecommendationsDialog } from "@/components/main-station/binding-recommendations-dialog"
+import { DeleteAccountDialog } from "@/components/main-station/delete-account-dialog"
 import { GroupSettingsDialog } from "@/components/main-station/group-settings-dialog"
 import { HealthHistoryDialog } from "@/components/main-station/health-history-dialog"
 import { MemberDialog } from "@/components/main-station/member-dialog"
@@ -31,7 +32,6 @@ import { StationConfigDialog } from "@/components/main-station/station-config-di
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { useConfirm } from "@/components/ui/confirm-dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,7 +82,6 @@ import { dateTime, relativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export default function MainStationPage() {
-  const { confirm, dialog: confirmDialog } = useConfirm()
   const [config, setConfig] = useState<MainStationConfig | null>(null)
   const [workspaces, setWorkspaces] = useState<MainStationGroupWorkspace[]>([])
   const [accounts, setAccounts] = useState<MainStationAccount[]>([])
@@ -104,6 +103,7 @@ export default function MainStationPage() {
   const [bindingAccount, setBindingAccount] = useState<MainStationAccount | null>(null)
   const [editingAccount, setEditingAccount] = useState<MainStationAccount | null>(null)
   const [healthHistoryAccount, setHealthHistoryAccount] = useState<MainStationAccount | null>(null)
+  const [deletingAccount, setDeletingAccount] = useState<MainStationAccount | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [riskOpen, setRiskOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
@@ -345,27 +345,21 @@ export default function MainStationPage() {
     }
   }
 
-  async function handleDelete(account: MainStationAccount) {
-    if (!selectedWorkspace || !account.member) return
-    const managed = account.member.ownership_mode === "managed"
-    const approved = await confirm({
-      title: `删除账号“${account.name}”`,
-      description: managed ? "将同时删除主站账号和自动创建的来源 API Key。" : "只解除接管关系，主站账号和来源 API Key 保持不变。",
-      confirmLabel: "删除",
-      destructive: true,
-    })
-    if (!approved) return
+  async function handleDelete(deleteSourceAPIKey: boolean) {
+    const account = deletingAccount
+    if (!selectedWorkspace || !account?.member) return
     setBusyAccountID(account.remote_account_id)
     try {
       await apiFetch(`/main-station/groups/${selectedWorkspace.group.id}/accounts/${account.member.id}`, {
         method: "DELETE",
         body: JSON.stringify({
           confirm: true,
-          delete_remote_account: managed,
-          delete_source_api_key: managed,
+          delete_remote_account: true,
+          delete_source_api_key: deleteSourceAPIKey,
         }),
       })
-      toast.success(managed ? "账号已删除" : "接管关系已解除")
+      toast.success(deleteSourceAPIKey ? "主站账号和上游 Key 已删除" : "主站账号已删除，上游 Key 已保留")
+      setDeletingAccount(null)
       await loadBase()
       await loadAccounts(selectedGroupID)
     } catch (deleteError) {
@@ -560,7 +554,7 @@ export default function MainStationPage() {
                                 ) : selectedWorkspace ? (
                                   <IconButton label="接管账号" onClick={() => { setBindingAccount(account); setMemberOpen(true) }}><Link2 className="size-4" /></IconButton>
                                 ) : null}
-                                <AccountMenu account={account} canManage={selectedWorkspace != null} onCheck={handleCheck} onSync={handleSyncAccount} onDelete={handleDelete} />
+                                <AccountMenu account={account} canManage={selectedWorkspace != null} onCheck={handleCheck} onSync={handleSyncAccount} onDelete={setDeletingAccount} />
                               </div>
                             )}
                           </TableCell>
@@ -683,8 +677,14 @@ export default function MainStationPage() {
         groupID={selectedWorkspace?.group.id ?? null}
         account={healthHistoryAccount}
       />
+      <DeleteAccountDialog
+        open={deletingAccount != null}
+        onOpenChange={(open) => { if (!open) setDeletingAccount(null) }}
+        account={deletingAccount}
+        busy={deletingAccount != null && busyAccountID === deletingAccount.remote_account_id}
+        onConfirm={handleDelete}
+      />
       <GroupSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} workspace={selectedWorkspace} config={config} onSaved={(saved) => { setWorkspaces((items) => items.map((item) => item.group.id === saved.group.id ? saved : item)); void loadAccounts(selectedGroupID); void loadRisk(selectedGroupID) }} />
-      {confirmDialog}
     </div>
   )
 }
@@ -715,7 +715,7 @@ function AccountMenu({ account, canManage, onCheck, onSync, onDelete }: { accoun
         {account.member ? <DropdownMenuItem disabled={!canManage} onClick={() => void onCheck(account)}><TestTube2 className="size-4" />检测账号</DropdownMenuItem> : null}
         {account.member?.ownership_mode === "managed" ? <DropdownMenuItem disabled={!canManage} onClick={() => void onSync(account)}><RefreshCw className="size-4" />重新应用配置</DropdownMenuItem> : null}
         {account.member ? <DropdownMenuSeparator /> : null}
-        <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={!account.member || !canManage} onClick={() => void onDelete(account)}><Trash2 className="size-4" />删除账号</DropdownMenuItem>
+        <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={!account.member || !canManage} onClick={() => onDelete(account)}><Trash2 className="size-4" />删除账号</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -935,7 +935,7 @@ function guardLockReason(reason?: string) {
     "member health checks reached quarantine threshold": "连续探活失败达到自动停用阈值",
     "remote account no longer exists": "主站远端账号已经不存在",
     "new managed member is awaiting initial health checks": "新账号正在等待首次健康检测",
-    "managed member is being removed": "账号正在执行删除流程",
+    "member is being removed": "账号正在执行删除流程",
   } as Record<string, string>)[reason] ?? reason
 }
 

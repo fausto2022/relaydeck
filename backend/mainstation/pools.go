@@ -1331,10 +1331,10 @@ func (s *Service) DeleteMember(ctx context.Context, poolID, memberID uint, in De
 	if err != nil {
 		return err
 	}
-	if member.OwnershipMode == "bound" {
-		if in.DeleteRemoteAccount || in.DeleteSourceAPIKey {
-			return errors.New("bound member deletion cannot delete remote resources")
-		}
+	if in.DeleteSourceAPIKey && !in.DeleteRemoteAccount {
+		return errors.New("source API key deletion requires deleting the main station account")
+	}
+	if member.OwnershipMode == "bound" && !in.DeleteRemoteAccount {
 		if err := s.store.DeleteMember(poolID, memberID); err != nil {
 			return err
 		}
@@ -1352,15 +1352,18 @@ func (s *Service) DeleteMember(ctx context.Context, poolID, memberID uint, in De
 	adminTarget := sub2api.AdminTarget{BaseURL: target.BaseURL, APIKey: adminAPIKey}
 	if member.RemoteAccountID != nil {
 		remoteAccountID := *member.RemoteAccountID
-		_, pauseErr := s.ActivateGuardLock(ctx, remoteAccountID, "manual", "managed member is being removed", map[string]any{
+		_, pauseErr := s.ActivateGuardLock(ctx, remoteAccountID, "manual", "member is being removed", map[string]any{
 			"pool_id": poolID, "member_id": memberID,
 		}, "admin")
 		if pauseErr != nil && !(in.DeleteRemoteAccount && missingRemoteResource(pauseErr)) {
-			return fmt.Errorf("pause managed remote account before removal: %w", pauseErr)
+			return fmt.Errorf("pause main station account before removal: %w", pauseErr)
 		}
 		if in.DeleteRemoteAccount {
 			if err := client.DeleteAccount(ctx, adminTarget, remoteAccountID); err != nil && !missingRemoteResource(err) {
-				return fmt.Errorf("delete managed remote account: %w", err)
+				return fmt.Errorf("delete main station account: %w", err)
+			}
+			if err := s.store.MarkAccountSnapshotMissing(remoteAccountID, s.now()); err != nil {
+				return fmt.Errorf("mark deleted main station account missing: %w", err)
 			}
 			if err := s.ClearSchedulingLock(ctx, remoteAccountID, "manual", "admin"); err != nil {
 				return fmt.Errorf("clear temporary removal lock: %w", err)
@@ -1373,7 +1376,7 @@ func (s *Service) DeleteMember(ctx context.Context, poolID, memberID uint, in De
 	}
 	if in.DeleteSourceAPIKey && member.SourceAPIKeyID != nil {
 		if err := s.channelSvc.DeleteAPIKey(ctx, member.SourceChannelID, *member.SourceAPIKeyID); err != nil && !missingRemoteResource(err) {
-			return fmt.Errorf("delete managed source api key: %w", err)
+			return fmt.Errorf("delete source api key: %w", err)
 		}
 	}
 	if err := s.store.DeleteMember(poolID, memberID); err != nil {
@@ -1385,7 +1388,7 @@ func (s *Service) DeleteMember(ctx context.Context, poolID, memberID uint, in De
 	_ = s.appendAudit(&poolID, &memberID, member.RemoteAccountID, "member_delete", "manual", true, member, nil, map[string]any{
 		"remote_deleted":     in.DeleteRemoteAccount,
 		"source_key_deleted": in.DeleteSourceAPIKey,
-	}, "managed remote account was paused before local removal", "")
+	}, "main station account deletion completed", "")
 	return nil
 }
 
