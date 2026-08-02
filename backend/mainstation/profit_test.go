@@ -439,6 +439,34 @@ func TestProfitBasisPointsUsesEffectiveCostAsDenominator(t *testing.T) {
 	}
 }
 
+func TestProfitEvaluationUsesMainGroupRateAndUpstreamEffectiveRate(t *testing.T) {
+	service, db, admin, _ := newTestService(t)
+	current := time.Date(2026, 8, 2, 17, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	service.now = func() time.Time { return current }
+	pool, _, group := createProfitMember(
+		t, service, db, admin, current, 0.1,
+		`{"mode":"observe","minimum_margin_basis_points":0,"risk_confirmations":2,"cost_max_age_minutes":60}`,
+	)
+	userMinimum := int64(120000)
+	if err := db.Model(&storage.UpstreamSyncTargetGroup{}).Where("id = ?", group.ID).Updates(map[string]any{
+		"rate_multiplier_micros": 150000,
+		"user_min_rate_micros":   userMinimum,
+		"user_rates_complete":    true,
+	}).Error; err != nil {
+		t.Fatalf("update main group rates: %v", err)
+	}
+
+	result, err := service.EvaluatePool(context.Background(), pool.ID, "manual")
+	if err != nil {
+		t.Fatalf("evaluate effective upstream rate: %v", err)
+	}
+	if len(result.Checks) != 1 || result.Checks[0].SaleMultiplierMicros != 150000 ||
+		result.Checks[0].CostMultiplierMicros != 100000 || result.Checks[0].MarginBasisPoints != 5000 ||
+		result.Checks[0].SaleSource != "main_group_rate" || result.Checks[0].CostSource != "source_rate_snapshot" {
+		t.Fatalf("profit evaluation = %#v", result.Checks)
+	}
+}
+
 func createProfitMember(t *testing.T, service *Service, db *gorm.DB, admin *fakeAdminClient, rateObservedAt time.Time, costRatio float64, marginPolicy string) (*storage.MainAccountPool, *storage.MainAccountPoolMember, *storage.UpstreamSyncTargetGroup) {
 	t.Helper()
 	configureTestStation(t, service)

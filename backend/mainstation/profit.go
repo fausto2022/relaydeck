@@ -520,15 +520,8 @@ func profitBasisPoints(saleMicros, costMicros int64) int64 {
 }
 
 func effectiveSaleMultiplier(group *storage.UpstreamSyncTargetGroup, now time.Time) (int64, string, string) {
-	if !group.UserRatesComplete {
-		return 0, "", "user-specific rate multipliers are not confirmed"
-	}
 	value := group.RateMultiplierMicros
 	source := "main_group_rate"
-	if group.UserMinRateMicros != nil && *group.UserMinRateMicros > 0 && (*group.UserMinRateMicros < value || value == 0) {
-		value = *group.UserMinRateMicros
-		source = "main_group_user_min_rate"
-	}
 	if value <= 0 {
 		return 0, source, "main station sale multiplier is missing"
 	}
