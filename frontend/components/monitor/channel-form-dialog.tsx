@@ -709,7 +709,7 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
           <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
             <div>
               <p className="text-sm font-medium">启用代理 IP</p>
-              <p className="text-xs text-muted-foreground">全局代理启用后，该渠道上游请求走系统代理配置</p>
+              <p className="text-xs text-muted-foreground">该渠道的同步、Key 操作及绑定账号探活使用系统代理配置</p>
             </div>
             <Switch
               checked={form.proxy_enabled}

@@ -77,7 +77,7 @@ func versionCheckClient(proxyCfg config.ProxyConfig, force bool) *http.Client {
 	if !proxyCfg.VersionCheckEnabled && !force {
 		return githubReleaseClient
 	}
-	proxyURL, err := proxyCfg.ActiveURL()
+	proxyURL, err := proxyCfg.URLFor(proxyCfg.VersionCheckEnabled)
 	if err != nil || proxyURL == "" {
 		return githubReleaseClient
 	}

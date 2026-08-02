@@ -87,15 +87,12 @@ func RefreshBalanceWithProxy(ctx context.Context, repo *storage.Captchas, cipher
 	}
 
 	now := time.Now()
-	proxyURL := ""
-	if cfg.ProxyEnabled {
-		proxyURL, err = proxyCfg.ActiveURL()
-		if err != nil {
-			_ = repo.UpdateBalance(cfg.ID, cfg.LastBalance, cfg.BalanceUnit, err.Error(), now)
-			cfg.BalanceAt = &now
-			cfg.BalanceError = err.Error()
-			return cfg, err
-		}
+	proxyURL, err := proxyCfg.URLFor(cfg.ProxyEnabled)
+	if err != nil {
+		_ = repo.UpdateBalance(cfg.ID, cfg.LastBalance, cfg.BalanceUnit, err.Error(), now)
+		cfg.BalanceAt = &now
+		cfg.BalanceError = err.Error()
+		return cfg, err
 	}
 	res, err := FetchBalanceWithProxy(ctx, cfg, apiKey, proxyURL)
 	if err != nil {

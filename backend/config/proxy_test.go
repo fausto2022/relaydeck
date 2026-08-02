@@ -67,3 +67,32 @@ func TestProxyConfigActiveURLRequiresEnabled(t *testing.T) {
 		t.Fatalf("enabled active url = %q", got)
 	}
 }
+
+func TestProxyConfigURLForUsesGlobalOrObjectSwitch(t *testing.T) {
+	cfg := ProxyConfig{Protocol: "http", Host: "127.0.0.1", Port: 8080}
+
+	got, err := cfg.URLFor(true)
+	if err != nil {
+		t.Fatalf("URLFor object enabled: %v", err)
+	}
+	if got != "http://127.0.0.1:8080" {
+		t.Fatalf("object proxy url = %q", got)
+	}
+
+	got, err = cfg.URLFor(false)
+	if err != nil {
+		t.Fatalf("URLFor disabled: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("disabled proxy url = %q, want empty", got)
+	}
+
+	cfg.Enabled = true
+	got, err = cfg.URLFor(false)
+	if err != nil {
+		t.Fatalf("URLFor global enabled: %v", err)
+	}
+	if got != "http://127.0.0.1:8080" {
+		t.Fatalf("global proxy url = %q", got)
+	}
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Bell,
@@ -101,6 +101,8 @@ export default function SettingsPage() {
   const refresh = useTriggerRefresh();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [form, setForm] = useState<SystemConfig | null>(null);
+  const loadedFormRef = useRef<SystemConfig | null>(null);
+  const formDirtyRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
   const [configSavedPendingApply, setConfigSavedPendingApply] = useState(false);
@@ -119,10 +121,16 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("system");
 
   useEffect(() => {
-    if (query.data?.config) {
-      setForm(query.data.config);
-    }
+    if (!query.data?.config || formDirtyRef.current) return;
+    loadedFormRef.current = query.data.config;
+    setForm(query.data.config);
   }, [query.data]);
+
+  useEffect(() => {
+    if (form && loadedFormRef.current && form !== loadedFormRef.current) {
+      formDirtyRef.current = true;
+    }
+  }, [form]);
 
   if (query.loading && !form) {
     return (
@@ -253,6 +261,8 @@ export default function SettingsPage() {
         body: JSON.stringify(form),
       });
       toast.success("已写入配置文件");
+      loadedFormRef.current = form;
+      formDirtyRef.current = false;
       setConfigSavedPendingApply(true);
       query.refetch();
       refresh();
@@ -966,7 +976,7 @@ export default function SettingsPage() {
           <SectionCard
             icon={<Network className="size-4 text-cyan-600" />}
             title="代理 IP"
-            description="配置渠道上游请求使用的全局代理。只有渠道里开启代理 IP 的账号会使用这里的配置。"
+            description="代理参数独立保存。可全局启用，也可只在指定上游渠道中启用。"
             action={
               <Button
                 size="sm"
@@ -986,7 +996,7 @@ export default function SettingsPage() {
               <InlineSwitch
                 id="proxy-enabled"
                 label="启用全局代理"
-                description="关闭后所有已勾选代理 IP 的对象也会保持直连。"
+                description="开启后全部支持代理的请求使用此配置；关闭后仍可由渠道等单独启用。"
                 checked={form.proxy.enabled}
                 onCheckedChange={(checked) =>
                   setForm((prev) =>

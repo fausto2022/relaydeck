@@ -70,11 +70,11 @@ func (d *Dispatcher) UpdateProxyConfig(cfg config.ProxyConfig) {
 	d.mu.Unlock()
 }
 
-func (d *Dispatcher) proxyURL() (string, error) {
+func (d *Dispatcher) proxyURL(objectEnabled bool) (string, error) {
 	d.mu.RLock()
 	cfg := d.proxy
 	d.mu.RUnlock()
-	return cfg.ActiveURL()
+	return cfg.URLFor(objectEnabled)
 }
 
 // Send 把消息发送到一个具体的渠道（用于"测试发送"按钮）。
@@ -341,10 +341,10 @@ func (d *Dispatcher) sendOne(ctx context.Context, ch *storage.NotificationChanne
 }
 
 func (d *Dispatcher) applyProxy(ch *storage.NotificationChannel, n Notifier) error {
-	if ch == nil || !ch.ProxyEnabled {
+	if ch == nil {
 		return nil
 	}
-	proxyURL, err := d.proxyURL()
+	proxyURL, err := d.proxyURL(ch.ProxyEnabled)
 	if err != nil {
 		return err
 	}

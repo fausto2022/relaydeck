@@ -5,16 +5,49 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/fausto2022/relaydeck/backend/config"
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"gorm.io/gorm"
 )
+
+func TestProbeHTTPClientUsesChannelProxyWithoutGlobalProxy(t *testing.T) {
+	service, _, _, _ := newTestService(t)
+	service.UpdateProbeConfig(config.ProxyConfig{
+		Protocol: "http",
+		Host:     "127.0.0.1",
+		Port:     8080,
+	}, 15*time.Second, "test")
+
+	client := service.probeHTTPClient(&storage.Channel{ProxyEnabled: true})
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T", client.Transport)
+	}
+	proxyURL, err := transport.Proxy(&http.Request{URL: mustParseURL(t, "https://example.com")})
+	if err != nil {
+		t.Fatalf("resolve probe proxy: %v", err)
+	}
+	if proxyURL == nil || proxyURL.String() != "http://127.0.0.1:8080" {
+		t.Fatalf("probe proxy = %v", proxyURL)
+	}
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse URL: %v", err)
+	}
+	return parsed
+}
 
 func TestHealthChecksUseControlledOutputLimitsAndClassifyFailures(t *testing.T) {
 	responseMode := "success"

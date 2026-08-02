@@ -646,10 +646,16 @@ func (s *Service) probeHTTPClient(channel *storage.Channel) *http.Client {
 	transport.ResponseHeaderTimeout = timeout
 	transport.TLSHandshakeTimeout = minDuration(timeout, 10*time.Second)
 	transport.DialContext = (&net.Dialer{Timeout: minDuration(timeout, 10*time.Second), KeepAlive: 30 * time.Second}).DialContext
-	if channel.ProxyEnabled {
-		if rawProxy, err := proxyConfig.ActiveURL(); err == nil && rawProxy != "" {
-			if parsed, parseErr := url.Parse(rawProxy); parseErr == nil {
-				transport.Proxy = http.ProxyURL(parsed)
+	if rawProxy, err := proxyConfig.URLFor(channel.ProxyEnabled); err != nil {
+		transport.Proxy = func(*http.Request) (*url.URL, error) {
+			return nil, fmt.Errorf("proxy config: %w", err)
+		}
+	} else if rawProxy != "" {
+		if parsed, parseErr := url.Parse(rawProxy); parseErr == nil {
+			transport.Proxy = http.ProxyURL(parsed)
+		} else {
+			transport.Proxy = func(*http.Request) (*url.URL, error) {
+				return nil, fmt.Errorf("parse proxy URL: %w", parseErr)
 			}
 		}
 	}

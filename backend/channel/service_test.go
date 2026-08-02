@@ -62,10 +62,9 @@ func testService(t *testing.T) (*Service, *crypto.Cipher) {
 	return svc, cipher
 }
 
-func TestResolveAppliesProxyOnlyWhenEnabled(t *testing.T) {
+func TestResolveAppliesChannelProxyWithoutGlobalProxy(t *testing.T) {
 	svc, cipher := testService(t)
 	svc.UpdateProxyConfig(config.ProxyConfig{
-		Enabled:  true,
 		Protocol: "socks5",
 		Host:     "127.0.0.1",
 		Port:     1080,
@@ -128,9 +127,10 @@ func TestUpdateChannelStarredOnly(t *testing.T) {
 	}
 }
 
-func TestResolveSkipsProxyWhenGlobalProxyDisabled(t *testing.T) {
+func TestResolveAppliesGlobalProxyToAllChannels(t *testing.T) {
 	svc, cipher := testService(t)
 	svc.UpdateProxyConfig(config.ProxyConfig{
+		Enabled:  true,
 		Protocol: "socks5",
 		Host:     "127.0.0.1",
 		Port:     1080,
@@ -146,13 +146,13 @@ func TestResolveSkipsProxyWhenGlobalProxyDisabled(t *testing.T) {
 		SiteURL:        "https://example.com",
 		Username:       "u",
 		PasswordCipher: enc,
-		ProxyEnabled:   true,
+		ProxyEnabled:   false,
 	})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if resolved.ProxyURL != "" {
-		t.Fatalf("proxy url = %q, want empty", resolved.ProxyURL)
+	if resolved.ProxyURL != "socks5://127.0.0.1:1080" {
+		t.Fatalf("proxy url = %q", resolved.ProxyURL)
 	}
 }
 

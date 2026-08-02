@@ -89,11 +89,11 @@ func (s *Service) UpdateUpstreamConfig(cfg config.UpstreamConfig) {
 	s.upstream = cfg.WithDefaults()
 }
 
-func (s *Service) proxyURL() (string, error) {
+func (s *Service) proxyURL(objectEnabled bool) (string, error) {
 	s.mu.RLock()
 	cfg := s.proxyConfig
 	s.mu.RUnlock()
-	return cfg.ActiveURL()
+	return cfg.URLFor(objectEnabled)
 }
 
 func (s *Service) upstreamConfig() config.UpstreamConfig {
@@ -532,13 +532,11 @@ func (s *Service) Resolve(ctx context.Context, c *storage.Channel) (*connector.C
 		return nil, err
 	}
 	resolved.LoginExtraParams = loginExtraParams
-	if c.ProxyEnabled {
-		proxyURL, err := s.proxyURL()
-		if err != nil {
-			return nil, err
-		}
-		resolved.ProxyURL = proxyURL
+	proxyURL, err := s.proxyURL(c.ProxyEnabled)
+	if err != nil {
+		return nil, err
 	}
+	resolved.ProxyURL = proxyURL
 	if c.CredentialMode == storage.CredentialModeToken {
 		// token 模式：raw 是 JSON，Password 留空避免被 connector 误用
 		resolved.Password = ""
@@ -636,13 +634,9 @@ func (s *Service) buildCaptchaProvider(captchaID uint) (captcha.Provider, error)
 	if err != nil {
 		return nil, err
 	}
-	proxyURL := ""
-	if cfg.ProxyEnabled {
-		var proxyErr error
-		proxyURL, proxyErr = s.proxyURL()
-		if proxyErr != nil {
-			return nil, proxyErr
-		}
+	proxyURL, proxyErr := s.proxyURL(cfg.ProxyEnabled)
+	if proxyErr != nil {
+		return nil, proxyErr
 	}
 	provider, err := captcha.BuildWithProxy(cfg, apiKey, proxyURL)
 	if err != nil {

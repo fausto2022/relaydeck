@@ -45,3 +45,11 @@ func (p ProxyConfig) ActiveURL() (string, error) {
 	}
 	return p.URL()
 }
+
+// URLFor 在全局开关或对象自身开关任一开启时返回代理地址。
+func (p ProxyConfig) URLFor(objectEnabled bool) (string, error) {
+	if !p.Enabled && !objectEnabled {
+		return "", nil
+	}
+	return p.URL()
+}
