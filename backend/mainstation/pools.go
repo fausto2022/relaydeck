@@ -1566,7 +1566,11 @@ func validateDisabledCleanupSeconds(value int) error {
 }
 
 func missingRemoteResource(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound) || statusCodeFromError(err) == 404
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, gorm.ErrRecordNotFound) || statusCodeFromError(err) == 404 ||
+		strings.Contains(strings.ToLower(err.Error()), "record not found")
 }
 
 func compactName(value string, max int) string {

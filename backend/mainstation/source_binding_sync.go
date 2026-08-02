@@ -142,15 +142,13 @@ func (s *Service) refreshSourceAPIKeyGroups(
 			key, ok := keys[keyID]
 			if !ok {
 				result.Missing++
-				if member.OwnershipMode == "managed" && member.SourceAPIKeyManaged {
-					if cleanupErr := s.cleanupManagedSourceBinding(ctx, client, adminTarget, member, source, "绑定的上游托管 Key 已不存在"); cleanupErr == nil {
-						result.Cleaned++
-						continue
-					} else {
-						result.Warnings = append(result.Warnings, fmt.Sprintf("%s：账号 %s 自动清理失败，将在下次同步重试", s.sourceChannelLabel(channelID), member.AccountName))
-						if s.log != nil {
-							s.log.Warn("cleanup managed member after source key disappeared", "member_id", member.ID, "err", cleanupErr)
-						}
+				if cleanupErr := s.cleanupInvalidSourceBinding(ctx, client, adminTarget, member, source, "绑定的上游 Key 已不存在"); cleanupErr == nil {
+					result.Cleaned++
+					continue
+				} else {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("%s：账号 %s 自动清理失败，将在下次同步重试", s.sourceChannelLabel(channelID), member.AccountName))
+					if s.log != nil {
+						s.log.Warn("cleanup member after source key disappeared", "member_id", member.ID, "err", cleanupErr)
 					}
 				}
 				preservedMissing++
@@ -170,6 +168,7 @@ func (s *Service) refreshSourceAPIKeyGroups(
 			resolution := resolveSourceAPIKeyGroup(&key, groups, groupsAuthoritative)
 			wasExplicitlyGrouped := member.SourceGroupID != nil || strings.TrimSpace(member.SourceGroupName) != ""
 			cleanupReason := ""
+			cleanupAllowed := member.OwnershipMode == "managed" && member.SourceAPIKeyManaged
 			if member.RemoteAccountID != nil {
 				if _, missingRemote := missingRemoteAccounts[*member.RemoteAccountID]; missingRemote {
 					cleanupReason = "主站托管账号已不存在"
@@ -179,12 +178,13 @@ func (s *Service) refreshSourceAPIKeyGroups(
 				switch resolution.State {
 				case "missing":
 					cleanupReason = "上游分组已删除"
+					cleanupAllowed = true
 				case "unbound":
 					cleanupReason = "上游托管 Key 已解除分组"
 				}
 			}
-			if cleanupReason != "" && member.OwnershipMode == "managed" && member.SourceAPIKeyManaged {
-				if cleanupErr := s.cleanupManagedSourceBinding(ctx, client, adminTarget, member, source, cleanupReason); cleanupErr == nil {
+			if cleanupReason != "" && cleanupAllowed {
+				if cleanupErr := s.cleanupInvalidSourceBinding(ctx, client, adminTarget, member, source, cleanupReason); cleanupErr == nil {
 					result.Cleaned++
 					continue
 				} else {
@@ -413,7 +413,7 @@ func (s *Service) syncManagedSourceBinding(
 	return nameChanged, nil
 }
 
-func (s *Service) cleanupManagedSourceBinding(
+func (s *Service) cleanupInvalidSourceBinding(
 	ctx context.Context,
 	client adminClient,
 	adminTarget sub2api.AdminTarget,
@@ -421,9 +421,6 @@ func (s *Service) cleanupManagedSourceBinding(
 	source,
 	reason string,
 ) error {
-	if member.OwnershipMode != "managed" || !member.SourceAPIKeyManaged {
-		return errors.New("source binding is not managed")
-	}
 	before := *member
 	if member.RemoteAccountID != nil {
 		if err := client.DeleteAccount(ctx, adminTarget, *member.RemoteAccountID); err != nil && !missingRemoteResource(err) {

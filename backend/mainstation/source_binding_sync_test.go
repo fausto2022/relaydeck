@@ -176,44 +176,23 @@ func TestSyncDoesNotReplaceConcurrencyWithEstimatedSourceLimit(t *testing.T) {
 	}
 }
 
-func TestSyncPreservesSourceGroupWhenAPIKeyIsMissing(t *testing.T) {
-	service, db, _, channels, member := createSourceBindingSyncFixture(t)
+func TestSyncCleansBindingWhenSourceAPIKeyIsMissing(t *testing.T) {
+	service, _, admin, channels, member := createSourceBindingSyncFixture(t)
 	channels.keys = nil
+	channels.deleteKeyErr = errors.New("record not found")
 
 	result, err := service.Sync(context.Background())
 	if err != nil {
 		t.Fatalf("sync main station: %v", err)
 	}
-	if result.SourceBindingsChecked != 1 || result.SourceBindingsUpdated != 0 || result.SourceBindingsMissing != 1 || len(result.SourceBindingWarnings) != 1 {
+	if result.SourceBindingsChecked != 1 || result.SourceBindingsMissing != 1 || result.SourceBindingsCleaned != 1 || len(result.SourceBindingWarnings) != 0 {
 		t.Fatalf("source binding result = %#v", result)
 	}
-	if result.PricingChanged {
-		t.Fatalf("persistent missing source key triggered pricing change: %#v", result)
+	if !result.PricingChanged || len(admin.deletedAccounts) != 1 || len(channels.deletedKeys) != 1 {
+		t.Fatalf("cleanup result=%#v accounts=%v keys=%v", result, admin.deletedAccounts, channels.deletedKeys)
 	}
-	stored, err := service.store.FindMember(member.PoolID, member.ID)
-	if err != nil {
-		t.Fatalf("load preserved member: %v", err)
-	}
-	if stored.SourceGroupID == nil || *stored.SourceGroupID != *member.SourceGroupID || stored.SourceGroupName != member.SourceGroupName {
-		t.Fatalf("source group changed after missing key: %#v", stored)
-	}
-	var before int64
-	if err := db.Model(&storage.MainAccountAuditLog{}).
-		Where("action = ?", "member_source_group_sync").
-		Count(&before).Error; err != nil {
-		t.Fatalf("count source binding audits: %v", err)
-	}
-	if _, err := service.sync(context.Background(), "scheduler"); err != nil {
-		t.Fatalf("scheduled sync with missing key: %v", err)
-	}
-	var after int64
-	if err := db.Model(&storage.MainAccountAuditLog{}).
-		Where("action = ?", "member_source_group_sync").
-		Count(&after).Error; err != nil {
-		t.Fatalf("count scheduled source binding audits: %v", err)
-	}
-	if after != before {
-		t.Fatalf("persistent missing key audits = %d -> %d", before, after)
+	if _, err := service.store.FindMember(member.PoolID, member.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cleaned member lookup error = %v", err)
 	}
 }
 
@@ -321,9 +300,8 @@ func TestSyncCleansManagedResourcesWhenSourceKeyLosesGroup(t *testing.T) {
 	}
 }
 
-func TestSyncNeverCleansManuallySelectedKeyWhenSourceGroupIsMissing(t *testing.T) {
+func TestSyncCleansManuallySelectedKeyWhenSourceGroupIsMissing(t *testing.T) {
 	service, _, admin, channels, member := createSourceBindingSyncFixture(t)
-	member.OwnershipMode = "managed"
 	member.SourceAPIKeyManaged = false
 	member.AccountName = "人工账号"
 	if err := service.store.UpdateMember(member); err != nil {
@@ -338,11 +316,11 @@ func TestSyncNeverCleansManuallySelectedKeyWhenSourceGroupIsMissing(t *testing.T
 	if err != nil {
 		t.Fatalf("sync missing manual source group: %v", err)
 	}
-	if result.SourceBindingsCleaned != 0 || len(admin.deletedAccounts) != 0 || len(channels.deletedKeys) != 0 || len(result.SourceBindingWarnings) == 0 {
+	if result.SourceBindingsCleaned != 1 || len(admin.deletedAccounts) != 1 || len(channels.deletedKeys) != 1 || len(result.SourceBindingWarnings) != 0 {
 		t.Fatalf("manual key cleanup result=%#v accounts=%v keys=%v", result, admin.deletedAccounts, channels.deletedKeys)
 	}
-	if _, err := service.store.FindMember(member.PoolID, member.ID); err != nil {
-		t.Fatalf("manual key member was removed: %v", err)
+	if _, err := service.store.FindMember(member.PoolID, member.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("cleaned member lookup error = %v", err)
 	}
 }
 
@@ -413,5 +391,9 @@ func createSourceBindingSyncFixture(t *testing.T) (*Service, *gorm.DB, *fakeAdmi
 	if strings.TrimSpace(member.SourceGroupName) == "" {
 		t.Fatal("source group fixture is empty")
 	}
+	channels.keys = []connector.APIKey{{
+		ID: keyID, Name: "旧分组", Status: "active", GroupID: &oldGroupID, GroupName: member.SourceGroupName,
+	}}
+	channels.groups = []connector.APIKeyGroup{{ID: &oldGroupID, Name: member.SourceGroupName, Ratio: 0.5}}
 	return service, db, admin, channels, member
 }
