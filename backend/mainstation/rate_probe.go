@@ -146,7 +146,7 @@ func buildQuickTestProbeRequest(mode, model, imageResolution string) (probeReque
 	switch mode {
 	case "openai_image":
 		request.Body = map[string]any{
-			"model": model, "prompt": quickTestImagePrompt, "n": 1, "size": imageResolution,
+			"model": model, "prompt": quickTestImagePrompt, "n": 1, "size": openAIQuickTestImageSize(imageResolution),
 		}
 	case "gemini_image":
 		request.Body = map[string]any{
@@ -158,6 +158,13 @@ func buildQuickTestProbeRequest(mode, model, imageResolution string) (probeReque
 		}
 	}
 	return request, nil
+}
+
+func openAIQuickTestImageSize(resolution string) string {
+	if resolution == "4K" {
+		return "3840x2160"
+	}
+	return "2560x1440"
 }
 
 func quickTestAttemptCount(mode string) int {

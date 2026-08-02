@@ -86,7 +86,7 @@ func TestQuickTestRateGeneratesAndReturnsImagePreview(t *testing.T) {
 			t.Fatalf("decode image body: %v", err)
 		}
 		prompt, _ := body["prompt"].(string)
-		if body["model"] != "gpt-image-test" || !strings.Contains(strings.ToLower(prompt), "cat") || body["size"] != "4K" {
+		if body["model"] != "gpt-image-test" || !strings.Contains(strings.ToLower(prompt), "cat") || body["size"] != "3840x2160" {
 			t.Fatalf("image body = %#v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -215,6 +215,12 @@ func TestNormalizeQuickTestImageResolution(t *testing.T) {
 	}
 	if got, err := normalizeQuickTestImageResolution("openai_chat", "8K"); err != nil || got != "" {
 		t.Fatalf("chat resolution = %q, %v", got, err)
+	}
+	if got := openAIQuickTestImageSize("2K"); got != "2560x1440" {
+		t.Fatalf("OpenAI 2K size = %q", got)
+	}
+	if got := openAIQuickTestImageSize("4K"); got != "3840x2160" {
+		t.Fatalf("OpenAI 4K size = %q", got)
 	}
 }
 
