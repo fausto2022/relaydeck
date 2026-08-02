@@ -178,9 +178,10 @@ type RateConnection struct {
 }
 
 type RateQuickTestInput struct {
-	Platform string `json:"platform"`
-	Model    string `json:"model"`
-	Mode     string `json:"mode,omitempty"`
+	Platform        string `json:"platform"`
+	Model           string `json:"model"`
+	Mode            string `json:"mode,omitempty"`
+	ImageResolution string `json:"image_resolution,omitempty"`
 }
 
 type RateQuickTestAttempt struct {

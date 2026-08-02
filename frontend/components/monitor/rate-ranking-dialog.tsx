@@ -69,6 +69,7 @@ interface Props {
 }
 
 type QuickTestMode = "chat" | "image"
+type ImageResolution = "2K" | "4K"
 
 export function RateRankingDialog({ open, onOpenChange, provider, onProviderChange, category, onCategoryChange, categoryOptions, rates, channels, initialRateID, onAdded }: Props) {
   const { confirm, dialog: confirmDialog } = useConfirm()
@@ -81,6 +82,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
   const [metadataError, setMetadataError] = useState("")
   const [model, setModel] = useState("")
   const [testMode, setTestMode] = useState<QuickTestMode>("chat")
+  const [imageResolution, setImageResolution] = useState<ImageResolution>("2K")
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<RateQuickTestResult | null>(null)
   const [workspaceID, setWorkspaceID] = useState("")
@@ -114,6 +116,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
     setAddedGroupName("")
     setWorkspaceID("")
     setTestMode("chat")
+    setImageResolution("2K")
     if (initialRateID != null) {
       setSelectedRateID(initialRateID)
       setView("test")
@@ -191,7 +194,12 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
     try {
       const tested = await apiFetch<RateQuickTestResult>(`/channels/${selectedRate.channel_id}/rates/${selectedRate.id}/test`, {
         method: "POST",
-        body: JSON.stringify({ platform: provider, model: model.trim(), mode: testMode }),
+        body: JSON.stringify({
+          platform: provider,
+          model: model.trim(),
+          mode: testMode,
+          image_resolution: testMode === "image" ? imageResolution : undefined,
+        }),
       })
       setResult(tested)
       if (tested.usable) toast.success("快速测试通过")
@@ -312,7 +320,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
               </DialogHeader>
               <ScrollArea className="h-[min(72dvh,660px)]">
                 <div className="space-y-5 px-4 py-5 sm:px-6">
-                  <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto] sm:items-end">
+                  <div className="grid gap-4 sm:grid-cols-2 sm:items-end lg:grid-cols-[minmax(0,1fr)_12rem_9rem_auto]">
                     <div className="space-y-2">
                       <Label htmlFor="rate-quick-test-model">测试模型</Label>
                       {provider === "image" ? (
@@ -354,6 +362,18 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                           <SelectContent>
                             <SelectItem value="chat">普通请求</SelectItem>
                             <SelectItem value="image">生图请求（测试 1 次）</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : null}
+                    {testMode === "image" ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="rate-quick-test-resolution">分辨率</Label>
+                        <Select value={imageResolution} onValueChange={(value) => setImageResolution(value as ImageResolution)} disabled={testing}>
+                          <SelectTrigger id="rate-quick-test-resolution" className="w-full"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="2K">2K</SelectItem>
+                            <SelectItem value="4K">4K</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

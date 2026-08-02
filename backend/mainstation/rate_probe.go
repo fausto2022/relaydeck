@@ -17,6 +17,8 @@ const (
 	temporaryAPIKeyLifetime      = 10 * time.Minute
 	temporaryAPIKeyRetryInterval = time.Minute
 	temporaryAPIKeyCleanupLimit  = 50
+	defaultImageResolution       = "2K"
+	quickTestImagePrompt         = "A cute cat sitting and looking at the camera, detailed fur, natural light"
 )
 
 func (s *Service) QuickTestRate(ctx context.Context, channelID, rateID uint, in RateQuickTestInput) (*RateQuickTestResult, error) {
@@ -56,7 +58,11 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 	if err != nil {
 		return nil, err
 	}
-	request, err := buildL1ProbeRequest(mode, model)
+	imageResolution, err := normalizeQuickTestImageResolution(mode, in.ImageResolution)
+	if err != nil {
+		return nil, err
+	}
+	request, err := buildQuickTestProbeRequest(mode, model, imageResolution)
 	if err != nil {
 		return nil, err
 	}
@@ -113,8 +119,45 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 		"group":      rate.ModelName,
 		"platform":   platform,
 		"model":      model,
+		"resolution": imageResolution,
 	}, result.Message, result.CleanupError)
 	return result, nil
+}
+
+func normalizeQuickTestImageResolution(mode, resolution string) (string, error) {
+	if !isImageQuickTestMode(mode) {
+		return "", nil
+	}
+	resolution = strings.ToUpper(strings.TrimSpace(resolution))
+	if resolution == "" {
+		return defaultImageResolution, nil
+	}
+	if resolution != "2K" && resolution != "4K" {
+		return "", errors.New("生图分辨率只支持 2K 或 4K")
+	}
+	return resolution, nil
+}
+
+func buildQuickTestProbeRequest(mode, model, imageResolution string) (probeRequest, error) {
+	request, err := buildL1ProbeRequest(mode, model)
+	if err != nil || !isImageQuickTestMode(mode) {
+		return request, err
+	}
+	switch mode {
+	case "openai_image":
+		request.Body = map[string]any{
+			"model": model, "prompt": quickTestImagePrompt, "n": 1, "size": imageResolution,
+		}
+	case "gemini_image":
+		request.Body = map[string]any{
+			"contents": []map[string]any{{"parts": []map[string]string{{"text": quickTestImagePrompt}}}},
+			"generationConfig": map[string]any{
+				"responseModalities": []string{"IMAGE"},
+				"imageConfig":        map[string]string{"imageSize": imageResolution},
+			},
+		}
+	}
+	return request, nil
 }
 
 func quickTestAttemptCount(mode string) int {

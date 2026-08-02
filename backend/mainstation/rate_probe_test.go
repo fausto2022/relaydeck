@@ -85,7 +85,8 @@ func TestQuickTestRateGeneratesAndReturnsImagePreview(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode image body: %v", err)
 		}
-		if body["model"] != "gpt-image-test" || body["prompt"] == "" {
+		prompt, _ := body["prompt"].(string)
+		if body["model"] != "gpt-image-test" || !strings.Contains(strings.ToLower(prompt), "cat") || body["size"] != "4K" {
 			t.Fatalf("image body = %#v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -104,7 +105,9 @@ func TestQuickTestRateGeneratesAndReturnsImagePreview(t *testing.T) {
 		t.Fatalf("create rate: %v", err)
 	}
 
-	result, err := service.QuickTestRate(context.Background(), channel.ID, rate.ID, RateQuickTestInput{Platform: "image", Model: "gpt-image-test"})
+	result, err := service.QuickTestRate(context.Background(), channel.ID, rate.ID, RateQuickTestInput{
+		Platform: "image", Model: "gpt-image-test", ImageResolution: "4K",
+	})
 	if err != nil {
 		t.Fatalf("quick test image rate: %v", err)
 	}
@@ -165,7 +168,9 @@ func TestQuickTestRateGeneratesGeminiImagePreview(t *testing.T) {
 			t.Fatalf("decode gemini image body: %v", err)
 		}
 		generationConfig, ok := body["generationConfig"].(map[string]any)
-		if !ok || len(generationConfig["responseModalities"].([]any)) != 1 {
+		imageConfig, imageConfigOK := generationConfig["imageConfig"].(map[string]any)
+		contents, _ := json.Marshal(body["contents"])
+		if !ok || len(generationConfig["responseModalities"].([]any)) != 1 || !imageConfigOK || imageConfig["imageSize"] != "2K" || !strings.Contains(strings.ToLower(string(contents)), "cat") {
 			t.Fatalf("gemini image body = %#v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -195,6 +200,21 @@ func TestQuickTestRateGeneratesGeminiImagePreview(t *testing.T) {
 	}
 	if result.AttemptCount != 1 || result.SuccessCount != 1 || requestCount.Load() != 1 {
 		t.Fatalf("gemini image attempts = %#v request_count=%d", result.Attempts, requestCount.Load())
+	}
+}
+
+func TestNormalizeQuickTestImageResolution(t *testing.T) {
+	if got, err := normalizeQuickTestImageResolution("openai_image", ""); err != nil || got != "2K" {
+		t.Fatalf("default image resolution = %q, %v", got, err)
+	}
+	if got, err := normalizeQuickTestImageResolution("gemini_image", "4k"); err != nil || got != "4K" {
+		t.Fatalf("normalized image resolution = %q, %v", got, err)
+	}
+	if _, err := normalizeQuickTestImageResolution("openai_image", "8K"); err == nil {
+		t.Fatal("invalid image resolution should fail")
+	}
+	if got, err := normalizeQuickTestImageResolution("openai_chat", "8K"); err != nil || got != "" {
+		t.Fatalf("chat resolution = %q, %v", got, err)
 	}
 }
 
