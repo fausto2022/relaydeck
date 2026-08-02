@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, type FormEvent } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -45,7 +45,6 @@ export function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1.5">
           <CardTitle className="text-2xl">{appTitle}</CardTitle>
-          <CardDescription>登录后台，监控渠道余额和倍率。</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
