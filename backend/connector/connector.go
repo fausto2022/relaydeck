@@ -105,7 +105,8 @@ type CostResult struct {
 
 // AccountLimits 是上游账号本身的调度限制，不是单条 API Key 的限额。
 type AccountLimits struct {
-	Concurrency int `json:"concurrency"`
+	Concurrency int  `json:"concurrency"`
+	Estimated   bool `json:"estimated,omitempty"`
 }
 
 // RateResult 一条倍率记录。ModelName 在两个上游分别是"分组名"，Description 是该分组的描述（来自上游接口）。

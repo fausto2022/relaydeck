@@ -158,7 +158,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="edit-account-priority">基础优先级</Label>
             <Input id="edit-account-priority" type="number" min={1} step={1} value={priority} onChange={(event) => setPriority(Number(event.target.value))} />
-            <p className="text-xs text-muted-foreground">保存的是重排基准值；实际优先级会按标签、健康、延迟和成本自动调整。</p>
+            <p className="text-xs text-muted-foreground">保存的是重排基准值；实际优先级会按标签、健康、延迟和成本划分档位，同档账号按负载因子分流。</p>
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label>账号探活模型</Label>

@@ -976,6 +976,8 @@ export interface MainStationSyncResult {
   source_bindings_missing: number
   source_bindings_renamed: number
   source_bindings_cleaned: number
+  source_limits_checked: number
+  source_limits_updated: number
   source_binding_warnings?: string[]
   synced_at: string
 }

@@ -226,7 +226,7 @@ func (c *Client) GetAccountLimits(ctx context.Context, ch *connector.Channel, se
 	if self.Concurrency <= 0 {
 		// 标准 NewAPI 的 User 和 /api/user/self 没有并发字段。默认按 1000 处理，
 		// 魔改站返回正数时仍采用其真实限制。
-		self.Concurrency = defaultAccountConcurrency
+		return &connector.AccountLimits{Concurrency: defaultAccountConcurrency, Estimated: true}, nil
 	}
 	return &connector.AccountLimits{Concurrency: self.Concurrency}, nil
 }

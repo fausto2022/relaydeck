@@ -754,7 +754,7 @@ function SchedulingPriority({ account }: { account: MainStationAccount }) {
     return <span className="tabular-nums">{actualPriority}</span>
   }
   return (
-    <div className="leading-tight" title="相同基础优先级会根据标签、健康、连通率、延迟和成本用间隔值拉开调度顺序">
+    <div className="leading-tight" title="实际优先级表示调度档位；同档账号由 Sub2API 按负载因子和当前负载分流">
       <div className="font-medium tabular-nums">{actualPriority}</div>
       <div className="text-xs text-muted-foreground">基础 {basePriority}</div>
     </div>

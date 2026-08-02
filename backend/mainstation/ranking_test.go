@@ -20,8 +20,8 @@ func TestRankSchedulingSignalsUsesHealthPriorityCostAndStability(t *testing.T) {
 	}
 
 	priorities := rankSchedulingSignals(signals, "asc")
-	if priorities[3] != 10 || priorities[1] != 20 || priorities[2] != 30 || priorities[5] != 40 || priorities[4] != 50 {
-		t.Fatalf("score-based sparse scheduling order = %#v", priorities)
+	if priorities[3] != 10 || priorities[1] != 10 || priorities[2] != 20 || priorities[5] != 30 || priorities[4] != 40 {
+		t.Fatalf("score-based scheduling tiers = %#v", priorities)
 	}
 }
 
@@ -48,14 +48,22 @@ func TestRankSchedulingSignalsLatencyCanMoveHigherBasePriorityBehindAnotherAccou
 	}
 }
 
-func TestRankSchedulingSignalsPreservesIncreasingRemotePriorityAnchors(t *testing.T) {
-	priorities := rankSchedulingSignals([]schedulingRankSignal{
-		{MemberID: 1, Priority: 1, CurrentPriority: 10},
-		{MemberID: 3, Priority: 10, CurrentPriority: 30},
-		{MemberID: 2, Priority: 5, CurrentPriority: 20},
-	}, "stability")
-	if priorities[1] != 10 || priorities[2] != 20 || priorities[3] != 30 {
-		t.Fatalf("sparse anchors should minimize updates while following order: %#v", priorities)
+func TestAssignTieredSchedulingPrioritiesSharesLoadWithinTier(t *testing.T) {
+	ordered := []schedulingRankSignal{
+		{MemberID: 1, Enabled: true, HealthBand: 0, Score: 1},
+		{MemberID: 2, Enabled: true, HealthBand: 0, Score: 5},
+		{MemberID: 3, Enabled: true, HealthBand: 0, Score: 6},
+		{MemberID: 4, Enabled: true, HealthBand: 2, Score: 1},
+	}
+	priorities := assignTieredSchedulingPriorities(ordered)
+	if priorities[1] != 10 || priorities[2] != 10 || priorities[3] != 20 || priorities[4] != 30 {
+		t.Fatalf("tiered priorities = %#v", priorities)
+	}
+	repeated := assignTieredSchedulingPriorities(ordered)
+	for memberID, priority := range priorities {
+		if repeated[memberID] != priority {
+			t.Fatalf("priority drifted for member %d: %d -> %d", memberID, priority, repeated[memberID])
+		}
 	}
 }
 

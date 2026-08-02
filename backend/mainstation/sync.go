@@ -163,6 +163,8 @@ func (s *Service) sync(ctx context.Context, source string) (*SyncResult, error) 
 		SourceBindingsMissing: sourceBindings.Missing,
 		SourceBindingsRenamed: sourceBindings.Renamed,
 		SourceBindingsCleaned: sourceBindings.Cleaned,
+		SourceLimitsChecked:   sourceBindings.LimitsChecked,
+		SourceLimitsUpdated:   sourceBindings.LimitsUpdated,
 		SourceBindingWarnings: sourceBindings.Warnings,
 		SyncedAt:              syncedAt,
 	}
@@ -188,7 +190,7 @@ func shouldAuditSuccessfulSync(source string, result *SyncResult) bool {
 	return result.PricingChanged || result.OrphanedMembers > 0 ||
 		len(result.MissingGroups) > 0 || len(result.MissingAccounts) > 0 ||
 		result.SourceBindingsUpdated > 0 || result.SourceBindingsRenamed > 0 ||
-		result.SourceBindingsCleaned > 0
+		result.SourceBindingsCleaned > 0 || result.SourceLimitsUpdated > 0
 }
 
 func mainStationAccountSchedulingChanged(existing, current []storage.MainStationAccountSnapshot) bool {

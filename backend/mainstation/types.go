@@ -84,6 +84,8 @@ type SyncResult struct {
 	SourceBindingsMissing int       `json:"source_bindings_missing"`
 	SourceBindingsRenamed int       `json:"source_bindings_renamed"`
 	SourceBindingsCleaned int       `json:"source_bindings_cleaned"`
+	SourceLimitsChecked   int       `json:"source_limits_checked"`
+	SourceLimitsUpdated   int       `json:"source_limits_updated"`
 	SourceBindingWarnings []string  `json:"source_binding_warnings,omitempty"`
 	SyncedAt              time.Time `json:"synced_at"`
 }

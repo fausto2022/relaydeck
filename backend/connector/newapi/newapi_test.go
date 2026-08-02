@@ -96,7 +96,7 @@ func TestGetAccountLimitsDefaultsForStandardNewAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAccountLimits: %v", err)
 	}
-	if limits.Concurrency != defaultAccountConcurrency {
+	if limits.Concurrency != defaultAccountConcurrency || !limits.Estimated {
 		t.Fatalf("concurrency = %d, want %d", limits.Concurrency, defaultAccountConcurrency)
 	}
 }

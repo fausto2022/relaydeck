@@ -444,6 +444,16 @@ func (r *MainStationStore) UpdateMember(item *MainAccountPoolMember) error {
 	return r.db.Save(item).Error
 }
 
+func (r *MainStationStore) UpdateMemberConcurrency(memberID uint, concurrency int) error {
+	if concurrency <= 0 {
+		return errors.New("member concurrency must be greater than zero")
+	}
+	return r.db.Model(&MainAccountPoolMember{}).Where("id = ?", memberID).Updates(map[string]any{
+		"concurrency": concurrency,
+		"weight":      concurrency,
+	}).Error
+}
+
 func (r *MainStationStore) UpdateMemberSourceGroup(memberID uint, groupID *int64, groupName string) error {
 	return r.db.Model(&MainAccountPoolMember{}).Where("id = ?", memberID).Updates(map[string]any{
 		"source_group_id":      groupID,

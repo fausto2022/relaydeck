@@ -206,22 +206,25 @@ func (f *fakeAdminClient) TestAccount(context.Context, sub2api.AdminTarget, int6
 }
 
 type fakeChannelService struct {
-	secret           string
-	revealKeyErr     error
-	groups           []connector.APIKeyGroup
-	keys             []connector.APIKey
-	listKeysErr      error
-	createdKeys      []connector.APIKeyCreateRequest
-	updatedKeys      []connector.APIKeyUpdateRequest
-	createdKeyID     int64
-	deletedKeys      []int64
-	deleteKeyErr     error
-	concurrency      int
-	bindingDelay     time.Duration
-	bindingCalls     atomic.Int32
-	bindingMax       atomic.Int32
-	createKeyStarted chan struct{}
-	createKeyRelease chan struct{}
+	secret                 string
+	revealKeyErr           error
+	groups                 []connector.APIKeyGroup
+	keys                   []connector.APIKey
+	listKeysErr            error
+	createdKeys            []connector.APIKeyCreateRequest
+	updatedKeys            []connector.APIKeyUpdateRequest
+	createdKeyID           int64
+	deletedKeys            []int64
+	deleteKeyErr           error
+	concurrency            int
+	accountLimitsErr       error
+	accountLimitsEstimated bool
+	accountLimitCalls      map[uint]int
+	bindingDelay           time.Duration
+	bindingCalls           atomic.Int32
+	bindingMax             atomic.Int32
+	createKeyStarted       chan struct{}
+	createKeyRelease       chan struct{}
 }
 
 func (f *fakeChannelService) beginBindingCall() func() {
@@ -285,14 +288,21 @@ func (f *fakeChannelService) ListAPIKeys(context.Context, uint, connector.APIKey
 	}
 	return &connector.APIKeyPage{Items: append([]connector.APIKey(nil), f.keys...), Total: int64(len(f.keys)), Page: 1, PageSize: 100, Pages: 1}, nil
 }
-func (f *fakeChannelService) GetAccountLimits(context.Context, uint) (*connector.AccountLimits, error) {
+func (f *fakeChannelService) GetAccountLimits(_ context.Context, channelID uint) (*connector.AccountLimits, error) {
 	done := f.beginBindingCall()
 	defer done()
+	if f.accountLimitCalls == nil {
+		f.accountLimitCalls = make(map[uint]int)
+	}
+	f.accountLimitCalls[channelID]++
+	if f.accountLimitsErr != nil {
+		return nil, f.accountLimitsErr
+	}
 	concurrency := f.concurrency
 	if concurrency <= 0 {
 		concurrency = 10
 	}
-	return &connector.AccountLimits{Concurrency: concurrency}, nil
+	return &connector.AccountLimits{Concurrency: concurrency, Estimated: f.accountLimitsEstimated}, nil
 }
 
 func TestConfigIsSingletonAndConnectionErrorIsRedacted(t *testing.T) {
@@ -839,7 +849,7 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		t.Fatalf("scheduling-only edit should not run a full managed sync: %#v", admin.updateRequests)
 	}
 	service.RunDueRankings(context.Background())
-	if len(admin.schedulingUpdates) != 1 || admin.schedulingUpdates[0].Concurrency != 37 || admin.schedulingUpdates[0].Priority != 1 || admin.schedulingUpdates[0].LoadFactor != 37 {
+	if len(admin.schedulingUpdates) != 1 || admin.schedulingUpdates[0].Concurrency != 37 || admin.schedulingUpdates[0].Priority != 10 || admin.schedulingUpdates[0].LoadFactor != 37 {
 		t.Fatalf("deferred scheduling updates = %#v", admin.schedulingUpdates)
 	}
 

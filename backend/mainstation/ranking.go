@@ -16,18 +16,22 @@ import (
 )
 
 type schedulingRankSignal struct {
-	MemberID        uint
-	HealthBand      int
-	Preferred       bool
-	Priority        int
-	CurrentPriority int
-	Score           int
-	CostKnown       bool
-	CostMicros      int64
-	SuccessBucket   int
-	LatencyBucket   int
-	Enabled         bool
+	MemberID      uint
+	HealthBand    int
+	Preferred     bool
+	Priority      int
+	Score         int
+	CostKnown     bool
+	CostMicros    int64
+	SuccessBucket int
+	LatencyBucket int
+	Enabled       bool
 }
+
+const (
+	schedulingScoreTierWidth = 5
+	schedulingPriorityStep   = 10
+)
 
 func normalizeSchedulingPriority(priority int) int {
 	if priority > 0 {
@@ -65,13 +69,11 @@ func (s *Service) poolSchedulingPriorities(poolID uint) (map[uint]int, error) {
 		if costKnown {
 			costMicros = *member.LastCostMicros
 		}
-		currentPriority := 0
 		remoteSchedulable := false
 		remoteActive := false
 		locksClear := false
 		if member.RemoteAccountID != nil {
 			if snapshot, snapshotErr := s.store.FindAccountSnapshot(*member.RemoteAccountID); snapshotErr == nil {
-				currentPriority = normalizeRemotePriority(snapshot.Priority)
 				remoteSchedulable = snapshot.Schedulable && !snapshot.Missing
 				remoteActive = strings.EqualFold(snapshot.Status, "active")
 			}
@@ -80,15 +82,14 @@ func (s *Service) poolSchedulingPriorities(poolID uint) (map[uint]int, error) {
 			}
 		}
 		signals = append(signals, schedulingRankSignal{
-			MemberID:        member.ID,
-			HealthBand:      schedulingHealthBand(member),
-			Preferred:       member.Preferred,
-			Priority:        normalizeSchedulingPriority(member.Priority),
-			CurrentPriority: currentPriority,
-			CostKnown:       costKnown,
-			CostMicros:      costMicros,
-			SuccessBucket:   schedulingSuccessBucket(stats.Recent20SuccessRate),
-			LatencyBucket:   schedulingLatencyBucket(stats.P95LatencyMS),
+			MemberID:      member.ID,
+			HealthBand:    schedulingHealthBand(member),
+			Preferred:     member.Preferred,
+			Priority:      normalizeSchedulingPriority(member.Priority),
+			CostKnown:     costKnown,
+			CostMicros:    costMicros,
+			SuccessBucket: schedulingSuccessBucket(stats.Recent20SuccessRate),
+			LatencyBucket: schedulingLatencyBucket(stats.P95LatencyMS),
 			Enabled: pool.Enabled && member.Enabled && remoteSchedulable && remoteActive && locksClear &&
 				member.BindingStatus != "invalid" && member.BindingStatus != "orphaned" &&
 				member.LastHealthStatus != "unhealthy" && member.Status != "quarantined",
@@ -114,21 +115,13 @@ func rankSchedulingSignals(signals []schedulingRankSignal, rateSortDirection str
 			return left.Preferred
 		case left.Score != right.Score:
 			return left.Score < right.Score
-		case left.CurrentPriority != right.CurrentPriority:
-			if left.CurrentPriority == 0 {
-				return false
-			}
-			if right.CurrentPriority == 0 {
-				return true
-			}
-			return left.CurrentPriority < right.CurrentPriority
 		case left.Priority != right.Priority:
 			return left.Priority < right.Priority
 		default:
 			return left.MemberID < right.MemberID
 		}
 	})
-	return assignSparseSchedulingPriorities(signals)
+	return assignTieredSchedulingPriorities(signals)
 }
 
 func schedulingCostPenalties(signals []schedulingRankSignal, direction string) map[uint]int {
@@ -193,103 +186,31 @@ func schedulingLatencyPenalty(bucket int) int {
 	}
 }
 
-func assignSparseSchedulingPriorities(ordered []schedulingRankSignal) map[uint]int {
+func assignTieredSchedulingPriorities(ordered []schedulingRankSignal) map[uint]int {
 	priorities := make(map[uint]int, len(ordered))
 	if len(ordered) == 0 {
 		return priorities
 	}
-	anchors := longestIncreasingPrioritySubsequence(ordered)
-	if len(anchors) == 0 {
-		for index, signal := range ordered {
-			priorities[signal.MemberID] = (index + 1) * 10
-		}
-		return priorities
-	}
-	values := make([]int, len(ordered))
-	for _, index := range anchors {
-		values[index] = normalizeRemotePriority(ordered[index].CurrentPriority)
-	}
-	start := 0
-	left := 0
-	for _, anchor := range anchors {
-		end := anchor
-		count := end - start
-		right := values[anchor]
-		if count > 0 {
-			if right-left-1 < count {
-				return assignFullSparsePriorities(ordered)
-			}
-			step := (right - left) / (count + 1)
-			if step <= 0 {
-				return assignFullSparsePriorities(ordered)
-			}
-			for index := 0; index < count; index++ {
-				values[start+index] = left + step*(index+1)
-			}
-		}
-		start = anchor + 1
-		left = right
-	}
-	for index := start; index < len(ordered); index++ {
-		values[index] = left + (index-start+1)*10
-	}
+	priority := schedulingPriorityStep
 	for index, signal := range ordered {
-		if values[index] <= 0 {
-			values[index] = normalizeRemotePriority(signal.CurrentPriority)
-			if values[index] <= 0 {
-				values[index] = (index + 1) * 10
-			}
+		if index > 0 && !sameSchedulingTier(ordered[index-1], signal) {
+			priority += schedulingPriorityStep
 		}
-		priorities[signal.MemberID] = values[index]
+		priorities[signal.MemberID] = priority
 	}
 	return priorities
 }
 
-func longestIncreasingPrioritySubsequence(ordered []schedulingRankSignal) []int {
-	bestAt := make([]int, len(ordered))
-	previous := make([]int, len(ordered))
-	best := -1
-	bestLength := 0
-	for index := range ordered {
-		if ordered[index].CurrentPriority <= 0 {
-			previous[index] = -1
-			continue
-		}
-		length := 1
-		previous[index] = -1
-		for prior := 0; prior < index; prior++ {
-			if ordered[prior].CurrentPriority > 0 && ordered[prior].CurrentPriority < ordered[index].CurrentPriority && bestAt[prior] >= length {
-				length = bestAt[prior] + 1
-				previous[index] = prior
-			}
-		}
-		bestAt[index] = length
-		if length > bestLength {
-			bestLength = length
-			best = index
-		}
-	}
-	result := make([]int, bestLength)
-	for index := bestLength - 1; index >= 0; index-- {
-		result[index] = best
-		best = previous[best]
-	}
-	return result
+func sameSchedulingTier(left, right schedulingRankSignal) bool {
+	return left.Enabled == right.Enabled && left.HealthBand == right.HealthBand && left.Preferred == right.Preferred &&
+		schedulingScoreTier(left.Score) == schedulingScoreTier(right.Score)
 }
 
-func assignFullSparsePriorities(ordered []schedulingRankSignal) map[uint]int {
-	result := make(map[uint]int, len(ordered))
-	for index, signal := range ordered {
-		result[signal.MemberID] = (index + 1) * 10
+func schedulingScoreTier(score int) int {
+	if score <= 1 {
+		return 0
 	}
-	return result
-}
-
-func normalizeRemotePriority(priority int) int {
-	if priority > 0 {
-		return priority
-	}
-	return 0
+	return (score - 1) / schedulingScoreTierWidth
 }
 
 func maxInt(left, right int) int {

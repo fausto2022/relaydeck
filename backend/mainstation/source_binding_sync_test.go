@@ -78,6 +78,104 @@ func TestSyncDoesNotPollModelsForUnchangedManagedAccount(t *testing.T) {
 	}
 }
 
+func TestSyncRefreshesSourceConcurrencyAndLoadFactor(t *testing.T) {
+	service, _, admin, channels, member := createSourceBindingSyncFixture(t)
+	secondRemoteID := int64(22)
+	second := *member
+	second.ID = 0
+	second.RemoteAccountID = &secondRemoteID
+	second.AccountName = "主站账号2"
+	second.RemoteAccountName = "主站账号2"
+	second.CreatedAt = time.Time{}
+	second.UpdatedAt = time.Time{}
+	if err := service.store.CreateMember(&second); err != nil {
+		t.Fatalf("create second member: %v", err)
+	}
+	secondRemote := admin.accounts[0]
+	secondRemote.ID = secondRemoteID
+	secondRemote.Name = second.AccountName
+	admin.accounts = append(admin.accounts, secondRemote)
+	channels.concurrency = 40
+	beforeCalls := channels.accountLimitCalls[member.SourceChannelID]
+
+	result, err := service.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("sync source concurrency: %v", err)
+	}
+	if result.SourceLimitsChecked != 1 || result.SourceLimitsUpdated != 2 {
+		t.Fatalf("source limit result = %#v", result)
+	}
+	if channels.accountLimitCalls[member.SourceChannelID] != beforeCalls+1 {
+		t.Fatalf("source limit calls = %#v", channels.accountLimitCalls)
+	}
+	stored, err := service.store.FindMember(member.PoolID, member.ID)
+	if err != nil {
+		t.Fatalf("load refreshed member: %v", err)
+	}
+	if stored.Concurrency != 40 || stored.Weight != 40 {
+		t.Fatalf("refreshed member scheduling = %#v", stored)
+	}
+	storedSecond, err := service.store.FindMember(second.PoolID, second.ID)
+	if err != nil {
+		t.Fatalf("load refreshed second member: %v", err)
+	}
+	if storedSecond.Concurrency != 40 || storedSecond.Weight != 40 {
+		t.Fatalf("refreshed second member scheduling = %#v", storedSecond)
+	}
+	if err := service.ReconcilePoolRanking(context.Background(), member.PoolID, "test"); err != nil {
+		t.Fatalf("reconcile refreshed concurrency: %v", err)
+	}
+	if len(admin.schedulingUpdates) != 2 {
+		t.Fatalf("remote scheduling updates = %#v", admin.schedulingUpdates)
+	}
+	for _, update := range admin.schedulingUpdates {
+		if update.Concurrency != 40 || update.LoadFactor != 40 {
+			t.Fatalf("remote scheduling update = %#v", update)
+		}
+	}
+}
+
+func TestSyncPreservesConcurrencyWhenSourceLimitReadFails(t *testing.T) {
+	service, _, _, channels, member := createSourceBindingSyncFixture(t)
+	channels.accountLimitsErr = errors.New("upstream unavailable")
+
+	result, err := service.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("sync failed source limit: %v", err)
+	}
+	if result.SourceLimitsChecked != 1 || result.SourceLimitsUpdated != 0 || len(result.SourceBindingWarnings) == 0 {
+		t.Fatalf("source limit result = %#v", result)
+	}
+	stored, err := service.store.FindMember(member.PoolID, member.ID)
+	if err != nil {
+		t.Fatalf("load preserved member: %v", err)
+	}
+	if stored.Concurrency != member.Concurrency || stored.Weight != member.Weight {
+		t.Fatalf("source limit failure changed member: before=%#v after=%#v", member, stored)
+	}
+}
+
+func TestSyncDoesNotReplaceConcurrencyWithEstimatedSourceLimit(t *testing.T) {
+	service, _, _, channels, member := createSourceBindingSyncFixture(t)
+	channels.concurrency = 1000
+	channels.accountLimitsEstimated = true
+
+	result, err := service.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("sync estimated source limit: %v", err)
+	}
+	if result.SourceLimitsChecked != 1 || result.SourceLimitsUpdated != 0 {
+		t.Fatalf("source limit result = %#v", result)
+	}
+	stored, err := service.store.FindMember(member.PoolID, member.ID)
+	if err != nil {
+		t.Fatalf("load preserved member: %v", err)
+	}
+	if stored.Concurrency != member.Concurrency || stored.Weight != member.Weight {
+		t.Fatalf("estimated source limit changed member: before=%#v after=%#v", member, stored)
+	}
+}
+
 func TestSyncPreservesSourceGroupWhenAPIKeyIsMissing(t *testing.T) {
 	service, db, _, channels, member := createSourceBindingSyncFixture(t)
 	channels.keys = nil
@@ -276,6 +374,7 @@ func TestSyncCleansUnusedManagedKeyWhenMainAccountWasRemoved(t *testing.T) {
 func createSourceBindingSyncFixture(t *testing.T) (*Service, *gorm.DB, *fakeAdminClient, *fakeChannelService, *storage.MainAccountPoolMember) {
 	t.Helper()
 	service, db, admin, channels := newTestService(t)
+	channels.concurrency = 10
 	configureTestStation(t, service)
 	admin.groups = []sub2api.AdminGroup{{ID: 11, Name: "主站分组", Platform: "openai", RateMultiplier: 1, Status: "active"}}
 	admin.accounts = []sub2api.AdminAccount{{
@@ -305,7 +404,7 @@ func createSourceBindingSyncFixture(t *testing.T) (*Service, *gorm.DB, *fakeAdmi
 		SourceGroupID: &oldGroupID, SourceGroupName: "旧分组", SourceAPIKeyID: &keyID,
 		RemoteAccountID: &remoteAccountID, RemoteAccountName: "主站账号", OwnershipMode: "bound",
 		BindingStatus: "verified", Status: "active", Enabled: true, HealthEnabled: true,
-		Priority: 1, Concurrency: 10, LastCostMicros: &cost, LastCostSource: "source_rate_snapshot",
+		Priority: 1, Weight: 10, Concurrency: 10, LastCostMicros: &cost, LastCostSource: "source_rate_snapshot",
 		LastCostAt: &observedAt, LastCostExpiresAt: &expiresAt,
 	}
 	if err := service.store.CreateMember(member); err != nil {

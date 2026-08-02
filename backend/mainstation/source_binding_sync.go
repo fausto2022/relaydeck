@@ -19,12 +19,14 @@ const (
 )
 
 type sourceBindingRefreshResult struct {
-	Checked  int
-	Updated  int
-	Missing  int
-	Renamed  int
-	Cleaned  int
-	Warnings []string
+	Checked       int
+	Updated       int
+	Missing       int
+	Renamed       int
+	Cleaned       int
+	LimitsChecked int
+	LimitsUpdated int
+	Warnings      []string
 }
 
 type sourceGroupResolution struct {
@@ -51,7 +53,7 @@ func (s *Service) refreshSourceAPIKeyGroups(
 	}
 	byChannel := make(map[uint][]storage.MainAccountPoolMember)
 	for i := range members {
-		if members[i].SourceChannelID == 0 || members[i].SourceAPIKeyID == nil || *members[i].SourceAPIKeyID <= 0 {
+		if members[i].SourceChannelID == 0 {
 			continue
 		}
 		byChannel[members[i].SourceChannelID] = append(byChannel[members[i].SourceChannelID], members[i])
@@ -72,10 +74,49 @@ func (s *Service) refreshSourceAPIKeyGroups(
 
 	for _, channelID := range channelIDs {
 		channelMembers := byChannel[channelID]
-		result.Checked += len(channelMembers)
-		wanted := make(map[int64]struct{}, len(channelMembers))
+		result.LimitsChecked++
+		if limits, limitErr := s.channelSvc.GetAccountLimits(ctx, channelID); limitErr != nil || limits == nil || limits.Concurrency <= 0 {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s：读取上游最高并发失败，已保留原值", s.sourceChannelLabel(channelID)))
+			if s.log != nil {
+				s.log.Warn("refresh source account concurrency", "channel_id", channelID, "err", limitErr)
+			}
+		} else if !limits.Estimated {
+			dirtyPools := make(map[uint]struct{})
+			for i := range channelMembers {
+				member := &channelMembers[i]
+				if member.Concurrency == limits.Concurrency && member.Weight == automaticLoadFactor(limits.Concurrency) {
+					continue
+				}
+				if updateErr := s.store.UpdateMemberConcurrency(member.ID, limits.Concurrency); updateErr != nil {
+					return result, fmt.Errorf("update member %d source concurrency: %w", member.ID, updateErr)
+				}
+				member.Concurrency = limits.Concurrency
+				member.Weight = automaticLoadFactor(limits.Concurrency)
+				result.LimitsUpdated++
+				dirtyPools[member.PoolID] = struct{}{}
+				_ = s.appendAudit(&member.PoolID, &member.ID, member.RemoteAccountID, "member_source_concurrency_sync", source, true,
+					nil, member, map[string]any{"concurrency": limits.Concurrency, "load_factor": member.Weight}, "已按上游账号更新并发和负载因子", "")
+			}
+			for poolID := range dirtyPools {
+				if dirtyErr := s.markPoolRankingDirty(poolID); dirtyErr != nil {
+					return result, fmt.Errorf("mark pool %d ranking dirty after source concurrency sync: %w", poolID, dirtyErr)
+				}
+			}
+		}
+
+		keyMembers := make([]storage.MainAccountPoolMember, 0, len(channelMembers))
 		for i := range channelMembers {
-			wanted[*channelMembers[i].SourceAPIKeyID] = struct{}{}
+			if channelMembers[i].SourceAPIKeyID != nil && *channelMembers[i].SourceAPIKeyID > 0 {
+				keyMembers = append(keyMembers, channelMembers[i])
+			}
+		}
+		if len(keyMembers) == 0 {
+			continue
+		}
+		result.Checked += len(keyMembers)
+		wanted := make(map[int64]struct{}, len(channelMembers))
+		for i := range keyMembers {
+			wanted[*keyMembers[i].SourceAPIKeyID] = struct{}{}
 		}
 		keys, err := s.sourceAPIKeysByID(ctx, channelID, wanted)
 		if err != nil {
@@ -94,8 +135,8 @@ func (s *Service) refreshSourceAPIKeyGroups(
 			}
 		}
 		preservedMissing := 0
-		for i := range channelMembers {
-			member := &channelMembers[i]
+		for i := range keyMembers {
+			member := &keyMembers[i]
 			before := *member
 			keyID := *member.SourceAPIKeyID
 			key, ok := keys[keyID]
