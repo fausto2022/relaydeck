@@ -177,6 +177,38 @@ type RateConnection struct {
 	GroupName string `json:"group_name"`
 }
 
+type RateUsageAccount struct {
+	MemberID            uint   `json:"member_id"`
+	PoolID              uint   `json:"pool_id"`
+	MainAccountID       *int64 `json:"main_account_id,omitempty"`
+	MainAccountName     string `json:"main_account_name"`
+	SourceAPIKeyID      *int64 `json:"source_api_key_id,omitempty"`
+	SourceAPIKeyName    string `json:"source_api_key_name,omitempty"`
+	SourceAPIKeyManaged bool   `json:"source_api_key_managed"`
+	OwnershipMode       string `json:"ownership_mode"`
+	BindingStatus       string `json:"binding_status"`
+	Status              string `json:"status"`
+	Enabled             bool   `json:"enabled"`
+	LastHealthStatus    string `json:"last_health_status"`
+}
+
+type RateUsageGroup struct {
+	GroupID   uint               `json:"group_id"`
+	GroupName string             `json:"group_name"`
+	Missing   bool               `json:"missing"`
+	Connected bool               `json:"connected"`
+	Accounts  []RateUsageAccount `json:"accounts"`
+}
+
+type RateUsage struct {
+	ChannelID    uint             `json:"channel_id"`
+	RateID       uint             `json:"rate_id"`
+	Connected    bool             `json:"connected"`
+	Status       string           `json:"status"`
+	AccountCount int              `json:"account_count"`
+	Groups       []RateUsageGroup `json:"groups"`
+}
+
 type RateQuickTestInput struct {
 	Platform string `json:"platform"`
 	Model    string `json:"model"`

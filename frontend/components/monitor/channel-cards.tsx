@@ -10,6 +10,7 @@ import {
   ExternalLink,
   KeyRound,
   Loader2,
+  Link2,
   LogIn,
   MoreHorizontal,
   Pause,
@@ -63,6 +64,7 @@ import { ChannelFormDialog } from "@/components/monitor/channel-form-dialog"
 import { ChannelRedeemDialog } from "@/components/monitor/channel-redeem-dialog"
 import { ChannelRechargeDialog } from "@/components/monitor/channel-recharge-dialog"
 import { ChannelAPIKeysDialog } from "@/components/monitor/channel-api-keys-dialog"
+import { ChannelGroupUsageDialog } from "@/components/monitor/channel-group-usage-dialog"
 import {
   ChannelSubscriptionUsageMetricTiles,
 } from "@/components/monitor/channel-subscription-usage-dialog"
@@ -121,8 +123,8 @@ function ratioTone(r: number): string {
 }
 
 /** InlineRates 在渠道卡片内部展示当前所有分组倍率，默认 2 行折叠 + 展开按钮。 */
-function InlineRates({ channelID }: { channelID: number }) {
-  const { data, loading } = useChannelRates(channelID)
+function InlineRates({ channel, onSelect }: { channel: Channel; onSelect: (rate: RateSnapshot) => void }) {
+  const { data, loading } = useChannelRates(channel.id)
   const rates = [...(data ?? [])].sort((a, b) => a.ratio - b.ratio)
   const [expanded, setExpanded] = useState(false)
   const [hasOverflow, setHasOverflow] = useState(false)
@@ -186,9 +188,12 @@ function InlineRates({ channelID }: { channelID: number }) {
           {rates.map((r) => (
             <Tooltip key={r.id} delayDuration={150}>
               <TooltipTrigger asChild>
-                <span
+                <button
+                  type="button"
+                  onClick={() => onSelect(r)}
+                  aria-label={`查看分组 ${r.model_name} 的主站使用情况`}
                   className={cn(
-                    "inline-flex cursor-default items-center gap-1 rounded px-1.5 py-0.5 text-[11px] ring-1 ring-inset transition-colors hover:bg-muted/60",
+                    "inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[11px] ring-1 ring-inset transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     rateProviderTone(r.ranking_provider),
                   )}
                 >
@@ -196,7 +201,13 @@ function InlineRates({ channelID }: { channelID: number }) {
                   <span className="rounded bg-primary/10 px-1 font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15">
                     {formatRatio(r.ratio)}
                   </span>
-                </span>
+                  {r.main_station_connected ? (
+                    <span className="inline-flex items-center gap-0.5 text-emerald-700 dark:text-emerald-300">
+                      <Link2 className="size-3" />
+                      {r.main_station_groups.length}
+                    </span>
+                  ) : null}
+                </button>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs">
                 <p className="font-medium">{r.model_name}</p>
@@ -210,6 +221,11 @@ function InlineRates({ channelID }: { channelID: number }) {
                   {" · "}
                   {"最近更新："}
                   {relativeTime(r.last_seen_at)}
+                </p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {r.main_station_connected
+                    ? `主站：${r.main_station_groups.map((group) => group.group_name).join("、")}`
+                    : "未接入主站"}
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -557,6 +573,7 @@ export function ChannelCards() {
   const [redeeming, setRedeeming] = useState<Channel | null>(null)
   const [recharging, setRecharging] = useState<Channel | null>(null)
   const [managingKeys, setManagingKeys] = useState<Channel | null>(null)
+  const [selectedGroup, setSelectedGroup] = useState<{ channel: Channel; rate: RateSnapshot } | null>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   // 每个渠道当前 sync 进度（最新一条事件） + 历史事件
   const [syncState, setSyncState] = useState<Record<number, ChannelSyncState>>({})
@@ -949,7 +966,7 @@ export function ChannelCards() {
                     ) : null}
                   </div>
 
-                  <InlineRates channelID={c.id} />
+                  <InlineRates channel={c} onSelect={(rate) => setSelectedGroup({ channel: c, rate })} />
 
                   <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                     <Button
@@ -1230,6 +1247,16 @@ export function ChannelCards() {
           if (!v) setManagingKeys(null)
         }}
         channel={managingKeys}
+      />
+
+      <ChannelGroupUsageDialog
+        open={selectedGroup != null}
+        onOpenChange={(value) => {
+          if (!value) setSelectedGroup(null)
+        }}
+        channel={selectedGroup?.channel ?? null}
+        rate={selectedGroup?.rate ?? null}
+        onChanged={refresh}
       />
 
       {confirmDialog}

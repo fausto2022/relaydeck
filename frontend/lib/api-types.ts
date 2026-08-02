@@ -155,6 +155,38 @@ export interface MainStationRateGroup {
   group_name: string
 }
 
+export interface MainStationRateUsageAccount {
+  member_id: number
+  pool_id: number
+  main_account_id?: number | null
+  main_account_name: string
+  source_api_key_id?: number | null
+  source_api_key_name?: string
+  source_api_key_managed: boolean
+  ownership_mode: "managed" | "bound"
+  binding_status: "pending" | "verified" | "manual_confirmed" | "invalid" | "orphaned"
+  status: string
+  enabled: boolean
+  last_health_status: string
+}
+
+export interface MainStationRateUsageGroup {
+  group_id: number
+  group_name: string
+  missing: boolean
+  connected: boolean
+  accounts: MainStationRateUsageAccount[]
+}
+
+export interface MainStationRateUsage {
+  channel_id: number
+  rate_id: number
+  connected: boolean
+  status: "unused" | "initializing" | "connected" | "abnormal"
+  account_count: number
+  groups: MainStationRateUsageGroup[]
+}
+
 export interface RateQuickTestResult {
   status: "usable" | "reachable" | "unreachable"
   usable: boolean
