@@ -17,7 +17,6 @@ const (
 	temporaryAPIKeyLifetime      = 10 * time.Minute
 	temporaryAPIKeyRetryInterval = time.Minute
 	temporaryAPIKeyCleanupLimit  = 50
-	defaultImageResolution       = "2K"
 	quickTestImagePrompt         = "A cute cat sitting and looking at the camera, detailed fur, natural light"
 )
 
@@ -58,11 +57,7 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 	if err != nil {
 		return nil, err
 	}
-	imageResolution, err := normalizeQuickTestImageResolution(mode, in.ImageResolution)
-	if err != nil {
-		return nil, err
-	}
-	request, err := buildQuickTestProbeRequest(mode, model, imageResolution)
+	request, err := buildQuickTestProbeRequest(mode, model)
 	if err != nil {
 		return nil, err
 	}
@@ -119,26 +114,11 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 		"group":      rate.ModelName,
 		"platform":   platform,
 		"model":      model,
-		"resolution": imageResolution,
 	}, result.Message, result.CleanupError)
 	return result, nil
 }
 
-func normalizeQuickTestImageResolution(mode, resolution string) (string, error) {
-	if !isImageQuickTestMode(mode) {
-		return "", nil
-	}
-	resolution = strings.ToUpper(strings.TrimSpace(resolution))
-	if resolution == "" {
-		return defaultImageResolution, nil
-	}
-	if resolution != "2K" && resolution != "4K" {
-		return "", errors.New("生图分辨率只支持 2K 或 4K")
-	}
-	return resolution, nil
-}
-
-func buildQuickTestProbeRequest(mode, model, imageResolution string) (probeRequest, error) {
+func buildQuickTestProbeRequest(mode, model string) (probeRequest, error) {
 	request, err := buildL1ProbeRequest(mode, model)
 	if err != nil || !isImageQuickTestMode(mode) {
 		return request, err
@@ -146,25 +126,15 @@ func buildQuickTestProbeRequest(mode, model, imageResolution string) (probeReque
 	switch mode {
 	case "openai_image":
 		request.Body = map[string]any{
-			"model": model, "prompt": quickTestImagePrompt, "n": 1, "size": openAIQuickTestImageSize(imageResolution),
+			"model": model, "prompt": quickTestImagePrompt, "n": 1,
 		}
 	case "gemini_image":
 		request.Body = map[string]any{
-			"contents": []map[string]any{{"parts": []map[string]string{{"text": quickTestImagePrompt}}}},
-			"generationConfig": map[string]any{
-				"responseModalities": []string{"IMAGE"},
-				"imageConfig":        map[string]string{"imageSize": imageResolution},
-			},
+			"contents":         []map[string]any{{"parts": []map[string]string{{"text": quickTestImagePrompt}}}},
+			"generationConfig": map[string]any{"responseModalities": []string{"IMAGE"}},
 		}
 	}
 	return request, nil
-}
-
-func openAIQuickTestImageSize(resolution string) string {
-	if resolution == "4K" {
-		return "3840x2160"
-	}
-	return "2560x1440"
 }
 
 func quickTestAttemptCount(mode string) int {
