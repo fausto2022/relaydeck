@@ -370,6 +370,57 @@ func (s *Service) resolveMemberCost(member *storage.MainAccountPoolMember, polic
 	return resolvedCost{Reason: "no usable cost multiplier source"}
 }
 
+func (s *Service) resolveMemberCostFromBatch(member *storage.MainAccountPoolMember, account storage.MainStationAccountSnapshot, rates []storage.RateSnapshot, channel *storage.Channel, policy marginPolicy, now time.Time) resolvedCost {
+	maxAge := time.Duration(policy.CostMaxAgeMinutes) * time.Minute
+	if maxAge <= 0 {
+		maxAge = time.Hour
+	}
+	if member.SourceGroupID != nil || strings.TrimSpace(member.SourceGroupName) != "" {
+		if cost, ok := resolveSourceRateCostFromBatch(member, rates, channel, maxAge, now); ok {
+			return cost
+		}
+		return resolvedCost{Reason: "bound source group rate snapshot is missing or expired"}
+	}
+	if value, observed, expiresAt, ok := billingProbeRate(account.BillingProbeJSON, account.LastSyncAt, maxAge); ok {
+		if expiresAt == nil || now.Before(*expiresAt) {
+			ratio := applyRechargeMultiplier(float64(value)/float64(storage.MainStationScale), channel)
+			return resolvedCost{Micros: scaleFloat(ratio), Source: "sub2api_billing_probe", Observed: observed, ExpiresAt: expiresAt, Reliable: true}
+		}
+	}
+	if cost, ok := resolveSourceRateCostFromBatch(member, rates, channel, maxAge, now); ok {
+		return cost
+	}
+	if member.ManualCostMicros != nil && *member.ManualCostMicros > 0 {
+		return resolvedCost{Micros: *member.ManualCostMicros, Source: "manual_override", Observed: member.UpdatedAt, Reliable: true}
+	}
+	if account.RateMultiplierMicros > 0 {
+		return resolvedCost{
+			Micros: account.RateMultiplierMicros, Source: "remote_account_estimate", Observed: account.LastSyncAt,
+			Reliable: false, Reason: "remote account rate multiplier is an unconfirmed estimate",
+		}
+	}
+	return resolvedCost{Reason: "no usable cost multiplier source"}
+}
+
+func resolveSourceRateCostFromBatch(member *storage.MainAccountPoolMember, rates []storage.RateSnapshot, channel *storage.Channel, maxAge time.Duration, now time.Time) (resolvedCost, bool) {
+	snapshot := selectSourceRateSnapshot(rates, member)
+	if snapshot == nil {
+		return resolvedCost{}, false
+	}
+	expiresAt := snapshot.LastSeenAt.Add(maxAge)
+	if !now.Before(expiresAt) {
+		return resolvedCost{}, false
+	}
+	source := "source_rate_snapshot"
+	if member.OwnershipMode == "managed" {
+		source = "managed_binding"
+	}
+	return resolvedCost{
+		Micros: scaleFloat(applyRechargeMultiplier(snapshot.Ratio, channel)), Source: source,
+		Observed: snapshot.LastSeenAt, ExpiresAt: &expiresAt, Reliable: true,
+	}, true
+}
+
 func (s *Service) resolveSourceRateCost(member *storage.MainAccountPoolMember, maxAge time.Duration, now time.Time) (resolvedCost, bool) {
 	if s.rates == nil {
 		return resolvedCost{}, false

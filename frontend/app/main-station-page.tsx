@@ -110,6 +110,7 @@ export default function MainStationPage() {
   const [auditSearch, setAuditSearch] = useState("")
   const [auditResult, setAuditResult] = useState("all")
   const accountsRequestRef = useRef(0)
+  const accountsInFlightRef = useRef(0)
 
   const selectedWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.group.id === selectedGroupID) ?? null,
@@ -145,7 +146,9 @@ export default function MainStationPage() {
   }, [])
 
   const loadAccounts = useCallback(async (groupID: number | null, silent = false) => {
+    if (silent && accountsInFlightRef.current > 0) return
     const requestID = ++accountsRequestRef.current
+    accountsInFlightRef.current += 1
     if (!silent) setAccountsLoading(true)
     try {
       const result = groupID == null
@@ -158,6 +161,7 @@ export default function MainStationPage() {
         setAccounts([])
       }
     } finally {
+      accountsInFlightRef.current -= 1
       if (!silent && requestID === accountsRequestRef.current) setAccountsLoading(false)
     }
   }, [])

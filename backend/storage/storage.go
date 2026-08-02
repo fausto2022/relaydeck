@@ -210,6 +210,7 @@ func ensureSQLiteIndexes(db *gorm.DB) error {
 		{name: "idx_balance_snapshots_sampled_jd", table: "balance_snapshots", expression: "julianday(sampled_at), channel_id, id"},
 		{name: "idx_cost_snapshots_sampled_jd", table: "cost_snapshots", expression: "julianday(sampled_at), channel_id, id"},
 		{name: "idx_main_audit_pool_created_id", table: "main_account_audit_logs", expression: "pool_id, created_at, id"},
+		{name: "idx_main_profit_member_group_observed_id", table: "main_account_profit_checks", expression: "member_id, target_group_id, observed_at, id"},
 	}
 	for _, index := range indexes {
 		query := fmt.Sprintf(

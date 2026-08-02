@@ -145,6 +145,13 @@ func (r *MainStationStore) MarkMemberSchedulingDirty(memberID uint, at time.Time
 	}).Error
 }
 
+func (r *MainStationStore) MarkPoolMembersSchedulingDirty(poolID uint, at time.Time) error {
+	return r.db.Model(&MainAccountPoolMember{}).
+		Where("pool_id = ? AND remote_account_id IS NOT NULL", poolID).
+		Where("binding_status NOT IN ?", []string{"invalid", "orphaned"}).
+		Update("scheduling_dirty_at", at).Error
+}
+
 func (r *MainStationStore) CompleteMemberScheduling(memberID uint, startedAt, finishedAt time.Time, errText string) error {
 	updates := map[string]any{
 		"last_scheduling_at":    finishedAt,
@@ -434,6 +441,17 @@ func (r *MainStationStore) FindMemberByRemoteAccountID(remoteAccountID int64) (*
 	return &item, nil
 }
 
+func (r *MainStationStore) ListMembersByRemoteAccountIDs(remoteAccountIDs []int64) ([]MainAccountPoolMember, error) {
+	if len(remoteAccountIDs) == 0 {
+		return []MainAccountPoolMember{}, nil
+	}
+	var list []MainAccountPoolMember
+	if err := r.db.Where("remote_account_id IN ?", remoteAccountIDs).Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *MainStationStore) CreateMember(item *MainAccountPoolMember) error {
 	applyMemberDefaults(item)
 	return r.db.Select("*").Create(item).Error
@@ -563,17 +581,22 @@ func (r *MainStationStore) ListRecentHealthChecksByMember(memberIDs []uint, limi
 	if limit <= 0 {
 		limit = 100
 	}
+	var query strings.Builder
+	args := make([]any, 0, len(memberIDs)*2)
+	for i, memberID := range memberIDs {
+		if i > 0 {
+			query.WriteString(" UNION ALL ")
+		}
+		fmt.Fprintf(&query, `SELECT * FROM (
+			SELECT * FROM main_account_health_checks
+			WHERE member_id = ? AND status IN ('success', 'failure')
+			ORDER BY created_at DESC, id DESC LIMIT ?
+		) AS recent_%d`, i)
+		args = append(args, memberID, limit)
+	}
+	query.WriteString(" ORDER BY member_id ASC, created_at DESC, id DESC")
 	var list []MainAccountHealthCheck
-	err := r.db.Raw(`
-		SELECT * FROM (
-			SELECT main_account_health_checks.*,
-				ROW_NUMBER() OVER (PARTITION BY member_id ORDER BY created_at DESC, id DESC) AS recent_rank
-			FROM main_account_health_checks
-			WHERE member_id IN ? AND status IN ?
-		) AS ranked
-		WHERE recent_rank <= ?
-		ORDER BY member_id ASC, created_at DESC, id DESC`, memberIDs, []string{"success", "failure"}, limit).
-		Scan(&list).Error
+	err := r.db.Raw(query.String(), args...).Scan(&list).Error
 	if err != nil {
 		return nil, err
 	}
@@ -719,6 +742,35 @@ func (r *MainStationStore) LatestProfitCheck(memberID, targetGroupID uint) (*Mai
 		return nil, err
 	}
 	return &item, nil
+}
+
+func (r *MainStationStore) ListLatestProfitChecksByMember(memberIDs []uint, targetGroupID uint) (map[uint]MainAccountProfitCheck, error) {
+	result := make(map[uint]MainAccountProfitCheck, len(memberIDs))
+	if len(memberIDs) == 0 {
+		return result, nil
+	}
+	var query strings.Builder
+	args := make([]any, 0, len(memberIDs)*2)
+	for i, memberID := range memberIDs {
+		if i > 0 {
+			query.WriteString(" UNION ALL ")
+		}
+		fmt.Fprintf(&query, `SELECT * FROM (
+			SELECT * FROM main_account_profit_checks
+			WHERE member_id = ? AND target_group_id = ?
+			ORDER BY observed_at DESC, id DESC LIMIT 1
+		) AS recent_%d`, i)
+		args = append(args, memberID, targetGroupID)
+	}
+	var list []MainAccountProfitCheck
+	err := r.db.Raw(query.String(), args...).Scan(&list).Error
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		result[list[i].MemberID] = list[i]
+	}
+	return result, nil
 }
 
 func (r *MainStationStore) UpsertGuardLock(item *MainAccountGuardLock) error {

@@ -169,6 +169,32 @@ func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO,
 	return result, nil
 }
 
+func (s *Service) groupWorkspace(group storage.UpstreamSyncTargetGroup, pool *storage.MainAccountPool, snapshots []storage.MainStationAccountSnapshot) (*GroupWorkspaceDTO, error) {
+	members, err := s.store.ListMembers(pool.ID)
+	if err != nil {
+		return nil, err
+	}
+	accountCount := 0
+	for i := range snapshots {
+		if accountBelongsToRemoteGroup(&snapshots[i], group.RemoteGroupID) {
+			accountCount++
+		}
+	}
+	return &GroupWorkspaceDTO{
+		Group: group, Enabled: pool.Enabled, MinimumHealthyAccounts: pool.MinimumHealthyMembers,
+		MinimumEffectiveConcurrency: pool.MinimumEffectiveConcurrency, RateSortDirection: pool.RateSortDirection,
+		HealthPolicy: pool.HealthPolicyJSON, MarginPolicy: pool.MarginPolicyJSON,
+		MinimumMarginBasisPoints: poolMinimumMarginOverride(pool), LastStatus: pool.LastStatus,
+		LastEvaluatedAt: pool.LastEvaluatedAt, RankingIntervalSeconds: pool.RankingIntervalSeconds,
+		RankingDirtyAt: pool.RankingDirtyAt, LastRankingAt: pool.LastRankingAt, LastRankingError: pool.LastRankingError,
+		AutoExpandEnabled: pool.AutoExpandEnabled, AutoExpandMinMarginBasisPoints: pool.AutoExpandMinMarginBasisPoints,
+		AutoExpandMinRateMicros: pool.AutoExpandMinRateMicros, AutoExpandCategoryRuleID: pool.AutoExpandCategoryRuleID,
+		AutoExpandBlockedKeywords: pool.AutoExpandBlockedKeywords, DisabledCleanupSeconds: pool.DisabledCleanupSeconds,
+		LastAutoExpandAt: pool.LastAutoExpandAt, LastAutoExpandError: pool.LastAutoExpandError,
+		AccountCount: accountCount, ManagedAccountCount: len(members),
+	}, nil
+}
+
 func (s *Service) ListGroupAccounts(groupID uint, includeMissing bool) ([]AccountDTO, error) {
 	group, err := s.mainStationGroup(groupID)
 	if err != nil {
@@ -189,27 +215,37 @@ func (s *Service) ListGroupAccounts(groupID uint, includeMissing bool) ([]Accoun
 	if err != nil {
 		return nil, err
 	}
-	result := make([]AccountDTO, 0)
+	selected := make([]storage.MainStationAccountSnapshot, 0)
 	for i := range items {
 		if accountBelongsToRemoteGroup(&items[i], group.RemoteGroupID) {
-			dto := s.accountDTO(items[i])
-			if dto.Member != nil {
-				member, memberErr := s.store.FindMemberByRemoteAccountID(items[i].RemoteAccountID)
-				if memberErr != nil {
-					return nil, memberErr
-				}
-				current := s.buildProfitCheck(pool, member, group, s.resolveMemberCost(member, policy, now), policy, now)
-				dto.Member.CurrentProfit = accountProfitDTO(current, policy.MinimumMarginBasisPoints)
-				check, checkErr := s.store.LatestProfitCheck(dto.Member.ID, group.ID)
-				switch {
-				case checkErr == nil:
-					dto.Member.LatestProfit = accountProfitDTO(*check, policy.MinimumMarginBasisPoints)
-				case !errors.Is(checkErr, gorm.ErrRecordNotFound):
-					return nil, checkErr
-				}
-			}
-			result = append(result, dto)
+			selected = append(selected, items[i])
 		}
+	}
+	batch, err := s.loadAccountDTOBatch(selected)
+	if err != nil {
+		return nil, err
+	}
+	memberIDs := make([]uint, 0, len(batch.membersByRemote))
+	for _, member := range batch.membersByRemote {
+		memberIDs = append(memberIDs, member.ID)
+	}
+	latestByMember, err := s.store.ListLatestProfitChecksByMember(memberIDs, group.ID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]AccountDTO, 0, len(selected))
+	for i := range selected {
+		dto := batch.accountDTO(selected[i])
+		if dto.Member != nil {
+			member := batch.membersByRemote[selected[i].RemoteAccountID]
+			cost := s.resolveMemberCostFromBatch(member, selected[i], batch.ratesByChannel[member.SourceChannelID], batch.channelsByID[member.SourceChannelID], policy, now)
+			current := s.buildProfitCheck(pool, member, group, cost, policy, now)
+			dto.Member.CurrentProfit = accountProfitDTO(current, policy.MinimumMarginBasisPoints)
+			if check, ok := latestByMember[dto.Member.ID]; ok {
+				dto.Member.LatestProfit = accountProfitDTO(check, policy.MinimumMarginBasisPoints)
+			}
+		}
+		result = append(result, dto)
 	}
 	return result, nil
 }
@@ -261,7 +297,6 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	}
 	before := *pool
 	enabledChanged := false
-	cleanupChanged := pool.DisabledCleanupSeconds != in.DisabledCleanupSeconds
 	if in.Enabled != nil {
 		enabledChanged = pool.Enabled != *in.Enabled
 		pool.Enabled = *in.Enabled
@@ -316,32 +351,21 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	if err := s.markPoolRankingDirty(pool.ID); err != nil {
 		return nil, err
 	}
-	var schedulingErr error
-	if enabledChanged || cleanupChanged {
-		schedulingErr = s.reconcilePoolScheduling(ctx, pool.ID, "manual")
-		if schedulingErr != nil {
-			if s.log != nil {
-				s.log.Warn("group settings saved; scheduling reconcile queued for retry", "err", schedulingErr, "pool_id", pool.ID)
-			}
+	if enabledChanged {
+		if err := s.store.MarkPoolMembersSchedulingDirty(pool.ID, s.now()); err != nil {
+			return nil, err
 		}
 	}
 	detail := ""
-	errText := ""
-	if schedulingErr != nil {
-		detail = "group settings saved; scheduling reconcile queued for retry"
-		errText = sanitizeText(schedulingErr.Error())
+	if enabledChanged {
+		detail = "group settings saved; scheduling reconcile queued"
 	}
-	_ = s.appendAudit(&pool.ID, nil, nil, "group_settings_update", "manual", schedulingErr == nil, before, pool, map[string]any{"group_id": group.ID}, detail, errText)
-	items, err := s.ListGroupWorkspaces(false)
+	_ = s.appendAudit(&pool.ID, nil, nil, "group_settings_update", "manual", true, before, pool, map[string]any{"group_id": group.ID}, detail, "")
+	snapshots, err := s.store.ListAllAccountSnapshots(false)
 	if err != nil {
 		return nil, err
 	}
-	for i := range items {
-		if items[i].Group.ID == group.ID {
-			return &items[i], nil
-		}
-	}
-	return nil, gorm.ErrRecordNotFound
+	return s.groupWorkspace(*group, pool, snapshots)
 }
 
 func (s *Service) mainStationGroup(groupID uint) (*storage.UpstreamSyncTargetGroup, error) {

@@ -341,9 +341,9 @@ func (s *Service) ListAccounts(page, pageSize int, includeMissing, unboundOnly b
 	if err != nil {
 		return nil, err
 	}
-	out := make([]AccountDTO, 0, len(items))
-	for _, item := range items {
-		out = append(out, s.accountDTO(item))
+	out, err := s.accountDTOs(items)
+	if err != nil {
+		return nil, err
 	}
 	page, pageSize = normalizePage(page, pageSize)
 	return &Page[AccountDTO]{
@@ -352,10 +352,92 @@ func (s *Service) ListAccounts(page, pageSize int, includeMissing, unboundOnly b
 }
 
 func (s *Service) accountDTO(item storage.MainStationAccountSnapshot) AccountDTO {
+	items, err := s.accountDTOs([]storage.MainStationAccountSnapshot{item})
+	if err != nil || len(items) == 0 {
+		return AccountDTO{MainStationAccountSnapshot: item}
+	}
+	return items[0]
+}
+
+type accountDTOBatch struct {
+	membersByRemote map[int64]*storage.MainAccountPoolMember
+	recentByMember  map[uint][]storage.MainAccountHealthCheck
+	ratesByChannel  map[uint][]storage.RateSnapshot
+	channelsByID    map[uint]*storage.Channel
+}
+
+func (s *Service) accountDTOs(items []storage.MainStationAccountSnapshot) ([]AccountDTO, error) {
+	batch, err := s.loadAccountDTOBatch(items)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AccountDTO, 0, len(items))
+	for i := range items {
+		out = append(out, batch.accountDTO(items[i]))
+	}
+	return out, nil
+}
+
+func (s *Service) loadAccountDTOBatch(items []storage.MainStationAccountSnapshot) (accountDTOBatch, error) {
+	remoteIDs := make([]int64, 0, len(items))
+	for i := range items {
+		remoteIDs = append(remoteIDs, items[i].RemoteAccountID)
+	}
+	members, err := s.store.ListMembersByRemoteAccountIDs(remoteIDs)
+	if err != nil {
+		return accountDTOBatch{}, err
+	}
+	memberIDs := make([]uint, 0, len(members))
+	channelIDs := make([]uint, 0, len(members))
+	membersByRemote := make(map[int64]*storage.MainAccountPoolMember, len(members))
+	seenChannels := make(map[uint]struct{}, len(members))
+	for i := range members {
+		member := &members[i]
+		if member.RemoteAccountID != nil {
+			membersByRemote[*member.RemoteAccountID] = member
+		}
+		memberIDs = append(memberIDs, member.ID)
+		if _, ok := seenChannels[member.SourceChannelID]; !ok {
+			seenChannels[member.SourceChannelID] = struct{}{}
+			channelIDs = append(channelIDs, member.SourceChannelID)
+		}
+	}
+	recentByMember, err := s.store.ListRecentHealthChecksByMember(memberIDs, 100)
+	if err != nil {
+		return accountDTOBatch{}, err
+	}
+	ratesByChannel := make(map[uint][]storage.RateSnapshot, len(channelIDs))
+	if s.rates != nil {
+		rates, listErr := s.rates.ListByChannels(channelIDs)
+		if listErr != nil {
+			return accountDTOBatch{}, listErr
+		}
+		for i := range rates {
+			ratesByChannel[rates[i].ChannelID] = append(ratesByChannel[rates[i].ChannelID], rates[i])
+		}
+	}
+	channelsByID := make(map[uint]*storage.Channel, len(channelIDs))
+	if s.channels != nil {
+		channels, listErr := s.channels.List()
+		if listErr != nil {
+			return accountDTOBatch{}, listErr
+		}
+		for i := range channels {
+			channelsByID[channels[i].ID] = &channels[i]
+		}
+	}
+	return accountDTOBatch{
+		membersByRemote: membersByRemote,
+		recentByMember:  recentByMember,
+		ratesByChannel:  ratesByChannel,
+		channelsByID:    channelsByID,
+	}, nil
+}
+
+func (b accountDTOBatch) accountDTO(item storage.MainStationAccountSnapshot) AccountDTO {
 	dto := AccountDTO{MainStationAccountSnapshot: item}
-	if member, err := s.store.FindMemberByRemoteAccountID(item.RemoteAccountID); err == nil {
-		recent20SuccessRate := s.recent20SuccessRate(member.ID)
-		sourceGroupRate, sourceGroupRateObservedAt := s.sourceGroupRate(member)
+	if member := b.membersByRemote[item.RemoteAccountID]; member != nil {
+		sourceGroupRate, sourceGroupRateObservedAt := sourceGroupRateFromSnapshots(member, b.ratesByChannel[member.SourceChannelID], b.channelsByID[member.SourceChannelID])
 		dto.Member = &AccountMemberDTO{
 			ID:                        member.ID,
 			AccountName:               member.AccountName,
@@ -378,7 +460,7 @@ func (s *Service) accountDTO(item storage.MainStationAccountSnapshot) AccountDTO
 			HealthIntervalSeconds:     member.HealthIntervalSeconds,
 			HealthFailureThreshold:    member.HealthFailureThreshold,
 			HealthRecoveryThreshold:   member.HealthRecoveryThreshold,
-			Recent20SuccessRate:       recent20SuccessRate,
+			Recent20SuccessRate:       successRate(b.recentByMember[member.ID], time.Time{}),
 			LastHealthStatus:          member.LastHealthStatus,
 			LastHealthAt:              member.LastHealthAt,
 			ConsecutiveHealthSuccess:  member.ConsecutiveHealthSuccess,
@@ -389,6 +471,27 @@ func (s *Service) accountDTO(item storage.MainStationAccountSnapshot) AccountDTO
 		}
 	}
 	return dto
+}
+
+func sourceGroupRateFromSnapshots(member *storage.MainAccountPoolMember, snapshots []storage.RateSnapshot, channel *storage.Channel) (*float64, *time.Time) {
+	if member.SourceGroupID == nil && strings.TrimSpace(member.SourceGroupName) == "" {
+		ratio := applyRechargeMultiplier(1, channel)
+		return &ratio, nil
+	}
+	snapshot := selectSourceRateSnapshot(snapshots, member)
+	if snapshot == nil {
+		return nil, nil
+	}
+	ratio := applyRechargeMultiplier(snapshot.Ratio, channel)
+	observedAt := snapshot.LastSeenAt
+	return &ratio, &observedAt
+}
+
+func applyRechargeMultiplier(ratio float64, channel *storage.Channel) float64 {
+	if channel == nil {
+		return ratio
+	}
+	return connector.ApplyRechargeMultiplier(ratio, channel.RechargeMultiplier, channel.RechargeMultiplierMode)
 }
 
 func (s *Service) sourceGroupRate(member *storage.MainAccountPoolMember) (*float64, *time.Time) {

@@ -3,14 +3,41 @@ package storage
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
 )
 
-type Rates struct{ db *gorm.DB }
+const trendCacheTTL = 30 * time.Second
 
-func NewRates(db *gorm.DB) *Rates { return &Rates{db: db} }
+type Rates struct {
+	db                *gorm.DB
+	balanceTrendMu    sync.Mutex
+	costTrendMu       sync.Mutex
+	balanceTrendCache map[int]balanceTrendCacheEntry
+	costTrendCache    map[int]costTrendCacheEntry
+}
+
+type balanceTrendCacheEntry struct {
+	loadedAt time.Time
+	day      string
+	items    []DailyAggregate
+}
+
+type costTrendCacheEntry struct {
+	loadedAt time.Time
+	day      string
+	items    []DailyCostAggregate
+}
+
+func NewRates(db *gorm.DB) *Rates {
+	return &Rates{
+		db:                db,
+		balanceTrendCache: make(map[int]balanceTrendCacheEntry),
+		costTrendCache:    make(map[int]costTrendCacheEntry),
+	}
+}
 
 var trendNow = time.Now
 var trendLocation = loadTrendLocation()
@@ -142,14 +169,22 @@ func (r *Rates) AppendBalance(s *BalanceSnapshot) error {
 	if s.SampledAt.IsZero() {
 		s.SampledAt = time.Now()
 	}
-	return r.db.Create(s).Error
+	if err := r.db.Create(s).Error; err != nil {
+		return err
+	}
+	r.invalidateBalanceTrend()
+	return nil
 }
 
 func (r *Rates) AppendCost(s *CostSnapshot) error {
 	if s.SampledAt.IsZero() {
 		s.SampledAt = time.Now()
 	}
-	return r.db.Create(s).Error
+	if err := r.db.Create(s).Error; err != nil {
+		return err
+	}
+	r.invalidateCostTrend()
+	return nil
 }
 
 // ResetStaleTodayCostsAt 清零当天尚无消费采样的渠道，避免停用渠道跨日保留昨日消费。
@@ -195,12 +230,18 @@ func (r *Rates) CostHistorySince(channelID uint, since time.Time, limit int) ([]
 // DeleteBalanceSnapshotsBefore 删除 sampled_at < cutoff 的余额快照，返回删除行数。
 func (r *Rates) DeleteBalanceSnapshotsBefore(cutoff time.Time) (int64, error) {
 	res := r.db.Where("sampled_at < ?", cutoff).Delete(&BalanceSnapshot{})
+	if res.Error == nil && res.RowsAffected > 0 {
+		r.invalidateBalanceTrend()
+	}
 	return res.RowsAffected, res.Error
 }
 
 // DeleteCostSnapshotsBefore 删除 sampled_at < cutoff 的消费快照，返回删除行数。
 func (r *Rates) DeleteCostSnapshotsBefore(cutoff time.Time) (int64, error) {
 	res := r.db.Where("sampled_at < ?", cutoff).Delete(&CostSnapshot{})
+	if res.Error == nil && res.RowsAffected > 0 {
+		r.invalidateCostTrend()
+	}
 	return res.RowsAffected, res.Error
 }
 
@@ -240,7 +281,16 @@ func (r *Rates) AggregateBalanceTrend(days int) ([]DailyAggregate, error) {
 	if days <= 0 {
 		days = 7
 	}
-	today := dayStart(trendNow())
+	now := trendNow()
+	today := dayStart(now)
+	cacheDay := dayKey(today)
+	r.balanceTrendMu.Lock()
+	defer r.balanceTrendMu.Unlock()
+	cached, ok := r.balanceTrendCache[days]
+	cacheAge := now.Sub(cached.loadedAt)
+	if ok && cached.day == cacheDay && cacheAge >= 0 && cacheAge < trendCacheTTL {
+		return append([]DailyAggregate(nil), cached.items...), nil
+	}
 	since := today.AddDate(0, 0, -(days - 1))
 
 	rows, err := r.aggregateDailyLatest("balance_snapshots", "balance", since, days)
@@ -248,6 +298,7 @@ func (r *Rates) AggregateBalanceTrend(days int) ([]DailyAggregate, error) {
 		return nil, err
 	}
 	if len(rows) == 0 {
+		r.balanceTrendCache[days] = balanceTrendCacheEntry{loadedAt: now, day: cacheDay, items: []DailyAggregate{}}
 		return []DailyAggregate{}, nil
 	}
 	byDay := make(map[string]float64, days)
@@ -259,12 +310,42 @@ func (r *Rates) AggregateBalanceTrend(days int) ([]DailyAggregate, error) {
 	for day := since; !day.After(today); day = day.AddDate(0, 0, 1) {
 		out = append(out, DailyAggregate{Day: day, Balance: byDay[dayKey(day)]})
 	}
+	r.balanceTrendCache[days] = balanceTrendCacheEntry{loadedAt: now, day: cacheDay, items: append([]DailyAggregate(nil), out...)}
 	return out, nil
 }
 
 // AggregateCostTrend 取最近 N 天的"日内最后一次今日消费"按渠道之和，作为总消费趋势。
 func (r *Rates) AggregateCostTrend(days int) ([]DailyCostAggregate, error) {
-	return r.AggregateCostTrendAt(days, trendNow())
+	if days <= 0 {
+		days = 7
+	}
+	now := trendNow()
+	cacheDay := dayKey(dayStart(now))
+	r.costTrendMu.Lock()
+	defer r.costTrendMu.Unlock()
+	cached, ok := r.costTrendCache[days]
+	cacheAge := now.Sub(cached.loadedAt)
+	if ok && cached.day == cacheDay && cacheAge >= 0 && cacheAge < trendCacheTTL {
+		return append([]DailyCostAggregate(nil), cached.items...), nil
+	}
+	items, err := r.AggregateCostTrendAt(days, now)
+	if err != nil {
+		return nil, err
+	}
+	r.costTrendCache[days] = costTrendCacheEntry{loadedAt: now, day: cacheDay, items: append([]DailyCostAggregate(nil), items...)}
+	return items, nil
+}
+
+func (r *Rates) invalidateBalanceTrend() {
+	r.balanceTrendMu.Lock()
+	r.balanceTrendCache = make(map[int]balanceTrendCacheEntry)
+	r.balanceTrendMu.Unlock()
+}
+
+func (r *Rates) invalidateCostTrend() {
+	r.costTrendMu.Lock()
+	r.costTrendCache = make(map[int]costTrendCacheEntry)
+	r.costTrendMu.Unlock()
 }
 
 // AggregateCostTrendAt 使用调用方提供的当前时间计算最近 N 天消费趋势，便于业务层保持统一时钟。

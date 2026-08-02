@@ -1314,8 +1314,10 @@ func TestDeleteBoundMemberDeletesMainStationAccountAndSourceKey(t *testing.T) {
 	}
 }
 
-func TestUpdateGroupEnabledReconcilesAllMembers(t *testing.T) {
+func TestUpdateGroupEnabledQueuesSchedulingReconcile(t *testing.T) {
 	service, _, admin, pool, _ := createBoundSchedulingMember(t)
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
 	admin.schedulableCalls = nil
 	groupIDs, err := service.store.ListPoolGroupIDs(pool.ID)
 	if err != nil || len(groupIDs) != 1 {
@@ -1335,10 +1337,19 @@ func TestUpdateGroupEnabledReconcilesAllMembers(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("disable group: %v", err)
 	}
+	if len(admin.schedulableCalls) != 0 {
+		t.Fatalf("disable group saved synchronously: calls=%#v", admin.schedulableCalls)
+	}
+	members, err := service.store.ListMembers(pool.ID)
+	if err != nil || len(members) != 1 || members[0].SchedulingDirtyAt == nil {
+		t.Fatalf("queued members=%#v err=%v", members, err)
+	}
+	service.RunDueSchedulingReconciles(context.Background())
 	if len(admin.schedulableCalls) != 1 || admin.schedulableCalls[0] {
-		t.Fatalf("disable group calls=%#v", admin.schedulableCalls)
+		t.Fatalf("disable group scheduler calls=%#v", admin.schedulableCalls)
 	}
 
+	now = now.Add(schedulingRetryInterval)
 	enabled := true
 	if _, err := service.UpdateGroupSettings(context.Background(), groupIDs[0], GroupSettingsInput{
 		Enabled: &enabled, MinimumHealthyAccounts: workspace.MinimumHealthyAccounts,
@@ -1347,8 +1358,40 @@ func TestUpdateGroupEnabledReconcilesAllMembers(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("enable group: %v", err)
 	}
+	if len(admin.schedulableCalls) != 1 {
+		t.Fatalf("enable group saved synchronously: calls=%#v", admin.schedulableCalls)
+	}
+	service.RunDueSchedulingReconciles(context.Background())
 	if len(admin.schedulableCalls) != 2 || !admin.schedulableCalls[1] {
-		t.Fatalf("enable group calls=%#v", admin.schedulableCalls)
+		t.Fatalf("enable group scheduler calls=%#v", admin.schedulableCalls)
+	}
+}
+
+func TestUpdateGroupCleanupHoursDoesNotReconcileScheduling(t *testing.T) {
+	service, _, admin, pool, _ := createBoundSchedulingMember(t)
+	admin.schedulableCalls = nil
+	groupIDs, err := service.store.ListPoolGroupIDs(pool.ID)
+	if err != nil || len(groupIDs) != 1 {
+		t.Fatalf("pool groups=%v err=%v", groupIDs, err)
+	}
+	workspaces, err := service.ListGroupWorkspaces(false)
+	if err != nil || len(workspaces) != 1 {
+		t.Fatalf("workspaces=%#v err=%v", workspaces, err)
+	}
+	workspace := workspaces[0]
+	if _, err := service.UpdateGroupSettings(context.Background(), groupIDs[0], GroupSettingsInput{
+		Enabled: &workspace.Enabled, MinimumHealthyAccounts: workspace.MinimumHealthyAccounts,
+		MinimumEffectiveConcurrency: workspace.MinimumEffectiveConcurrency, RateSortDirection: workspace.RateSortDirection,
+		HealthPolicy: workspace.HealthPolicy, MarginPolicy: workspace.MarginPolicy, DisabledCleanupSeconds: 3 * 3600,
+	}); err != nil {
+		t.Fatalf("update cleanup hours: %v", err)
+	}
+	if len(admin.schedulableCalls) != 0 {
+		t.Fatalf("cleanup hours scheduling calls=%#v", admin.schedulableCalls)
+	}
+	members, err := service.store.ListMembers(pool.ID)
+	if err != nil || len(members) != 1 || members[0].SchedulingDirtyAt != nil {
+		t.Fatalf("members after cleanup update=%#v err=%v", members, err)
 	}
 }
 

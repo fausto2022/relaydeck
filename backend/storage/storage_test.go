@@ -243,6 +243,7 @@ func TestAutoMigrateCreatesSQLiteIndexes(t *testing.T) {
 		"idx_balance_snapshots_sampled_jd",
 		"idx_cost_snapshots_sampled_jd",
 		"idx_main_audit_pool_created_id",
+		"idx_main_profit_member_group_observed_id",
 	} {
 		var count int64
 		if err := db.Raw(
@@ -595,6 +596,45 @@ func TestAggregateCostTrend(t *testing.T) {
 		if got[i].Cost != want[i].Cost {
 			t.Fatalf("cost %d mismatch: got %v want %v", i, got[i].Cost, want[i].Cost)
 		}
+	}
+}
+
+func TestAggregateTrendCacheInvalidatesAfterAppend(t *testing.T) {
+	db := openTestDB(t)
+	rates := NewRates(db)
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, trendLocation)
+	previousNow := trendNow
+	trendNow = func() time.Time { return now }
+	t.Cleanup(func() { trendNow = previousNow })
+
+	if err := rates.AppendBalance(&BalanceSnapshot{ChannelID: 1, Balance: 10, SampledAt: now.Add(-time.Hour)}); err != nil {
+		t.Fatalf("append initial balance: %v", err)
+	}
+	if err := rates.AppendCost(&CostSnapshot{ChannelID: 1, TodayCost: 2, SampledAt: now.Add(-time.Hour)}); err != nil {
+		t.Fatalf("append initial cost: %v", err)
+	}
+	balances, err := rates.AggregateBalanceTrend(1)
+	if err != nil || len(balances) != 1 || balances[0].Balance != 10 {
+		t.Fatalf("initial balance trend=%#v err=%v", balances, err)
+	}
+	costs, err := rates.AggregateCostTrend(1)
+	if err != nil || len(costs) != 1 || costs[0].Cost != 2 {
+		t.Fatalf("initial cost trend=%#v err=%v", costs, err)
+	}
+
+	if err := rates.AppendBalance(&BalanceSnapshot{ChannelID: 1, Balance: 12, SampledAt: now}); err != nil {
+		t.Fatalf("append updated balance: %v", err)
+	}
+	if err := rates.AppendCost(&CostSnapshot{ChannelID: 1, TodayCost: 3, SampledAt: now}); err != nil {
+		t.Fatalf("append updated cost: %v", err)
+	}
+	balances, err = rates.AggregateBalanceTrend(1)
+	if err != nil || len(balances) != 1 || balances[0].Balance != 12 {
+		t.Fatalf("updated balance trend=%#v err=%v", balances, err)
+	}
+	costs, err = rates.AggregateCostTrend(1)
+	if err != nil || len(costs) != 1 || costs[0].Cost != 3 {
+		t.Fatalf("updated cost trend=%#v err=%v", costs, err)
 	}
 }
 
