@@ -20,8 +20,8 @@ func TestRankSchedulingSignalsUsesHealthPriorityCostAndStability(t *testing.T) {
 	}
 
 	priorities := rankSchedulingSignals(signals, "asc")
-	if priorities[3] != 10 || priorities[1] != 10 || priorities[2] != 20 || priorities[5] != 30 || priorities[4] != 40 {
-		t.Fatalf("score-based scheduling tiers = %#v", priorities)
+	if priorities[3] != 10 || priorities[1] != 20 || priorities[2] != 30 || priorities[5] != 40 || priorities[4] != 50 {
+		t.Fatalf("score-based sparse scheduling order = %#v", priorities)
 	}
 }
 
@@ -48,22 +48,47 @@ func TestRankSchedulingSignalsLatencyCanMoveHigherBasePriorityBehindAnotherAccou
 	}
 }
 
-func TestAssignTieredSchedulingPrioritiesSharesLoadWithinTier(t *testing.T) {
+func TestAssignSparseSchedulingPrioritiesPreservesStableValuesAndUsesGaps(t *testing.T) {
 	ordered := []schedulingRankSignal{
-		{MemberID: 1, Enabled: true, HealthBand: 0, Score: 1},
-		{MemberID: 2, Enabled: true, HealthBand: 0, Score: 5},
-		{MemberID: 3, Enabled: true, HealthBand: 0, Score: 6},
-		{MemberID: 4, Enabled: true, HealthBand: 2, Score: 1},
+		{MemberID: 1, CurrentPriority: 10},
+		{MemberID: 2},
+		{MemberID: 3, CurrentPriority: 30},
 	}
-	priorities := assignTieredSchedulingPriorities(ordered)
-	if priorities[1] != 10 || priorities[2] != 10 || priorities[3] != 20 || priorities[4] != 30 {
-		t.Fatalf("tiered priorities = %#v", priorities)
+	priorities := assignSparseSchedulingPriorities(ordered)
+	if priorities[1] != 10 || priorities[2] != 20 || priorities[3] != 30 {
+		t.Fatalf("stable sparse priorities = %#v", priorities)
 	}
-	repeated := assignTieredSchedulingPriorities(ordered)
-	for memberID, priority := range priorities {
-		if repeated[memberID] != priority {
-			t.Fatalf("priority drifted for member %d: %d -> %d", memberID, priority, repeated[memberID])
-		}
+}
+
+func TestAssignSparseSchedulingPrioritiesKeepsExistingStableNumbers(t *testing.T) {
+	ordered := []schedulingRankSignal{
+		{MemberID: 1, CurrentPriority: 11},
+		{MemberID: 2, CurrentPriority: 301},
+		{MemberID: 3, CurrentPriority: 311},
+	}
+	priorities := assignSparseSchedulingPriorities(ordered)
+	if priorities[1] != 11 || priorities[2] != 301 || priorities[3] != 311 {
+		t.Fatalf("stable account priorities changed: %#v", priorities)
+	}
+}
+
+func TestAssignSparseSchedulingPrioritiesDoesNotGrowAfterReorder(t *testing.T) {
+	ordered := []schedulingRankSignal{
+		{MemberID: 1, CurrentPriority: 10},
+		{MemberID: 3, CurrentPriority: 30},
+		{MemberID: 2, CurrentPriority: 20},
+	}
+	priorities := assignSparseSchedulingPriorities(ordered)
+	if priorities[1] != 10 || priorities[3] != 20 || priorities[2] != 30 {
+		t.Fatalf("reordered sparse priorities = %#v", priorities)
+	}
+	repeated := assignSparseSchedulingPriorities([]schedulingRankSignal{
+		{MemberID: 1, CurrentPriority: priorities[1]},
+		{MemberID: 3, CurrentPriority: priorities[3]},
+		{MemberID: 2, CurrentPriority: priorities[2]},
+	})
+	if repeated[1] != 10 || repeated[3] != 20 || repeated[2] != 30 {
+		t.Fatalf("priority drifted after repeated reorder: %#v", repeated)
 	}
 }
 

@@ -849,7 +849,7 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 		t.Fatalf("scheduling-only edit should not run a full managed sync: %#v", admin.updateRequests)
 	}
 	service.RunDueRankings(context.Background())
-	if len(admin.schedulingUpdates) != 1 || admin.schedulingUpdates[0].Concurrency != 37 || admin.schedulingUpdates[0].Priority != 10 || admin.schedulingUpdates[0].LoadFactor != 37 {
+	if len(admin.schedulingUpdates) != 1 || admin.schedulingUpdates[0].Concurrency != 37 || admin.schedulingUpdates[0].Priority != 1 || admin.schedulingUpdates[0].LoadFactor != 37 {
 		t.Fatalf("deferred scheduling updates = %#v", admin.schedulingUpdates)
 	}
 
