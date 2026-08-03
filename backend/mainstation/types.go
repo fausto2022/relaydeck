@@ -120,6 +120,10 @@ type AccountMemberDTO struct {
 	Enabled                   bool              `json:"enabled"`
 	Preferred                 bool              `json:"preferred"`
 	SourceChannelID           uint              `json:"source_channel_id"`
+	SourceChannelName         string            `json:"source_channel_name,omitempty"`
+	SourceChannelBalance      *float64          `json:"source_channel_balance,omitempty"`
+	SourceChannelBalanceAt    *time.Time        `json:"source_channel_balance_at,omitempty"`
+	SourceChannelBalanceLimit float64           `json:"source_channel_balance_limit,omitempty"`
 	SourceGroupID             *int64            `json:"source_group_id,omitempty"`
 	SourceGroupName           string            `json:"source_group_name,omitempty"`
 	SourceGroupRateMultiplier *float64          `json:"source_group_rate_multiplier,omitempty"`

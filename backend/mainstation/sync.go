@@ -437,7 +437,8 @@ func (s *Service) loadAccountDTOBatch(items []storage.MainStationAccountSnapshot
 func (b accountDTOBatch) accountDTO(item storage.MainStationAccountSnapshot) AccountDTO {
 	dto := AccountDTO{MainStationAccountSnapshot: item}
 	if member := b.membersByRemote[item.RemoteAccountID]; member != nil {
-		sourceGroupRate, sourceGroupRateObservedAt := sourceGroupRateFromSnapshots(member, b.ratesByChannel[member.SourceChannelID], b.channelsByID[member.SourceChannelID])
+		sourceChannel := b.channelsByID[member.SourceChannelID]
+		sourceGroupRate, sourceGroupRateObservedAt := sourceGroupRateFromSnapshots(member, b.ratesByChannel[member.SourceChannelID], sourceChannel)
 		dto.Member = &AccountMemberDTO{
 			ID:                        member.ID,
 			AccountName:               member.AccountName,
@@ -447,6 +448,10 @@ func (b accountDTOBatch) accountDTO(item storage.MainStationAccountSnapshot) Acc
 			Enabled:                   member.Enabled,
 			Preferred:                 member.Preferred,
 			SourceChannelID:           member.SourceChannelID,
+			SourceChannelName:         sourceChannelName(sourceChannel),
+			SourceChannelBalance:      sourceChannelBalance(sourceChannel),
+			SourceChannelBalanceAt:    sourceChannelBalanceAt(sourceChannel),
+			SourceChannelBalanceLimit: sourceChannelBalanceLimit(sourceChannel),
 			SourceGroupID:             member.SourceGroupID,
 			SourceGroupName:           member.SourceGroupName,
 			SourceGroupRateMultiplier: sourceGroupRate,
@@ -471,6 +476,34 @@ func (b accountDTOBatch) accountDTO(item storage.MainStationAccountSnapshot) Acc
 		}
 	}
 	return dto
+}
+
+func sourceChannelName(channel *storage.Channel) string {
+	if channel == nil {
+		return ""
+	}
+	return channel.Name
+}
+
+func sourceChannelBalance(channel *storage.Channel) *float64 {
+	if channel == nil {
+		return nil
+	}
+	return channel.LastBalance
+}
+
+func sourceChannelBalanceAt(channel *storage.Channel) *time.Time {
+	if channel == nil {
+		return nil
+	}
+	return channel.LastBalanceAt
+}
+
+func sourceChannelBalanceLimit(channel *storage.Channel) float64 {
+	if channel == nil {
+		return 0
+	}
+	return channel.BalanceThreshold
 }
 
 func sourceGroupRateFromSnapshots(member *storage.MainAccountPoolMember, snapshots []storage.RateSnapshot, channel *storage.Channel) (*float64, *time.Time) {

@@ -541,6 +541,16 @@ func TestMemberHealthStatsUsesFullSevenDayAggregateAndRecentWindow(t *testing.T)
 func TestAccountDTOIncludesRecentConnectivityRate(t *testing.T) {
 	service, db, admin, _ := newTestService(t)
 	member := createHealthMember(t, service, db, admin, "https://upstream.example.com", "")
+	balance := 3.5
+	channel := &storage.Channel{}
+	if err := db.First(channel, member.SourceChannelID).Error; err != nil {
+		t.Fatalf("find source channel: %v", err)
+	}
+	channel.LastBalance = &balance
+	channel.BalanceThreshold = 5
+	if err := db.Save(channel).Error; err != nil {
+		t.Fatalf("save source channel balance: %v", err)
+	}
 	now := time.Now()
 	checks := []storage.MainAccountHealthCheck{
 		{PoolID: member.PoolID, MemberID: member.ID, RemoteAccountID: 21, Level: "L0", Status: "success", CreatedAt: now},
@@ -559,6 +569,9 @@ func TestAccountDTOIncludesRecentConnectivityRate(t *testing.T) {
 	dto := service.accountDTO(*snapshot)
 	if dto.Member == nil || dto.Member.Recent20SuccessRate == nil {
 		t.Fatalf("account dto = %#v", dto)
+	}
+	if dto.Member.SourceChannelName != channel.Name || dto.Member.SourceChannelBalance == nil || *dto.Member.SourceChannelBalance != balance || dto.Member.SourceChannelBalanceLimit != 5 {
+		t.Fatalf("source channel balance = %#v", dto.Member)
 	}
 	if rate := *dto.Member.Recent20SuccessRate; rate < 66.6 || rate > 66.7 {
 		t.Fatalf("recent connectivity rate = %f", rate)

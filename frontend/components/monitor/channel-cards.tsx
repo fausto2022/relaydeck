@@ -57,6 +57,7 @@ import { useChannels, useChannelsPage, useChannelRates } from "@/lib/queries"
 import { apiFetch } from "@/lib/api"
 import { useTriggerRefresh } from "@/lib/refresh-context"
 import { channelTypeLabel, decimal, formatRatio, money, relativeTime } from "@/lib/format"
+import { isBalanceLow } from "@/lib/channel-balance"
 import { cn } from "@/lib/utils"
 import { syncAllChannelsStream, syncChannelStream, testLoginStream, type ProgressEvent } from "@/lib/sync-stream"
 import type { Channel, ChannelRedeemResult, RateSnapshot } from "@/lib/api-types"
@@ -72,6 +73,7 @@ import {
 type Status = "healthy" | "low" | "failed" | "idle"
 type ChannelPageSize = 9 | 18 | 36 | 72 | 81 | "all"
 type GroupSortMode = "channel-asc" | "channel-desc" | "ratio-asc" | "ratio-desc"
+type BalanceFilter = "all" | "low" | "idle"
 
 const channelPageSizeOptions: ChannelPageSize[] = [9, 18, 36, 72, 81, "all"]
 
@@ -84,7 +86,7 @@ function pageNumbers(currentPage: number, totalPages: number) {
 function statusOf(c: Channel): Status {
   if (c.last_error) return "failed"
   if (c.last_balance == null) return "idle"
-  if (c.balance_threshold > 0 && c.last_balance < c.balance_threshold) return "low"
+  if (isBalanceLow(c.last_balance, c.balance_threshold)) return "low"
   return "healthy"
 }
 
@@ -564,6 +566,7 @@ export function ChannelCards() {
   const { data: channels, loading: channelsLoading } = useChannels()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<ChannelPageSize>(9)
+  const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>("all")
   const pageQuery = useChannelsPage(page, pageSize === "all" ? -1 : pageSize)
   const refresh = useTriggerRefresh()
   const { confirm, dialog: confirmDialog } = useConfirm()
@@ -580,12 +583,36 @@ export function ChannelCards() {
   const [bulkSync, setBulkSync] = useState<BulkSyncState>({ running: false, completed: 0, total: 0 })
   const anySyncRunning = bulkSync.running || Object.values(syncState).some((s) => s.running)
   const channelPage = pageQuery.data
-  const visibleChannels = channelPage?.items ?? []
-  const totalChannels = channelPage?.total ?? 0
+  const balanceFilteredChannels = useMemo(() => {
+    const list = channels ?? []
+    if (balanceFilter === "low") return list.filter((channel) => isBalanceLow(channel.last_balance, channel.balance_threshold))
+    if (balanceFilter === "idle") return list.filter((channel) => channel.last_balance == null)
+    return list
+  }, [balanceFilter, channels])
+  const balanceFilterActive = balanceFilter !== "all"
+  const balanceFilterLabel = balanceFilter === "low" ? "余额偏低" : "尚未采集"
+  const lowBalanceCount = useMemo(
+    () => (channels ?? []).filter((channel) => isBalanceLow(channel.last_balance, channel.balance_threshold)).length,
+    [channels],
+  )
+  const idleBalanceCount = useMemo(
+    () => (channels ?? []).filter((channel) => channel.last_balance == null).length,
+    [channels],
+  )
+  const totalChannels = balanceFilterActive ? balanceFilteredChannels.length : (channelPage?.total ?? 0)
   const pageSizeAll = pageSize === "all"
-  const totalPages = pageSizeAll ? 1 : (channelPage?.pages ?? 1)
+  const totalPages = pageSizeAll
+    ? 1
+    : balanceFilterActive
+      ? Math.max(1, Math.ceil(totalChannels / pageSize))
+      : (channelPage?.pages ?? 1)
   const currentPage = pageSizeAll ? 1 : Math.min(page, totalPages)
   const effectivePageSize = pageSizeAll ? Math.max(totalChannels, 1) : pageSize
+  const visibleChannels = balanceFilterActive
+    ? pageSizeAll
+      ? balanceFilteredChannels
+      : balanceFilteredChannels.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    : (channelPage?.items ?? [])
   const rangeStart = totalChannels === 0 ? 0 : (currentPage - 1) * effectivePageSize + 1
   const rangeEnd = Math.min((currentPage - 1) * effectivePageSize + visibleChannels.length, totalChannels)
   const pagerNumbers = pageNumbers(currentPage, totalPages)
@@ -604,6 +631,10 @@ export function ChannelCards() {
   useEffect(() => {
     setPage((prev) => Math.min(prev, totalPages))
   }, [totalPages])
+
+  useEffect(() => {
+    setPage(1)
+  }, [balanceFilter])
 
   function clearHideTimer(id: number) {
     const t = hideTimers.current.get(id)
@@ -786,6 +817,20 @@ export function ChannelCards() {
           <span className="text-xs text-muted-foreground">
             {totalChannels}{" 个渠道"}
           </span>
+          <Select
+            value={balanceFilter}
+            onValueChange={(value) => setBalanceFilter(value as BalanceFilter)}
+            disabled={channelsLoading && channels == null}
+          >
+            <SelectTrigger size="sm" className="h-8 w-32 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="all">余额：全部</SelectItem>
+              <SelectItem value="low">余额偏低（{lowBalanceCount}）</SelectItem>
+              <SelectItem value="idle">尚未采集（{idleBalanceCount}）</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             variant="outline"
             size="sm"
@@ -826,18 +871,26 @@ export function ChannelCards() {
         </p>
       ) : totalChannels === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">
-          <p className="text-sm text-muted-foreground">{"还没有任何渠道。"}</p>
-          <Button
-            size="sm"
-            className="mt-3 gap-1.5"
-            onClick={() => {
-              setEditing(null)
-              setCreating(true)
-            }}
-          >
-            <Plus className="size-3.5" />
-            {"添加第一个渠道"}
-          </Button>
+          <p className="text-sm text-muted-foreground">
+            {balanceFilterActive ? `没有${balanceFilterLabel}的渠道。` : "还没有任何渠道。"}
+          </p>
+          {balanceFilterActive ? (
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => setBalanceFilter("all")}>
+              {"清除筛选"}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="mt-3 gap-1.5"
+              onClick={() => {
+                setEditing(null)
+                setCreating(true)
+              }}
+            >
+              <Plus className="size-3.5" />
+              {"添加第一个渠道"}
+            </Button>
+          )}
         </div>
       ) : (
         <>
@@ -1120,8 +1173,8 @@ export function ChannelCards() {
           <div className="mt-3 flex flex-col gap-2 rounded-lg border border-border bg-muted/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs text-muted-foreground">
               {pageSizeAll
-                ? `显示全部 ${totalChannels} 个渠道`
-                : `显示 ${rangeStart}-${rangeEnd} / ${totalChannels} 个渠道`}
+                ? `${balanceFilterActive ? `${balanceFilterLabel}：` : ""}显示全部 ${totalChannels} 个渠道`
+                : `${balanceFilterActive ? `${balanceFilterLabel}：` : ""}显示 ${rangeStart}-${rangeEnd} / ${totalChannels} 个渠道`}
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:justify-end">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">

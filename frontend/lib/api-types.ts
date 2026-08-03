@@ -842,6 +842,10 @@ export interface MainStationAccountMember {
   enabled: boolean
   preferred: boolean
   source_channel_id: number
+  source_channel_name?: string
+  source_channel_balance?: number | null
+  source_channel_balance_at?: string | null
+  source_channel_balance_limit?: number
   source_group_id?: number | null
   source_group_name?: string
   source_group_rate_multiplier?: number | null

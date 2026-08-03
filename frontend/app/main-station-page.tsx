@@ -78,7 +78,8 @@ import type {
   MainStationSchedulingDecision,
   MainStationSyncResult,
 } from "@/lib/api-types"
-import { dateTime, relativeTime } from "@/lib/format"
+import { dateTime, money, relativeTime } from "@/lib/format"
+import { isBalanceLow } from "@/lib/channel-balance"
 import { cn } from "@/lib/utils"
 
 export default function MainStationPage() {
@@ -512,7 +513,7 @@ export default function MainStationPage() {
                         <TableHead>上游倍率</TableHead>
                         <TableHead>健康</TableHead>
                         <TableHead>连通率</TableHead>
-                        <TableHead>来源</TableHead>
+                        <TableHead>来源 / 余额</TableHead>
                         <TableHead className="w-24 text-right">操作</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -541,7 +542,7 @@ export default function MainStationPage() {
                           <TableCell><ConnectivityRate account={account} /></TableCell>
                           <TableCell>
                             {account.member ? (
-                              <div className="max-w-40 truncate text-sm" title={channelName(channels, account.member.source_channel_id)}>{channelName(channels, account.member.source_channel_id)}</div>
+                              <SourceChannelBalance account={account} channels={channels} />
                             ) : <Badge variant="outline">未接管</Badge>}
                           </TableCell>
                           <TableCell className="text-right">
@@ -749,6 +750,24 @@ function ConnectivityRate({ account }: { account: MainStationAccount }) {
   const text = rate === Math.round(rate) ? rate.toFixed(0) : rate.toFixed(1)
   const className = rate >= 95 ? "text-emerald-700" : rate >= 80 ? "text-amber-700" : "text-destructive"
   return <span className={cn("text-sm font-medium tabular-nums", className)} title="最近 100 次有效探测成功率">{text}%</span>
+}
+
+function SourceChannelBalance({ account, channels }: { account: MainStationAccount; channels: Channel[] }) {
+  const member = account.member
+  if (!member) return null
+  const channelNameValue = member.source_channel_name || channelName(channels, member.source_channel_id)
+  const balance = member.source_channel_balance
+  const low = isBalanceLow(balance, member.source_channel_balance_limit)
+  const sampledAt = member.source_channel_balance_at ? `采集于 ${relativeTime(member.source_channel_balance_at)}` : "尚未采集"
+  return (
+    <div className="max-w-44 min-w-0 leading-tight">
+      <div className="truncate text-sm" title={channelNameValue}>{channelNameValue || `渠道 #${member.source_channel_id}`}</div>
+      <div className={cn("mt-0.5 flex items-center gap-1 text-xs", low ? "text-warning" : "text-muted-foreground")} title={sampledAt}>
+        <span className="tabular-nums">余额 {balance == null ? "未采集" : money(balance)}</span>
+        {low ? <Badge variant="outline" className="h-4 border-warning/30 px-1 text-[10px] text-warning">低</Badge> : null}
+      </div>
+    </div>
+  )
 }
 
 function SchedulingPriority({ account }: { account: MainStationAccount }) {
