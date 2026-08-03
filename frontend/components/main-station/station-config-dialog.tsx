@@ -52,6 +52,7 @@ export function StationConfigDialog({
   const [minimumMarginPercent, setMinimumMarginPercent] = useState(0)
   const [guaranteedRevenueRatioPercent, setGuaranteedRevenueRatioPercent] = useState(100)
   const [healthModels, setHealthModels] = useState<Record<string, string>>({})
+  const [healthFallbackModels, setHealthFallbackModels] = useState<Record<string, string>>({})
   const [healthIntervalSeconds, setHealthIntervalSeconds] = useState(30)
   const [healthFailureThreshold, setHealthFailureThreshold] = useState(10)
   const [healthRecoveryThreshold, setHealthRecoveryThreshold] = useState(3)
@@ -74,6 +75,7 @@ export function StationConfigDialog({
     setMinimumMarginPercent((config?.minimum_margin_basis_points ?? 0) / 100)
     setGuaranteedRevenueRatioPercent((config?.guaranteed_revenue_ratio_basis_points ?? 10000) / 100)
     setHealthModels(config?.health_models ?? {})
+    setHealthFallbackModels(config?.health_fallback_models ?? {})
     setHealthIntervalSeconds(config?.health_interval_seconds ?? 30)
     setHealthFailureThreshold(config?.health_failure_threshold ?? 10)
     setHealthRecoveryThreshold(config?.health_recovery_threshold ?? 3)
@@ -191,6 +193,7 @@ export function StationConfigDialog({
           minimum_margin_basis_points: Math.round(minimumMarginPercent * 100),
           guaranteed_revenue_ratio_basis_points: Math.round(guaranteedRevenueRatioPercent * 100),
           health_models: healthModels,
+          health_fallback_models: healthFallbackModels,
           health_interval_seconds: healthIntervalSeconds,
           health_failure_threshold: healthFailureThreshold,
           health_recovery_threshold: healthRecoveryThreshold,
@@ -210,6 +213,11 @@ export function StationConfigDialog({
 
   const catalogs = [...modelCatalogs]
   for (const platform of Object.keys(healthModels)) {
+    if (!catalogs.some((item) => item.platform === platform)) {
+      catalogs.push({ platform, models: [] })
+    }
+  }
+  for (const platform of Object.keys(healthFallbackModels)) {
     if (!catalogs.some((item) => item.platform === platform)) {
       catalogs.push({ platform, models: [] })
     }
@@ -337,30 +345,63 @@ export function StationConfigDialog({
               <div className="grid gap-3 sm:grid-cols-2">
                 {catalogs.map((catalog) => {
                   const selected = healthModels[catalog.platform] ?? ""
-                  const options = Array.from(new Set([...catalog.models, selected].filter(Boolean)))
+                  const fallbackSelected = healthFallbackModels[catalog.platform] ?? ""
+                  const options = Array.from(new Set([...catalog.models, selected, fallbackSelected].filter(Boolean)))
                   return (
                     <div key={catalog.platform} className="space-y-2">
                       <Label>{healthPlatformLabel(catalog.platform)}</Label>
-                      <Select
-                        value={selected || "__none__"}
-                        onValueChange={(value) => setHealthModels((current) => {
-                          const next = { ...current }
-                          if (value === "__none__") delete next[catalog.platform]
-                          else next[catalog.platform] = value
-                          return next
-                        })}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">仅快速检测</SelectItem>
-                          {options.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">主探测模型</p>
+                        <Select
+                          value={selected || "__none__"}
+                          onValueChange={(value) => {
+                            setHealthModels((current) => {
+                              const next = { ...current }
+                              if (value === "__none__") delete next[catalog.platform]
+                              else next[catalog.platform] = value
+                              return next
+                            })
+                            if (value === "__none__" || healthFallbackModels[catalog.platform]?.toLowerCase() === value.toLowerCase()) {
+                              setHealthFallbackModels((current) => {
+                                const next = { ...current }
+                                delete next[catalog.platform]
+                                return next
+                              })
+                            }
+                          }}
+                        >
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">仅快速检测</SelectItem>
+                            {options.map((model) => <SelectItem key={`primary-${model}`} value={model}>{model}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">备用探测模型（可选）</p>
+                        <Select
+                          value={fallbackSelected || "__none__"}
+                          disabled={!selected}
+                          onValueChange={(value) => setHealthFallbackModels((current) => {
+                            const next = { ...current }
+                            if (value === "__none__") delete next[catalog.platform]
+                            else next[catalog.platform] = value
+                            return next
+                          })}
+                        >
+                          <SelectTrigger><SelectValue placeholder="不启用备用模型" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">不启用备用模型</SelectItem>
+                            {options.filter((model) => !selected || model.toLowerCase() !== selected.toLowerCase()).map((model) => <SelectItem key={`fallback-${model}`} value={model}>{model}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       {catalog.error ? <p className="text-xs text-destructive">{catalog.error}</p> : null}
                     </div>
                   )
                 })}
               </div>
+              <p className="text-xs text-muted-foreground">仅当主模型明确不存在、禁用或不支持时才尝试备用模型；余额不足、限流、超时、鉴权失败和服务器错误不会切换。</p>
               <div className="grid gap-3 border-t pt-3 sm:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="main-station-health-interval">探活间隔（秒）</Label>

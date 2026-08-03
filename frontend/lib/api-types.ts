@@ -205,6 +205,8 @@ export interface RateQuickTestResult {
   input_tokens?: number
   output_tokens?: number
   total_tokens?: number
+  fallback_used?: boolean
+  primary_model?: string
   image_url?: string
   temporary_key_name: string
   temporary_key_status: "deleted" | "pending"
@@ -763,6 +765,7 @@ export interface MainStationConfig {
   minimum_margin_basis_points: number
   guaranteed_revenue_ratio_basis_points: number
   health_models: Record<string, string>
+  health_fallback_models: Record<string, string>
   health_interval_seconds: number
   health_failure_threshold: number
   health_recovery_threshold: number

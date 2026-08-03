@@ -88,7 +88,8 @@ func TestEmptyDatabaseCreatesMainStationSchemaWithoutConfiguration(t *testing.T)
 		!db.Migrator().HasColumn(&MainAccountPoolMember{}, "disabled_since") ||
 		!db.Migrator().HasColumn(&MainAccountPoolMember{}, "source_api_key_name") ||
 		!db.Migrator().HasColumn(&MainAccountPool{}, "last_availability_status") ||
-		!db.Migrator().HasColumn(&MainStationConfig{}, "guaranteed_revenue_ratio_basis_points") {
+		!db.Migrator().HasColumn(&MainStationConfig{}, "guaranteed_revenue_ratio_basis_points") ||
+		!db.Migrator().HasColumn(&MainStationConfig{}, "health_fallback_models_json") {
 		t.Fatal("main station financial configuration columns were not created")
 	}
 }

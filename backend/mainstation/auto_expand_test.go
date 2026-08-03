@@ -28,16 +28,17 @@ func TestClassifyAutoExpansionRatePrefersUpstreamPlatform(t *testing.T) {
 }
 
 type autoExpansionTestFixture struct {
-	service      *Service
-	db           *gorm.DB
-	admin        *fakeAdminClient
-	channels     *fakeChannelService
-	pool         *storage.MainAccountPool
-	rate         *storage.RateSnapshot
-	now          time.Time
-	chatCalls    atomic.Int32
-	billingCalls atomic.Int32
-	chatStatus   atomic.Int32
+	service                 *Service
+	db                      *gorm.DB
+	admin                   *fakeAdminClient
+	channels                *fakeChannelService
+	pool                    *storage.MainAccountPool
+	rate                    *storage.RateSnapshot
+	now                     time.Time
+	chatCalls               atomic.Int32
+	billingCalls            atomic.Int32
+	chatStatus              atomic.Int32
+	primaryModelUnavailable atomic.Bool
 }
 
 func TestAutoExpansionTestsAndAddsBestProfitableCandidateOnce(t *testing.T) {
@@ -78,6 +79,33 @@ func TestAutoExpansionTestsAndAddsBestProfitableCandidateOnce(t *testing.T) {
 	fixture.service.RunAutoExpansion(context.Background())
 	if fixture.chatCalls.Load() != rateQuickTestAttempts+1 || len(fixture.channels.createdKeys) != 2 || len(fixture.admin.createRequests) != 1 {
 		t.Fatalf("duplicate expansion ran: chat=%d keys=%d accounts=%d", fixture.chatCalls.Load(), len(fixture.channels.createdKeys), len(fixture.admin.createRequests))
+	}
+}
+
+func TestAutoExpansionFallsBackToConfiguredHealthModel(t *testing.T) {
+	fixture := newAutoExpansionTestFixture(t, 7000)
+	fixture.primaryModelUnavailable.Store(true)
+	if _, err := fixture.service.UpdateConfig(context.Background(), ConfigInput{
+		HealthFallbackModels: map[string]string{"openai": "gpt-fallback"},
+	}); err != nil {
+		t.Fatalf("configure fallback health model: %v", err)
+	}
+
+	fixture.service.RunAutoExpansion(context.Background())
+
+	members, err := fixture.service.store.ListMembers(fixture.pool.ID)
+	if err != nil || len(members) != 1 {
+		t.Fatalf("auto-expanded fallback members = %#v, err=%v", members, err)
+	}
+	if members[0].HealthModel != "gpt-fallback" || members[0].HealthAPIMode != "openai_chat" {
+		t.Fatalf("fallback member health settings = %#v", members[0])
+	}
+	if fixture.chatCalls.Load() != rateQuickTestAttempts+2 {
+		t.Fatalf("fallback probe calls = %d", fixture.chatCalls.Load())
+	}
+	var audit storage.MainAccountAuditLog
+	if err := fixture.db.Where("action = ? AND source = ?", "auto_expand_member_add", "scheduler").Order("id DESC").First(&audit).Error; err != nil || !strings.Contains(audit.Detail, "备用模型") {
+		t.Fatalf("fallback auto expansion audit = %#v, err=%v", audit, err)
 	}
 }
 
@@ -307,6 +335,16 @@ func newAutoExpansionTestFixture(t *testing.T, minimumMarginBasisPoints int64) *
 			_ = json.NewEncoder(w).Encode(map[string]any{"effective_rate_multiplier": 0.2})
 		case "/v1/chat/completions":
 			fixture.chatCalls.Add(1)
+			var body map[string]any
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Errorf("decode quick test request: %v", err)
+				return
+			}
+			if fixture.primaryModelUnavailable.Load() && body["model"] == "gpt-test" {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "model gpt-test disabled"}})
+				return
+			}
 			if status := int(fixture.chatStatus.Load()); status != 0 {
 				w.WriteHeader(status)
 				_ = json.NewEncoder(w).Encode(map[string]any{"message": "temporary upstream failure"})

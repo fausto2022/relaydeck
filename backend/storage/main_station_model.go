@@ -21,6 +21,7 @@ type MainStationConfig struct {
 	MinimumMarginBasisPoints int64      `gorm:"not null;default:0" json:"minimum_margin_basis_points"`
 	GuaranteedRevenueRatioBP int64      `gorm:"column:guaranteed_revenue_ratio_basis_points;not null;default:10000" json:"guaranteed_revenue_ratio_basis_points"`
 	HealthModelsJSON         string     `gorm:"type:text;not null;default:'{}'" json:"-"`
+	HealthFallbackModelsJSON string     `gorm:"type:text;not null;default:'{}'" json:"-"`
 	HealthIntervalSeconds    int        `gorm:"not null;default:30" json:"health_interval_seconds"`
 	HealthFailureThreshold   int        `gorm:"not null;default:10" json:"health_failure_threshold"`
 	HealthRecoveryThreshold  int        `gorm:"not null;default:3" json:"health_recovery_threshold"`

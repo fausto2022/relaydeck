@@ -47,8 +47,13 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 	}
 	platform := normalizeHealthPlatform(in.Platform)
 	model := strings.TrimSpace(in.Model)
+	fallbackModel := strings.TrimSpace(in.FallbackModel)
 	if model == "" {
-		model = strings.TrimSpace(s.configuredHealthModels()[platform])
+		selection := effectiveHealthModelSelection(platform, "", s.configuredHealthSettings())
+		model = selection.Primary
+		if fallbackModel == "" {
+			fallbackModel = selection.Fallback
+		}
 	}
 	if model == "" {
 		return nil, errors.New("请选择快速测试模型")
@@ -56,6 +61,13 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 	mode, err := quickTestAPIModeForModel(platform, model, in.Mode)
 	if err != nil {
 		return nil, err
+	}
+	fallbackRequest := probeRequest{}
+	if fallbackModel != "" && !strings.EqualFold(model, fallbackModel) {
+		fallbackRequest, err = buildQuickTestProbeRequest(mode, fallbackModel)
+		if err != nil {
+			fallbackModel = ""
+		}
 	}
 	request, err := buildQuickTestProbeRequest(mode, model)
 	if err != nil {
@@ -101,19 +113,38 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 
 	attemptCount := quickTestAttemptCount(mode)
 	executions := make([]probeExecution, 0, attemptCount)
+	activeRequest := request
+	activeModel := model
+	fallbackUsed := false
 	for range attemptCount {
-		executions = append(executions, s.performProbeRequest(ctx, channel, secret, request))
+		execution := s.performProbeRequest(ctx, channel, secret, activeRequest)
+		if !fallbackUsed && fallbackModel != "" && activeModel == model && modelFallbackEligible(execution) {
+			fallbackExecution := s.performProbeRequest(ctx, channel, secret, fallbackRequest)
+			execution = mergeFallbackExecution(execution, fallbackExecution, fallbackModel)
+			fallbackUsed = true
+			activeModel = fallbackModel
+			activeRequest = fallbackRequest
+		}
+		if fallbackUsed {
+			execution.FallbackUsed = true
+			if execution.PrimaryModel == "" {
+				execution.PrimaryModel = model
+			}
+		}
+		executions = append(executions, execution)
 	}
 	cleanupErr := s.cleanupTemporaryAPIKey(record)
 	result := quickTestResult(executions, keyName, cleanupErr, s.now())
 	auditResult := *result
 	auditResult.ImageURL = ""
 	_ = s.appendAudit(nil, nil, nil, "rate_quick_test", source, result.Usable, nil, &auditResult, map[string]any{
-		"channel_id": channelID,
-		"rate_id":    rateID,
-		"group":      rate.ModelName,
-		"platform":   platform,
-		"model":      model,
+		"channel_id":    channelID,
+		"rate_id":       rateID,
+		"group":         rate.ModelName,
+		"platform":      platform,
+		"model":         result.Model,
+		"primary_model": result.PrimaryModel,
+		"fallback_used": result.FallbackUsed,
 	}, result.Message, result.CleanupError)
 	return result, nil
 }
@@ -311,9 +342,18 @@ func quickTestResult(executions []probeExecution, keyName string, cleanupErr err
 	reachable := false
 	var representative probeExecution
 	var firstFailure *probeExecution
+	fallbackUsed := false
+	primaryModel := ""
 	for i := range executions {
 		execution := executions[i]
 		if i == 0 {
+			representative = execution
+		}
+		if execution.FallbackUsed {
+			fallbackUsed = true
+			if primaryModel == "" {
+				primaryModel = strings.TrimSpace(execution.PrimaryModel)
+			}
 			representative = execution
 		}
 		usable := execution.Status == "success"
@@ -351,15 +391,20 @@ func quickTestResult(executions []probeExecution, keyName string, cleanupErr err
 		representative.ErrorClass = firstFailure.ErrorClass
 		representative.HTTPStatus = firstFailure.HTTPStatus
 	}
+	message := quickTestAggregateMessage(executions, successCount, firstFailure)
+	if fallbackUsed && usable {
+		message = fmt.Sprintf("主探测模型 %s 不可用，已切换备用探测模型 %s；%s", primaryModel, representative.Model, message)
+	}
 	return &RateQuickTestResult{
 		Status: status, Usable: usable, Reachable: reachable, AttemptCount: len(executions), SuccessCount: successCount, Attempts: attempts,
 		Protocol: representative.Protocol, Model: representative.Model, Endpoint: representative.Endpoint,
 		HTTPStatus: representative.HTTPStatus, LatencyMS: averageSuccessfulMetric(executions, func(item probeExecution) int64 { return item.LatencyMS }),
 		TTFBMS:     averageSuccessfulMetric(executions, func(item probeExecution) int64 { return item.TTFBMS }),
-		ErrorClass: representative.ErrorClass, Message: quickTestAggregateMessage(executions, successCount, firstFailure),
+		ErrorClass: representative.ErrorClass, Message: message,
 		InputTokens:  sumProbeTokens(executions, func(item probeExecution) *int64 { return item.InputTokens }),
 		OutputTokens: sumProbeTokens(executions, func(item probeExecution) *int64 { return item.OutputTokens }),
 		TotalTokens:  sumProbeTokens(executions, func(item probeExecution) *int64 { return item.TotalTokens }), TemporaryKeyName: keyName,
+		FallbackUsed: fallbackUsed, PrimaryModel: primaryModel,
 		ImageURL: imageResultURL(executions), TemporaryKeyStatus: cleanupStatus, CleanupError: cleanupMessage, TestedAt: testedAt,
 	}
 }

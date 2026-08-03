@@ -194,12 +194,12 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 	if err != nil {
 		return err
 	}
-	model := strings.TrimSpace(s.configuredHealthModels()[platform])
+	modelSelection := effectiveHealthModelSelection(platform, "", s.configuredHealthSettings())
+	model := modelSelection.Primary
 	if model == "" {
 		return fmt.Errorf("尚未配置 %s 类型的全局探活模型", platform)
 	}
-	mode, err := quickTestAPIModeForModel(platform, model)
-	if err != nil {
+	if _, err := quickTestAPIModeForModel(platform, model); err != nil {
 		return errors.New("当前主站分组类型不支持自动扩池测试")
 	}
 	saleMicros, _, reason := effectiveSaleMultiplier(group, now)
@@ -223,8 +223,9 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 		tested++
 		evidence := autoExpansionEvidence(group, candidate, saleMicros, pool.AutoExpandMinMarginBasisPoints, pool.AutoExpandMinRateMicros, platform, model, category.rule)
 		result, testErr := s.quickTestRate(ctx, candidate.channel.ID, candidate.rate.ID, RateQuickTestInput{
-			Platform: platform,
-			Model:    model,
+			Platform:      platform,
+			Model:         model,
+			FallbackModel: modelSelection.Fallback,
 		}, "scheduler")
 		if testErr != nil {
 			nextAttemptAt := now.Add(autoExpansionErrorCooldown)
@@ -240,10 +241,30 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 		}
 		_ = s.saveAutoExpansionAttempt(pool.ID, group.ID, candidate, "usable", result.Message, now, nil)
 		_ = s.appendAudit(&pool.ID, nil, nil, "auto_expand_test", "scheduler", true, nil, result, evidence, result.Message, "")
+		finalModel := strings.TrimSpace(result.Model)
+		if finalModel == "" {
+			finalModel = model
+		}
+		finalMode, modeErr := quickTestAPIModeForModel(platform, finalModel)
+		if modeErr != nil {
+			nextAttemptAt := now.Add(autoExpansionErrorCooldown)
+			_ = s.saveAutoExpansionAttempt(pool.ID, group.ID, candidate, "error", sanitizeText(modeErr.Error()), now, &nextAttemptAt)
+			_ = s.appendAudit(&pool.ID, nil, nil, "auto_expand_member_add", "scheduler", false, nil, result, evidence, "", sanitizeText(modeErr.Error()))
+			continue
+		}
 		var member *storage.MainAccountPoolMember
 		var createErr error
 		if candidate.existingMember != nil {
 			member, createErr = s.SyncMember(ctx, pool.ID, candidate.existingMember.ID)
+			if createErr == nil && result.FallbackUsed && member != nil && (!strings.EqualFold(member.HealthModel, finalModel) || member.HealthAPIMode != finalMode) {
+				before := *member
+				if createErr = s.store.UpdateMemberHealth(member.ID, map[string]any{"health_model": finalModel, "health_api_mode": finalMode}); createErr == nil {
+					member.HealthModel = finalModel
+					member.HealthAPIMode = finalMode
+					_ = s.appendAudit(&pool.ID, &member.ID, member.RemoteAccountID, "health_model_fallback", "auto_expand", true,
+						&before, member, map[string]any{"primary_model": result.PrimaryModel, "fallback_model": finalModel}, "自动扩池测试切换备用探测模型", "")
+				}
+			}
 		} else {
 			enabled := true
 			member, createErr = s.CreateMember(ctx, pool.ID, MemberInput{
@@ -261,8 +282,8 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 				RateConvertValue:  1,
 				CostAdjustment:    1,
 				HealthEnabled:     &enabled,
-				HealthModel:       model,
-				HealthAPIMode:     mode,
+				HealthModel:       finalModel,
+				HealthAPIMode:     finalMode,
 			})
 		}
 		if createErr != nil {
@@ -284,8 +305,15 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 		}
 		_ = s.saveAutoExpansionAttempt(pool.ID, group.ID, candidate, "added", "已自动加入主站分组", now, nil)
 		detail := "已通过利润筛选和快速测试，自动加入主站分组"
+		if result.FallbackUsed {
+			detail = fmt.Sprintf("主模型不可用，已使用备用模型 %s 通过测试并自动加入主站分组", finalModel)
+		}
 		if result.AttemptCount > 1 {
-			detail = fmt.Sprintf("已通过利润筛选和连续 %d 次测试，自动加入主站分组", result.AttemptCount)
+			if result.FallbackUsed {
+				detail = fmt.Sprintf("主模型不可用，已使用备用模型 %s 通过连续 %d 次测试并自动加入主站分组", finalModel, result.AttemptCount)
+			} else {
+				detail = fmt.Sprintf("已通过利润筛选和连续 %d 次测试，自动加入主站分组", result.AttemptCount)
+			}
 		}
 		_ = s.appendAudit(&pool.ID, &member.ID, member.RemoteAccountID, "auto_expand_member_add", "scheduler", true, nil, member, evidence, detail, "")
 		break

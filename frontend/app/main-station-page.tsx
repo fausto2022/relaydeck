@@ -978,6 +978,7 @@ function actionLabel(action: string) {
     main_station_sync: "同步主站信息",
     protection_policy_update: "更新保护策略",
     main_station_update: "更新主站配置",
+    health_model_fallback: "切换备用探测模型",
     rate_quick_test: "快速测试上游分组",
     auto_expand_test: "自动扩池测试",
     auto_expand_member_add: "自动扩池添加账号",
@@ -986,7 +987,7 @@ function actionLabel(action: string) {
 }
 
 function sourceLabel(source: string) {
-  return ({ manual: "人工操作", admin: "管理员", health: "健康探测", scheduler: "定时任务", margin: "利润保护", syncer: "同步流程", system: "系统" } as Record<string, string>)[source] ?? source
+  return ({ manual: "人工操作", admin: "管理员", health: "健康探测", auto_expand: "自动扩池", scheduler: "定时任务", margin: "利润保护", syncer: "同步流程", system: "系统" } as Record<string, string>)[source] ?? source
 }
 
 function auditDetail(detail?: string) {

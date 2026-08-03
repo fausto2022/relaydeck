@@ -131,6 +131,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
 
   const platform = normalizeMainStationPlatform(account?.platform)
   const globalModel = config?.health_models?.[platform] ?? ""
+  const globalFallbackModel = config?.health_fallback_models?.[platform] ?? ""
   const catalog = modelCatalogs.find((item) => item.platform === platform)
   const modelOptions = Array.from(new Set([...(catalog?.models ?? []), healthModel].filter(Boolean)))
   const actualPriority = account?.priority
@@ -169,6 +170,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
                 {modelOptions.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">继承全局时{globalFallbackModel ? `可在主模型不可用时切换至 ${globalFallbackModel}` : "不使用备用模型"}；单独指定模型后不使用全局备用模型。</p>
             {catalog?.error ? <p className="text-xs text-destructive">{catalog.error}</p> : null}
           </div>
           <div className="space-y-2 sm:col-span-2">

@@ -51,6 +51,8 @@ type healthPolicy struct {
 type probeExecution struct {
 	Protocol     string
 	Model        string
+	PrimaryModel string
+	FallbackUsed bool
 	Endpoint     string
 	Status       string
 	ErrorClass   string
@@ -94,7 +96,7 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 		return nil, errors.New("member binding is invalid")
 	}
 	settings := s.configuredHealthSettings()
-	model := effectiveHealthModel(pool.Platform, member.HealthModel, settings.Models)
+	modelSelection := effectiveHealthModelSelection(pool.Platform, member.HealthModel, settings)
 	policy := parseHealthPolicy(pool.HealthPolicyJSON)
 	policy.TransientFailureThreshold = effectiveHealthThreshold(member.HealthFailureThreshold, settings.FailureThreshold, defaultHealthFailureThreshold)
 	policy.EmptyFailureThreshold = policy.TransientFailureThreshold
@@ -136,7 +138,7 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 	}
 
 	startedAt := s.now()
-	execution := s.executeHealthProbe(ctx, level, model, member)
+	execution := s.executeHealthProbeWithFallback(ctx, level, modelSelection, member, budget, !in.Force)
 	finishedAt := s.now()
 	check := storage.MainAccountHealthCheck{
 		PoolID:          pool.ID,
@@ -158,7 +160,17 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 		FinishedAt:      finishedAt,
 		CreatedAt:       finishedAt,
 	}
+	fallbackApplied := execution.FallbackUsed && execution.Status == "success" && strings.TrimSpace(execution.Model) != "" &&
+		!strings.EqualFold(strings.TrimSpace(member.HealthModel), strings.TrimSpace(execution.Model))
+	var fallbackBefore storage.MainAccountPoolMember
+	if fallbackApplied {
+		fallbackBefore = *member
+		member.HealthModel = strings.TrimSpace(execution.Model)
+	}
 	fields, action, oldHealth, newHealth := applyHealthOutcome(member, &check, policy, finishedAt)
+	if fallbackApplied {
+		fields["health_model"] = member.HealthModel
+	}
 	check.TriggeredAction = action
 	if err := s.store.UpdateMemberHealth(member.ID, fields); err != nil {
 		return nil, err
@@ -197,6 +209,13 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 	updated, err := s.store.FindMember(pool.ID, member.ID)
 	if err != nil {
 		return nil, err
+	}
+	if fallbackApplied {
+		_ = s.appendAudit(&pool.ID, &updated.ID, updated.RemoteAccountID, "health_model_fallback", "health", true,
+			&fallbackBefore, updated, map[string]any{
+				"primary_model":  execution.PrimaryModel,
+				"fallback_model": execution.Model,
+			}, "主探测模型不可用，已切换备用探测模型", "")
 	}
 	if rankingErr := s.markPoolRankingDirty(pool.ID); rankingErr != nil && s.log != nil {
 		s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", pool.ID)
@@ -366,6 +385,63 @@ func (s *Service) executeHealthProbe(ctx context.Context, level, model string, m
 	}
 }
 
+func (s *Service) executeHealthProbeWithFallback(ctx context.Context, level string, selection healthModelSelection, member *storage.MainAccountPoolMember, budget HealthBudget, enforceBudget bool) probeExecution {
+	primary := s.executeHealthProbe(ctx, level, selection.Primary, member)
+	if level != "L1" && level != "L2" || strings.TrimSpace(selection.Fallback) == "" || !modelFallbackEligible(primary) {
+		return primary
+	}
+	if enforceBudget && !healthFallbackBudgetAvailable(level, budget, primary) {
+		primary.Message = fmt.Sprintf("%s；备用模型未执行：探活 Token 预算不足", sanitizeProbeSummary(primary.Message))
+		return primary
+	}
+	fallback := s.executeHealthProbe(ctx, level, selection.Fallback, member)
+	return mergeFallbackExecution(primary, fallback, selection.Fallback)
+}
+
+func modelFallbackEligible(execution probeExecution) bool {
+	return execution.ErrorClass == "model_incompatible"
+}
+
+func healthFallbackBudgetAvailable(level string, budget HealthBudget, first probeExecution) bool {
+	if level != "L1" && level != "L2" || budget.TokenLimit <= 0 {
+		return true
+	}
+	return budget.DailyTokens+valueOrZero(first.TotalTokens) < budget.TokenLimit
+}
+
+func mergeFallbackExecution(primary, fallback probeExecution, fallbackModel string) probeExecution {
+	merged := fallback
+	merged.PrimaryModel = strings.TrimSpace(primary.Model)
+	merged.FallbackUsed = true
+	merged.LatencyMS += primary.LatencyMS
+	merged.TTFBMS += primary.TTFBMS
+	merged.InputTokens = sumOptionalProbeValues(primary.InputTokens, fallback.InputTokens)
+	merged.OutputTokens = sumOptionalProbeValues(primary.OutputTokens, fallback.OutputTokens)
+	merged.TotalTokens = sumOptionalProbeValues(primary.TotalTokens, fallback.TotalTokens)
+	if strings.TrimSpace(merged.ImageURL) == "" {
+		merged.ImageURL = primary.ImageURL
+	}
+	primaryMessage := sanitizeProbeSummary(primary.Message)
+	fallbackMessage := sanitizeProbeSummary(fallback.Message)
+	if fallback.Status == "success" {
+		merged.Message = fmt.Sprintf("主探测模型 %s 不可用（%s），已切换备用探测模型 %s 探测成功", primary.Model, primaryMessage, fallbackModel)
+		if fallbackMessage != "" && fallbackMessage != "probe succeeded" {
+			merged.Message += "：" + fallbackMessage
+		}
+		return merged
+	}
+	merged.Message = fmt.Sprintf("主探测模型 %s 不可用（%s），备用探测模型 %s 探测失败：%s", primary.Model, primaryMessage, fallbackModel, fallbackMessage)
+	return merged
+}
+
+func sumOptionalProbeValues(left, right *int64) *int64 {
+	if left == nil && right == nil {
+		return nil
+	}
+	value := valueOrZero(left) + valueOrZero(right)
+	return &value
+}
+
 func (s *Service) executeL0(ctx context.Context, member *storage.MainAccountPoolMember) probeExecution {
 	channel, secret, err := s.healthSourceCredentials(ctx, member)
 	if err != nil {
@@ -467,11 +543,12 @@ func (s *Service) executeL2(ctx context.Context, model string, member *storage.M
 		return probeExecution{Status: "success", Protocol: "sub2api_account_test", Model: model, Endpoint: "/api/v1/admin/accounts/:id/test", LatencyMS: latency, Message: "account test succeeded"}
 	}
 	status := statusCodeFromError(err)
-	resultStatus, class := classifyProbeFailure(status, err)
+	message := redactSecretError(err, apiKey).Error()
+	resultStatus, class := classifyHTTPFailure(status, message)
 	return probeExecution{
 		Status: resultStatus, ErrorClass: class, HTTPStatus: status, Protocol: "sub2api_account_test",
 		Model: model, Endpoint: "/api/v1/admin/accounts/:id/test", LatencyMS: latency,
-		Message: redactSecretError(err, apiKey).Error(),
+		Message: message,
 	}
 }
 
@@ -689,13 +766,30 @@ func classifyHTTPFailure(status int, message string) (string, string) {
 		(strings.Contains(lower, "minimum") || strings.Contains(lower, "at least") || strings.Contains(lower, "too small")) {
 		return "config_error", "output_limit_incompatible"
 	}
-	if (status == http.StatusBadRequest || status == http.StatusNotFound || status == http.StatusUnprocessableEntity) &&
-		strings.Contains(lower, "model") &&
-		(strings.Contains(lower, "not found") || strings.Contains(lower, "unsupported") || strings.Contains(lower, "does not exist")) {
+	if isModelIncompatibleMessage(lower) &&
+		(status == 0 || status == http.StatusBadRequest || status == http.StatusForbidden || status == http.StatusNotFound || status == http.StatusUnprocessableEntity) {
 		return "config_error", "model_incompatible"
 	}
 	_, class := classifyProbeFailure(status, errors.New(message))
 	return "failure", class
+}
+
+func isModelIncompatibleMessage(message string) bool {
+	lower := strings.ToLower(strings.TrimSpace(message))
+	if !strings.Contains(lower, "model") && !strings.Contains(lower, "模型") {
+		return false
+	}
+	markers := []string{
+		"not found", "unsupported", "does not exist", "not available", "unavailable",
+		"disabled", "not allowed", "forbidden", "not support", "model_not_found",
+		"模型不存在", "模型不可用", "模型已禁用", "模型不支持", "不支持该模型", "无权使用该模型", "模型未启用",
+	}
+	for _, marker := range markers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func classifyProbeFailure(status int, err error) (string, string) {

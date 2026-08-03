@@ -36,6 +36,7 @@ type ConfigDTO struct {
 	MinimumMarginBasisPoints int64              `json:"minimum_margin_basis_points"`
 	GuaranteedRevenueRatioBP int64              `json:"guaranteed_revenue_ratio_basis_points"`
 	HealthModels             map[string]string  `json:"health_models"`
+	HealthFallbackModels     map[string]string  `json:"health_fallback_models"`
 	HealthIntervalSeconds    int                `json:"health_interval_seconds"`
 	HealthFailureThreshold   int                `json:"health_failure_threshold"`
 	HealthRecoveryThreshold  int                `json:"health_recovery_threshold"`
@@ -59,6 +60,7 @@ type ConfigInput struct {
 	MinimumMarginBasisPoints *int64            `json:"minimum_margin_basis_points,omitempty"`
 	GuaranteedRevenueRatioBP *int64            `json:"guaranteed_revenue_ratio_basis_points,omitempty"`
 	HealthModels             map[string]string `json:"health_models,omitempty"`
+	HealthFallbackModels     map[string]string `json:"health_fallback_models,omitempty"`
 	HealthIntervalSeconds    *int              `json:"health_interval_seconds,omitempty"`
 	HealthFailureThreshold   *int              `json:"health_failure_threshold,omitempty"`
 	HealthRecoveryThreshold  *int              `json:"health_recovery_threshold,omitempty"`
@@ -217,6 +219,8 @@ type RateQuickTestInput struct {
 	Platform string `json:"platform"`
 	Model    string `json:"model"`
 	Mode     string `json:"mode,omitempty"`
+	// 仅供自动扩池等内部调用传入，不开放给前端覆盖全局备用模型。
+	FallbackModel string `json:"-"`
 }
 
 type RateQuickTestAttempt struct {
@@ -249,6 +253,8 @@ type RateQuickTestResult struct {
 	InputTokens        *int64                 `json:"input_tokens,omitempty"`
 	OutputTokens       *int64                 `json:"output_tokens,omitempty"`
 	TotalTokens        *int64                 `json:"total_tokens,omitempty"`
+	FallbackUsed       bool                   `json:"fallback_used,omitempty"`
+	PrimaryModel       string                 `json:"primary_model,omitempty"`
 	ImageURL           string                 `json:"image_url,omitempty"`
 	TemporaryKeyName   string                 `json:"temporary_key_name"`
 	TemporaryKeyStatus string                 `json:"temporary_key_status"`

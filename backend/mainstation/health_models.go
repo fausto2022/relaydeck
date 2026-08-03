@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,6 +68,20 @@ func encodeHealthModels(models map[string]string) (string, error) {
 	return string(raw), nil
 }
 
+func validateHealthModelFallbacks(primary, fallback map[string]string) error {
+	normalizedPrimary := normalizeHealthModels(primary)
+	for platform, model := range normalizeHealthModels(fallback) {
+		primaryModel := strings.TrimSpace(normalizedPrimary[platform])
+		if primaryModel == "" {
+			return fmt.Errorf("%s 备用探测模型必须先配置主探测模型", platform)
+		}
+		if strings.EqualFold(primaryModel, model) {
+			return fmt.Errorf("%s 主探测模型和备用探测模型不能相同", platform)
+		}
+	}
+	return nil
+}
+
 func normalizeHealthModels(models map[string]string) map[string]string {
 	normalized := make(map[string]string)
 	for platform, model := range models {
@@ -99,11 +114,29 @@ func effectiveHealthModel(platform, memberModel string, globalModels map[string]
 	return strings.TrimSpace(globalModels[normalizeHealthPlatform(platform)])
 }
 
+type healthModelSelection struct {
+	Primary  string
+	Fallback string
+}
+
+// 账号显式指定模型时保持该设置的权威性，不自动套用全局备用模型。
+func effectiveHealthModelSelection(platform, memberModel string, settings globalHealthSettings) healthModelSelection {
+	if model := strings.TrimSpace(memberModel); model != "" {
+		return healthModelSelection{Primary: model}
+	}
+	platform = normalizeHealthPlatform(platform)
+	return healthModelSelection{
+		Primary:  strings.TrimSpace(settings.Models[platform]),
+		Fallback: strings.TrimSpace(settings.FallbackModels[platform]),
+	}
+}
+
 func (s *Service) configuredHealthModels() map[string]string {
 	return s.configuredHealthSettings().Models
 }
 
 func (s *Service) ListHealthModelCatalogs(ctx context.Context) ([]HealthModelCatalog, error) {
+	settings := s.configuredHealthSettings()
 	pools, _, err := s.store.ListPools(1, 1000)
 	if err != nil {
 		return nil, err
@@ -112,7 +145,10 @@ func (s *Service) ListHealthModelCatalogs(ctx context.Context) ([]HealthModelCat
 	platforms := map[string]struct{}{
 		"openai": {}, "anthropic": {}, "gemini": {}, "grok": {}, "image": {},
 	}
-	for platform := range s.configuredHealthModels() {
+	for platform := range settings.Models {
+		platforms[platform] = struct{}{}
+	}
+	for platform := range settings.FallbackModels {
 		platforms[platform] = struct{}{}
 	}
 	snapshots, err := s.store.ListAllAccountSnapshots(false)

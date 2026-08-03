@@ -38,6 +38,7 @@ const (
 
 type globalHealthSettings struct {
 	Models            map[string]string
+	FallbackModels    map[string]string
 	IntervalSeconds   int
 	FailureThreshold  int
 	RecoveryThreshold int
@@ -170,6 +171,7 @@ func (s *Service) UpdateProbeConfig(proxy config.ProxyConfig, timeout time.Durat
 func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto := &ConfigDTO{
 		HealthModels:             map[string]string{},
+		HealthFallbackModels:     map[string]string{},
 		HealthIntervalSeconds:    defaultHealthIntervalSeconds,
 		HealthFailureThreshold:   defaultHealthFailureThreshold,
 		HealthRecoveryThreshold:  defaultHealthRecoveryThreshold,
@@ -209,6 +211,7 @@ func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto.MinimumMarginBasisPoints = config.MinimumMarginBasisPoints
 	dto.GuaranteedRevenueRatioBP = normalizedGuaranteedRevenueRatioBP(config.GuaranteedRevenueRatioBP)
 	dto.HealthModels = decodeHealthModels(config.HealthModelsJSON)
+	dto.HealthFallbackModels = decodeHealthModels(config.HealthFallbackModelsJSON)
 	dto.HealthIntervalSeconds = normalizedGlobalHealthInterval(config.HealthIntervalSeconds)
 	dto.HealthFailureThreshold = normalizedHealthThreshold(config.HealthFailureThreshold, defaultHealthFailureThreshold)
 	dto.HealthRecoveryThreshold = normalizedHealthThreshold(config.HealthRecoveryThreshold, defaultHealthRecoveryThreshold)
@@ -255,6 +258,13 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 	}
 	healthModelsJSON, err := encodeHealthModels(in.HealthModels)
 	if err != nil {
+		return nil, err
+	}
+	healthFallbackModelsJSON, err := encodeHealthModels(in.HealthFallbackModels)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateHealthModelFallbacks(in.HealthModels, in.HealthFallbackModels); err != nil {
 		return nil, err
 	}
 	healthIntervalSeconds := defaultHealthIntervalSeconds
@@ -310,6 +320,7 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		ID:                       storage.MainStationSingletonID,
 		Enabled:                  enabled,
 		HealthModelsJSON:         healthModelsJSON,
+		HealthFallbackModelsJSON: healthFallbackModelsJSON,
 		HealthIntervalSeconds:    healthIntervalSeconds,
 		HealthFailureThreshold:   healthFailureThreshold,
 		HealthRecoveryThreshold:  healthRecoveryThreshold,
@@ -432,8 +443,23 @@ func (s *Service) UpdateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		}
 		config.GuaranteedRevenueRatioBP = *in.GuaranteedRevenueRatioBP
 	}
-	if in.HealthModels != nil {
-		config.HealthModelsJSON, err = encodeHealthModels(in.HealthModels)
+	if in.HealthModels != nil || in.HealthFallbackModels != nil {
+		nextHealthModels := decodeHealthModels(config.HealthModelsJSON)
+		nextHealthFallbackModels := decodeHealthModels(config.HealthFallbackModelsJSON)
+		if in.HealthModels != nil {
+			nextHealthModels = normalizeHealthModels(in.HealthModels)
+		}
+		if in.HealthFallbackModels != nil {
+			nextHealthFallbackModels = normalizeHealthModels(in.HealthFallbackModels)
+		}
+		if err := validateHealthModelFallbacks(nextHealthModels, nextHealthFallbackModels); err != nil {
+			return nil, err
+		}
+		config.HealthModelsJSON, err = encodeHealthModels(nextHealthModels)
+		if err != nil {
+			return nil, err
+		}
+		config.HealthFallbackModelsJSON, err = encodeHealthModels(nextHealthFallbackModels)
 		if err != nil {
 			return nil, err
 		}
@@ -770,12 +796,13 @@ func (s *Service) configuredHealthSettings() globalHealthSettings {
 	config, err := s.store.GetConfig()
 	if err != nil {
 		return globalHealthSettings{
-			Models: map[string]string{}, IntervalSeconds: defaultHealthIntervalSeconds,
+			Models: map[string]string{}, FallbackModels: map[string]string{}, IntervalSeconds: defaultHealthIntervalSeconds,
 			FailureThreshold: defaultHealthFailureThreshold, RecoveryThreshold: defaultHealthRecoveryThreshold,
 		}
 	}
 	return globalHealthSettings{
 		Models:            decodeHealthModels(config.HealthModelsJSON),
+		FallbackModels:    decodeHealthModels(config.HealthFallbackModelsJSON),
 		IntervalSeconds:   normalizedGlobalHealthInterval(config.HealthIntervalSeconds),
 		FailureThreshold:  normalizedHealthThreshold(config.HealthFailureThreshold, defaultHealthFailureThreshold),
 		RecoveryThreshold: normalizedHealthThreshold(config.HealthRecoveryThreshold, defaultHealthRecoveryThreshold),
