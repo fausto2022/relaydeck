@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -586,8 +587,8 @@ func TestAggregateCostTrend(t *testing.T) {
 
 	want := []DailyCostAggregate{
 		{Day: day2, Cost: 3.0},
-		{Day: day1, Cost: 5.3},
-		{Day: day0, Cost: 6.5},
+		{Day: day1, Cost: 2.3},
+		{Day: day0, Cost: 1.2},
 	}
 	for i := range want {
 		if !got[i].Day.Equal(want[i].Day) {
@@ -707,7 +708,7 @@ func TestAggregateTrendUsesShanghaiDayBoundary(t *testing.T) {
 
 	costSnapshots := []CostSnapshot{
 		{ChannelID: 1, TodayCost: 1.5, SampledAt: time.Date(2026, 6, 19, 15, 59, 0, 0, time.UTC)},
-		{ChannelID: 1, TodayCost: 2.5, SampledAt: time.Date(2026, 6, 19, 16, 1, 0, 0, time.UTC)},
+		{ChannelID: 1, TodayCost: 0.5, SampledAt: time.Date(2026, 6, 19, 16, 1, 0, 0, time.UTC)},
 	}
 	for _, snapshot := range costSnapshots {
 		snapshot := snapshot
@@ -740,8 +741,39 @@ func TestAggregateTrendUsesShanghaiDayBoundary(t *testing.T) {
 	if !costs[0].Day.Equal(day1) || costs[0].Cost != 1.5 {
 		t.Fatalf("previous shanghai day cost = %#v, want day %s cost 1.5", costs[0], day1)
 	}
-	if !costs[1].Day.Equal(day0) || costs[1].Cost != 2.5 {
-		t.Fatalf("current shanghai day cost = %#v, want day %s cost 2.5", costs[1], day0)
+	if !costs[1].Day.Equal(day0) || costs[1].Cost != 0.5 {
+		t.Fatalf("current shanghai day cost = %#v, want day %s cost 0.5", costs[1], day0)
+	}
+}
+
+func TestAggregateCostTrendAccumulatesAcrossDelayedReset(t *testing.T) {
+	db := openTestDB(t)
+	rates := NewRates(db)
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, trendLocation)
+	today := dayStart(now)
+	for _, snapshot := range []CostSnapshot{
+		{ChannelID: 1, TodayCost: 33.0, SampledAt: today.Add(-5 * time.Minute)},
+		{ChannelID: 1, TodayCost: 33.1, SampledAt: today.Add(5 * time.Minute)},
+		{ChannelID: 1, TodayCost: 33.4, SampledAt: today.Add(6 * time.Hour)},
+		{ChannelID: 1, TodayCost: 0.2, SampledAt: today.Add(8 * time.Hour)},
+		{ChannelID: 1, TodayCost: 0.5, SampledAt: today.Add(10 * time.Hour)},
+	} {
+		snapshot := snapshot
+		if err := rates.AppendCost(&snapshot); err != nil {
+			t.Fatalf("append cost: %v", err)
+		}
+	}
+
+	trend, err := rates.AggregateCostTrendAt(1, now)
+	if err != nil {
+		t.Fatalf("aggregate delayed reset: %v", err)
+	}
+	if len(trend) != 1 || math.Abs(trend[0].Cost-0.9) > 0.000001 {
+		t.Fatalf("delayed reset trend = %#v, want 0.9", trend)
+	}
+	costs, err := rates.CurrentDayCostsAt(now)
+	if err != nil || math.Abs(costs[1]-0.9) > 0.000001 {
+		t.Fatalf("delayed reset channel costs = %#v, err=%v", costs, err)
 	}
 }
 

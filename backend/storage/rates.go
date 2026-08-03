@@ -314,7 +314,7 @@ func (r *Rates) AggregateBalanceTrend(days int) ([]DailyAggregate, error) {
 	return out, nil
 }
 
-// AggregateCostTrend 取最近 N 天的"日内最后一次今日消费"按渠道之和，作为总消费趋势。
+// AggregateCostTrend 取最近 N 天按 Asia/Shanghai 自然日归一化后的渠道消费增量。
 func (r *Rates) AggregateCostTrend(days int) ([]DailyCostAggregate, error) {
 	if days <= 0 {
 		days = 7
@@ -356,7 +356,7 @@ func (r *Rates) AggregateCostTrendAt(days int, now time.Time) ([]DailyCostAggreg
 	today := dayStart(now)
 	since := today.AddDate(0, 0, -(days - 1))
 
-	rows, err := r.aggregateDailyLatest("cost_snapshots", "today_cost", since, days)
+	rows, err := r.aggregateDailyCostDeltas(since, days)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +365,7 @@ func (r *Rates) AggregateCostTrendAt(days int, now time.Time) ([]DailyCostAggreg
 	}
 	byDay := make(map[string]float64, days)
 	for _, row := range rows {
-		byDay[dayKey(since.AddDate(0, 0, row.DayIndex))] = row.Total
+		byDay[dayKey(since.AddDate(0, 0, row.DayIndex))] += row.Total
 	}
 
 	out := make([]DailyCostAggregate, 0, days)
@@ -373,6 +373,109 @@ func (r *Rates) AggregateCostTrendAt(days int, now time.Time) ([]DailyCostAggreg
 		out = append(out, DailyCostAggregate{Day: day, Cost: byDay[dayKey(day)]})
 	}
 	return out, nil
+}
+
+// CurrentDayCostsAt 返回每个渠道按 Asia/Shanghai 自然日归一化后的今日消费。
+// 上游晚于北京时间零点归零时，零点前的旧累计值会作为基线；上游真正
+// 归零后，归零前后的增量会连续累加，不会重复计算或丢失凌晨消费。
+func (r *Rates) CurrentDayCostsAt(now time.Time) (map[uint]float64, error) {
+	today := dayStart(now)
+	rows, err := r.aggregateDailyCostDeltas(today, 1)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[uint]float64, len(rows))
+	for _, row := range rows {
+		result[row.ChannelID] = row.Total
+	}
+	return result, nil
+}
+
+type dailyChannelCostRow struct {
+	DayIndex  int     `gorm:"column:day_index"`
+	ChannelID uint    `gorm:"column:channel_id"`
+	Total     float64 `gorm:"column:total"`
+}
+
+func (r *Rates) aggregateDailyCostDeltas(since time.Time, days int) ([]dailyChannelCostRow, error) {
+	timeExpression := "snapshots.sampled_at"
+	boundExpression := "?"
+	if r.db.Dialector.Name() == "sqlite" {
+		timeExpression = "julianday(snapshots.sampled_at)"
+		boundExpression = "julianday(?)"
+	}
+
+	var ranges strings.Builder
+	args := make([]any, 0, days*2+2)
+	for dayIndex := 0; dayIndex < days; dayIndex++ {
+		if dayIndex > 0 {
+			ranges.WriteString(" UNION ALL ")
+		}
+		fmt.Fprintf(&ranges, "SELECT %d AS day_index, %s AS start_at, %s AS end_at", dayIndex, boundExpression, boundExpression)
+		args = append(args, since.AddDate(0, 0, dayIndex), since.AddDate(0, 0, dayIndex+1))
+	}
+	args = append(args, since.AddDate(0, 0, -1), since)
+
+	query := fmt.Sprintf(`
+WITH day_ranges AS (%s),
+target AS (
+	SELECT day_ranges.day_index, snapshots.channel_id, snapshots.id,
+		snapshots.today_cost AS metric_value, %s AS sampled_order
+	FROM cost_snapshots AS snapshots
+	INNER JOIN day_ranges
+		ON %s >= day_ranges.start_at
+		AND %s < day_ranges.end_at
+),
+baseline_ranked AS (
+	SELECT -1 AS day_index, snapshots.channel_id, snapshots.id,
+		snapshots.today_cost AS metric_value, %s AS sampled_order,
+		ROW_NUMBER() OVER (
+			PARTITION BY snapshots.channel_id
+			ORDER BY %s DESC, snapshots.id DESC
+		) AS baseline_row
+	FROM cost_snapshots AS snapshots
+	WHERE %s >= %s AND %s < %s
+),
+relevant AS (
+	SELECT day_index, channel_id, id, metric_value, sampled_order
+	FROM baseline_ranked WHERE baseline_row = 1
+	UNION ALL
+	SELECT day_index, channel_id, id, metric_value, sampled_order FROM target
+),
+sequenced AS (
+	SELECT day_index, channel_id, metric_value,
+		LAG(metric_value) OVER (
+			PARTITION BY channel_id ORDER BY sampled_order ASC, id ASC
+		) AS previous_value,
+		LAG(day_index) OVER (
+			PARTITION BY channel_id ORDER BY sampled_order ASC, id ASC
+		) AS previous_day_index
+	FROM relevant
+),
+deltas AS (
+	SELECT day_index, channel_id,
+		CASE
+			WHEN metric_value < 0 THEN 0
+			WHEN previous_value IS NULL OR previous_day_index IS NULL OR day_index - previous_day_index > 1 THEN metric_value
+			WHEN metric_value >= previous_value THEN metric_value - previous_value
+			WHEN previous_value > 0 AND metric_value <= previous_value * 0.9 THEN metric_value
+			ELSE 0
+		END AS delta
+	FROM sequenced
+	WHERE day_index >= 0
+)
+SELECT day_index, channel_id, COALESCE(SUM(delta), 0) AS total
+FROM deltas
+GROUP BY day_index, channel_id
+ORDER BY day_index, channel_id`,
+		ranges.String(), timeExpression, timeExpression, timeExpression,
+		timeExpression, timeExpression, timeExpression, boundExpression, timeExpression, boundExpression)
+
+	var rows []dailyChannelCostRow
+	if err := r.db.Raw(query, args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 type dailyAggregateRow struct {

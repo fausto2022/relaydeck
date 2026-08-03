@@ -786,8 +786,8 @@ func TestDashboardCostTrend(t *testing.T) {
 	if resp.Data[0].Cost != 3.0 {
 		t.Fatalf("day1 cost = %v, want 3.0", resp.Data[0].Cost)
 	}
-	if resp.Data[1].Cost != 3.5 {
-		t.Fatalf("day0 cost = %v, want 3.5", resp.Data[1].Cost)
+	if resp.Data[1].Cost != 2.7 {
+		t.Fatalf("day0 cost = %v, want 2.7", resp.Data[1].Cost)
 	}
 }
 

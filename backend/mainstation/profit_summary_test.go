@@ -2,6 +2,7 @@ package mainstation
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -137,6 +138,46 @@ func TestProfitSummaryIgnoresStaleDisabledChannelCostAfterMidnight(t *testing.T)
 	}
 }
 
+func TestProfitSummaryAccumulatesCostAcrossDelayedUpstreamReset(t *testing.T) {
+	service, db, _, _ := newTestService(t)
+	now := time.Date(2026, 8, 4, 10, 0, 0, 0, shanghaiLocation())
+	service.now = func() time.Time { return now }
+	channel := &storage.Channel{
+		Name: "delayed-reset", Type: storage.ChannelTypeSub2API, SiteURL: "https://source.example.com",
+		Username: "user", PasswordCipher: "cipher", MonitorEnabled: true,
+	}
+	if err := storage.NewChannels(db).Create(channel); err != nil {
+		t.Fatalf("create delayed reset source: %v", err)
+	}
+	rates := storage.NewRates(db)
+	for _, snapshot := range []storage.CostSnapshot{
+		{ChannelID: channel.ID, TodayCost: 33.0, SampledAt: now.Add(-10*time.Hour - 5*time.Minute)},
+		{ChannelID: channel.ID, TodayCost: 33.1, SampledAt: now.Add(-9*time.Hour - 55*time.Minute)},
+		{ChannelID: channel.ID, TodayCost: 33.4, SampledAt: now.Add(-4 * time.Hour)},
+		{ChannelID: channel.ID, TodayCost: 0.2, SampledAt: now.Add(-2 * time.Hour)},
+		{ChannelID: channel.ID, TodayCost: 0.5, SampledAt: now},
+	} {
+		snapshot := snapshot
+		if err := rates.AppendCost(&snapshot); err != nil {
+			t.Fatalf("append delayed reset cost: %v", err)
+		}
+	}
+	service.rates = rates
+	if err := storage.NewMainStationStore(db).UpsertProfitSnapshot(&storage.MainStationProfitSnapshot{
+		Day: now.Format("2006-01-02"), Revenue: 2, SampledAt: now,
+	}); err != nil {
+		t.Fatalf("save delayed reset profit snapshot: %v", err)
+	}
+
+	summary, err := service.ProfitSummary(7)
+	if err != nil {
+		t.Fatalf("profit summary: %v", err)
+	}
+	if math.Abs(summary.TodayCost-0.9) > 0.000001 || math.Abs(summary.TodayProfit-1.1) > 0.000001 {
+		t.Fatalf("delayed reset profit summary = %#v", summary)
+	}
+}
+
 func profitFloat64(value float64) *float64 { return &value }
 
 func seedProfitCosts(t *testing.T, db *gorm.DB, now time.Time, dailyCost float64) *storage.Channel {
@@ -150,6 +191,11 @@ func seedProfitCosts(t *testing.T, db *gorm.DB, now time.Time, dailyCost float64
 	}
 	rates := storage.NewRates(db)
 	for offset := 0; offset < mainStationProfitDays; offset++ {
+		if err := rates.AppendCost(&storage.CostSnapshot{
+			ChannelID: channel.ID, TodayCost: 0, SampledAt: now.AddDate(0, 0, -offset).Add(-11 * time.Hour),
+		}); err != nil {
+			t.Fatalf("append profit cost reset: %v", err)
+		}
 		if err := rates.AppendCost(&storage.CostSnapshot{
 			ChannelID: channel.ID, TodayCost: dailyCost, SampledAt: now.AddDate(0, 0, -offset),
 		}); err != nil {

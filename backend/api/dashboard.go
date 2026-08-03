@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,6 +40,17 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 	}
 
 	stats := make([]dashboardChannelStat, 0, len(channels))
+	var normalizedTodayCosts map[uint]float64
+	if d.Rates != nil {
+		normalized, normalizeErr := d.Rates.CurrentDayCostsAt(time.Now())
+		if normalizeErr != nil {
+			if d.Log != nil {
+				d.Log.Warn("load normalized today costs", "err", normalizeErr)
+			}
+		} else {
+			normalizedTodayCosts = normalized
+		}
+	}
 	var totalBalance float64
 	var todayTotalCost float64
 	var totalCost float64
@@ -46,13 +58,18 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 	var activeCount, failedCount int
 
 	for _, ch := range channels {
+		todayCost := ch.TodayCost
+		if normalizedTodayCosts != nil {
+			value := normalizedTodayCosts[ch.ID]
+			todayCost = &value
+		}
 		stat := dashboardChannelStat{
 			ID:             ch.ID,
 			Name:           ch.Name,
 			Type:           string(ch.Type),
 			MonitorEnabled: ch.MonitorEnabled,
 			LastBalance:    ch.LastBalance,
-			TodayCost:      ch.TodayCost,
+			TodayCost:      todayCost,
 			TotalCost:      ch.TotalCost,
 			LastError:      ch.LastError,
 		}
@@ -69,8 +86,8 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 				lowest = &dashboardLowest{ChannelID: ch.ID, Name: ch.Name, Balance: &bal}
 			}
 		}
-		if ch.TodayCost != nil {
-			todayTotalCost += *ch.TodayCost
+		if todayCost != nil {
+			todayTotalCost += *todayCost
 		}
 		if ch.TotalCost != nil {
 			totalCost += *ch.TotalCost
