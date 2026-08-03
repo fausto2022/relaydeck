@@ -1161,6 +1161,31 @@ export interface MainStationBulkOperation {
   errors: string[]
 }
 
+export interface MainStationDisabledCleanupCandidate {
+  member_id: number
+  account_name: string
+  remote_account_id: number
+  source_channel_id: number
+  source_api_key_id: number
+  source_api_key_name?: string
+  disabled_since: string
+}
+
+export interface MainStationDisabledCleanupPreview {
+  pool_id: number
+  eligible: number
+  skipped: number
+  candidates: MainStationDisabledCleanupCandidate[]
+}
+
+export interface MainStationDisabledCleanupResult {
+  pool_id: number
+  attempted: number
+  deleted: number
+  skipped: number
+  errors: string[]
+}
+
 export interface MainStationAuditLog {
   id: number
   pool_id?: number | null

@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner"
 import { AccountSettingsDialog } from "@/components/main-station/account-settings-dialog"
 import { BindingRecommendationsDialog } from "@/components/main-station/binding-recommendations-dialog"
+import { CleanupDisabledAccountsDialog } from "@/components/main-station/cleanup-disabled-accounts-dialog"
 import { DeleteAccountDialog } from "@/components/main-station/delete-account-dialog"
 import { GroupSettingsDialog } from "@/components/main-station/group-settings-dialog"
 import { HealthHistoryDialog } from "@/components/main-station/health-history-dialog"
@@ -105,6 +106,7 @@ export default function MainStationPage() {
   const [editingAccount, setEditingAccount] = useState<MainStationAccount | null>(null)
   const [healthHistoryAccount, setHealthHistoryAccount] = useState<MainStationAccount | null>(null)
   const [deletingAccount, setDeletingAccount] = useState<MainStationAccount | null>(null)
+  const [cleanupOpen, setCleanupOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [riskOpen, setRiskOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
@@ -501,6 +503,7 @@ export default function MainStationPage() {
                     </SelectContent>
                   </Select>
                   {selectedWorkspace ? <Button variant="outline" onClick={() => void handleBulkCheck()}><TestTube2 className="size-4" />批量检测</Button> : null}
+                  {selectedWorkspace ? <Button variant="outline" className="text-destructive hover:text-destructive" onClick={() => setCleanupOpen(true)}><Trash2 className="size-4" />清理停用账号</Button> : null}
                 </div>
 
                 <div className="overflow-x-auto">
@@ -595,6 +598,7 @@ export default function MainStationPage() {
                 <Button variant="outline" disabled={!selectedWorkspace} onClick={() => void handleEvaluate()}><CircleDollarSign className="size-4" />成本与利润评估</Button>
                 <Button variant="outline" disabled={!selectedWorkspace} onClick={() => void handleBulkCheck()}><Activity className="size-4" />检测全部账号</Button>
                 <Button variant="outline" disabled={!selectedWorkspace} onClick={() => { setRiskOpen(false); setSettingsOpen(true) }}><Settings2 className="size-4" />分组策略</Button>
+                <Button variant="outline" className="text-destructive hover:text-destructive" disabled={!selectedWorkspace} onClick={() => { setRiskOpen(false); setCleanupOpen(true) }}><Trash2 className="size-4" />清理停用账号</Button>
               </div>
             </div>
 
@@ -688,6 +692,12 @@ export default function MainStationPage() {
         account={deletingAccount}
         busy={deletingAccount != null && busyAccountID === deletingAccount.remote_account_id}
         onConfirm={handleDelete}
+      />
+      <CleanupDisabledAccountsDialog
+        open={cleanupOpen}
+        onOpenChange={setCleanupOpen}
+        workspace={selectedWorkspace}
+        onCleaned={() => { void loadBase(); void loadAccounts(selectedGroupID); void loadRisk(selectedGroupID) }}
       />
       <GroupSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} workspace={selectedWorkspace} config={config} onSaved={(saved) => { setWorkspaces((items) => items.map((item) => item.group.id === saved.group.id ? saved : item)); void loadAccounts(selectedGroupID); void loadRisk(selectedGroupID) }} />
     </div>
@@ -966,6 +976,7 @@ function actionLabel(action: string) {
     member_source_group_sync: "同步上游 Key 分组",
     member_auto_cleanup: "自动清理失效账号",
     member_disabled_cleanup: "自动清理长期停用账号",
+    member_disabled_cleanup_manual: "一键清理停用账号",
     member_update: "更新账号",
     member_delete: "删除账号",
     member_unbind: "解除接管",

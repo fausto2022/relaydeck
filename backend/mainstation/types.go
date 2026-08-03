@@ -402,6 +402,35 @@ type DeleteMemberInput struct {
 	Confirm             bool `json:"confirm"`
 }
 
+type DisabledMemberCleanupInput struct {
+	Confirm bool `json:"confirm"`
+}
+
+type DisabledMemberCleanupCandidate struct {
+	MemberID         uint      `json:"member_id"`
+	AccountName      string    `json:"account_name"`
+	RemoteAccountID  int64     `json:"remote_account_id"`
+	SourceChannelID  uint      `json:"source_channel_id"`
+	SourceAPIKeyID   int64     `json:"source_api_key_id"`
+	SourceAPIKeyName string    `json:"source_api_key_name,omitempty"`
+	DisabledSince    time.Time `json:"disabled_since"`
+}
+
+type DisabledMemberCleanupPreview struct {
+	PoolID     uint                             `json:"pool_id"`
+	Eligible   int                              `json:"eligible"`
+	Skipped    int                              `json:"skipped"`
+	Candidates []DisabledMemberCleanupCandidate `json:"candidates"`
+}
+
+type DisabledMemberCleanupResult struct {
+	PoolID    uint     `json:"pool_id"`
+	Attempted int      `json:"attempted"`
+	Deleted   int      `json:"deleted"`
+	Skipped   int      `json:"skipped"`
+	Errors    []string `json:"errors"`
+}
+
 type HealthCheckInput struct {
 	Level     string `json:"level"`
 	Force     bool   `json:"force"`

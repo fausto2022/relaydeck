@@ -349,6 +349,45 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		}
 		c.Status(http.StatusNoContent)
 	})
+	group.GET("/groups/:id/accounts/disabled-cleanup", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		result, err := d.MainStation.PreviewDisabledMemberCleanup(poolID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+	group.POST("/groups/:id/accounts/disabled-cleanup", func(c *gin.Context) {
+		groupID, ok := mainStationUintParam(c, "id")
+		if !ok {
+			return
+		}
+		poolID, err := d.MainStation.GroupPoolID(groupID)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		var in mainstation.DisabledMemberCleanupInput
+		if err := c.ShouldBindJSON(&in); err != nil {
+			failMainStationRequest(c)
+			return
+		}
+		result, err := d.MainStation.CleanupDisabledMembers(c.Request.Context(), poolID, in)
+		if err != nil {
+			failMainStation(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
 	group.POST("/groups/:id/check", func(c *gin.Context) {
 		groupID, ok := mainStationUintParam(c, "id")
 		if !ok {

@@ -492,6 +492,14 @@ func (r *MainStationStore) DeleteMember(poolID, memberID uint) error {
 	})
 }
 
+func (r *MainStationStore) CountOtherMembersUsingSourceAPIKey(channelID uint, keyID int64, memberID uint) (int64, error) {
+	var count int64
+	err := r.db.Model(&MainAccountPoolMember{}).
+		Where("source_channel_id = ? AND source_api_key_id = ? AND id <> ?", channelID, keyID, memberID).
+		Count(&count).Error
+	return count, err
+}
+
 func (r *MainStationStore) AppendAudit(item *MainAccountAuditLog) error {
 	if item.CreatedAt.IsZero() {
 		item.CreatedAt = time.Now()
