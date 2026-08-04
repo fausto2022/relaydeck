@@ -81,19 +81,27 @@ func (s *Service) poolSchedulingPriorities(poolID uint) (map[uint]int, error) {
 				locksClear = len(locks) == 0
 			}
 		}
+		healthBand := schedulingHealthBand(member)
+		successBucket := schedulingSuccessBucket(stats.Recent20SuccessRate)
+		latencyBucket := schedulingLatencyBucket(stats.P95LatencyMS)
+		if !member.HealthEnabled {
+			healthBand = 0
+			successBucket = 0
+			latencyBucket = 0
+		}
 		signals = append(signals, schedulingRankSignal{
 			MemberID:        member.ID,
-			HealthBand:      schedulingHealthBand(member),
+			HealthBand:      healthBand,
 			Preferred:       member.Preferred,
 			Priority:        normalizeSchedulingPriority(member.Priority),
 			CurrentPriority: currentPriority,
 			CostKnown:       costKnown,
 			CostMicros:      costMicros,
-			SuccessBucket:   schedulingSuccessBucket(stats.Recent20SuccessRate),
-			LatencyBucket:   schedulingLatencyBucket(stats.P95LatencyMS),
+			SuccessBucket:   successBucket,
+			LatencyBucket:   latencyBucket,
 			Enabled: pool.Enabled && member.Enabled && remoteSchedulable && remoteActive && locksClear &&
 				member.BindingStatus != "invalid" && member.BindingStatus != "orphaned" &&
-				member.LastHealthStatus != "unhealthy" && member.Status != "quarantined",
+				(!member.HealthEnabled || (member.LastHealthStatus != "unhealthy" && member.Status != "quarantined")),
 		})
 	}
 	return rankSchedulingSignals(signals, pool.RateSortDirection), nil

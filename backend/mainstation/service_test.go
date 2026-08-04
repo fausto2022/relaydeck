@@ -864,6 +864,77 @@ func TestManagedMemberCreatesIndependentValidatedAccountAndPreservesRemoteByDefa
 	}
 }
 
+func TestManagedMemberWithHealthDisabledSkipsProbesAndBecomesSchedulable(t *testing.T) {
+	var probeCalls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		probeCalls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer upstream.Close()
+
+	service, db, admin, channels := newTestService(t)
+	configureTestStation(t, service)
+	admin.groups = []sub2api.AdminGroup{{ID: 31, Name: "main-group", RateMultiplier: 1, Status: "active"}}
+	admin.accountModels = map[int64][]string{1000: {"gpt-test"}}
+	if _, err := service.Sync(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	channel := createTestChannel(t, db)
+	channel.SiteURL = upstream.URL
+	if err := db.Save(channel).Error; err != nil {
+		t.Fatalf("update source channel: %v", err)
+	}
+	sourceGroupID := int64(5)
+	channels.groups = []connector.APIKeyGroup{{ID: &sourceGroupID, Name: "source-group", Ratio: 0.8}}
+	groups, err := service.ListGroups(false)
+	if err != nil || len(groups) != 1 {
+		t.Fatalf("groups = %#v, err=%v", groups, err)
+	}
+	pool, err := service.CreatePool(PoolInput{
+		Name: "managed-pool", Platform: "openai", TargetGroupIDs: []uint{groups[0].ID},
+	})
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	member, err := service.CreateMember(context.Background(), pool.ID, MemberInput{
+		OwnershipMode: "managed", SourceChannelID: channel.ID, SourceGroupID: &sourceGroupID,
+		SourceGroupName: "source-group", AllowNameConflict: true, Enabled: boolPtr(true),
+		Priority: 1, RateConvertMode: "raw", RateConvertValue: 1, CostAdjustment: 1,
+		HealthEnabled: boolPtr(false), HealthModel: "gpt-test", HealthAPIMode: "openai_chat",
+	})
+	if err != nil {
+		t.Fatalf("create health-disabled managed member: %v", err)
+	}
+	if member.RemoteAccountID == nil || member.Status != "active" || member.HealthEnabled {
+		t.Fatalf("health-disabled managed member = %#v", member)
+	}
+	if calls := probeCalls.Load(); calls != 0 {
+		t.Fatalf("health-disabled managed member probe calls = %d, want 0", calls)
+	}
+	if len(admin.syncModelCalls) != 1 || admin.syncModelCalls[0] != *member.RemoteAccountID {
+		t.Fatalf("model sync calls = %#v", admin.syncModelCalls)
+	}
+	if len(admin.schedulableCalls) != 1 || !admin.schedulableCalls[0] {
+		t.Fatalf("schedulable calls = %#v", admin.schedulableCalls)
+	}
+	locks, err := service.ListGuardLocks(*member.RemoteAccountID)
+	if err != nil || len(locks) != 0 {
+		t.Fatalf("guard locks = %#v, err=%v", locks, err)
+	}
+	var healthChecks int64
+	if err := db.Model(&storage.MainAccountHealthCheck{}).Where("member_id = ?", member.ID).Count(&healthChecks).Error; err != nil {
+		t.Fatalf("count health checks: %v", err)
+	}
+	if healthChecks != 0 {
+		t.Fatalf("health checks = %d, want 0", healthChecks)
+	}
+	service.RunDueHealthChecks(context.Background())
+	if calls := probeCalls.Load(); calls != 0 {
+		t.Fatalf("scheduled health-disabled probe calls = %d, want 0", calls)
+	}
+}
+
 func TestManagedMemberAsyncInitializationReturnsPendingAndCompletes(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -158,7 +158,7 @@ type MainAccountPoolMember struct {
 	RateConvertValueMicros   int64      `gorm:"not null;default:1000000" json:"rate_convert_value_micros"`
 	CostAdjustmentMicros     int64      `gorm:"not null;default:1000000" json:"cost_adjustment_micros"`
 	ManualCostMicros         *int64     `json:"manual_cost_micros,omitempty"`
-	HealthEnabled            bool       `gorm:"not null;default:true" json:"health_enabled"`
+	HealthEnabled            bool       `gorm:"not null" json:"health_enabled"`
 	HealthModel              string     `gorm:"size:256;not null;default:''" json:"health_model,omitempty"`
 	HealthIntervalSeconds    int        `gorm:"not null;default:0" json:"health_interval_seconds"`
 	HealthFailureThreshold   int        `gorm:"not null;default:0" json:"health_failure_threshold"`

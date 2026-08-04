@@ -341,7 +341,13 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="account-health-model">账号探活模型（可选）</Label>
-                <Input id="account-health-model" value={healthModel} onChange={(event) => setHealthModel(event.target.value)} placeholder="留空继承平台全局模型" />
+                <Input
+                  id="account-health-model"
+                  value={healthModel}
+                  onChange={(event) => setHealthModel(event.target.value)}
+                  placeholder="留空继承平台全局模型"
+                  disabled={!healthEnabled}
+                />
               </div>
             </div>
 
@@ -351,6 +357,13 @@ export function MemberDialog({ open, onOpenChange, workspace, channels, accounts
                 <span>我已核对账号来源与主站账号，确认建立接管关系。</span>
               </label>
             ) : null}
+            <div className="flex items-center justify-between gap-4 border-t pt-4">
+              <div className="space-y-1">
+                <Label htmlFor="account-health-enabled">启用账号探活</Label>
+                <p className="text-xs text-muted-foreground">关闭后仍同步倍率并执行利润保护。</p>
+              </div>
+              <Switch id="account-health-enabled" checked={healthEnabled} onCheckedChange={setHealthEnabled} />
+            </div>
             <div className="flex items-center justify-between border-t pt-4">
               <Label htmlFor="account-preferred">优先调度</Label>
               <Switch id="account-preferred" checked={preferred} onCheckedChange={setPreferred} />

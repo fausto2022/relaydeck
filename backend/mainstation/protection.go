@@ -263,6 +263,7 @@ func (s *Service) EvaluatePoolCapacity(ctx context.Context, poolID uint) (*PoolC
 	hasProfitEvidence := false
 	for _, member := range members {
 		healthy := member.LastHealthStatus == "healthy"
+		healthEligible := !member.HealthEnabled || healthy
 		if healthy {
 			result.HealthyMembers++
 		}
@@ -287,7 +288,7 @@ func (s *Service) EvaluatePoolCapacity(ctx context.Context, poolID uint) (*PoolC
 		locks, lockErr := s.store.ListActiveGuardLocks(*member.RemoteAccountID)
 		snapshot, snapshotErr := s.store.FindAccountSnapshot(*member.RemoteAccountID)
 		bindingValid := member.BindingStatus == "verified" || member.BindingStatus == "manual_confirmed"
-		qualified := member.Enabled && healthy && profitable && bindingValid && lockErr == nil && len(locks) == 0 &&
+		qualified := member.Enabled && healthEligible && profitable && bindingValid && lockErr == nil && len(locks) == 0 &&
 			snapshotErr == nil && !snapshot.Missing && strings.EqualFold(snapshot.Status, "active")
 		if qualified {
 			result.QualifiedMembers++

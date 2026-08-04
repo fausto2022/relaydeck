@@ -1067,7 +1067,11 @@ func (s *Service) SyncMember(ctx context.Context, poolID, memberID uint) (*stora
 	if err := s.store.UpsertAccountSnapshot(&snapshot); err != nil && s.log != nil {
 		s.log.Warn("save managed account snapshot", "err", err, "member_id", member.ID)
 	}
-	if _, err := s.ActivateGuardLock(ctx, remoteID, "sync", "managed member is awaiting model sync and initial health checks", map[string]any{
+	syncLockReason := "managed member is awaiting model sync"
+	if member.HealthEnabled {
+		syncLockReason += " and initial health checks"
+	}
+	if _, err := s.ActivateGuardLock(ctx, remoteID, "sync", syncLockReason, map[string]any{
 		"pool_id": poolID, "member_id": member.ID,
 	}, "syncer"); err != nil {
 		return nil, s.failManagedMember(member, err)
@@ -1075,21 +1079,30 @@ func (s *Service) SyncMember(ctx context.Context, poolID, memberID uint) (*stora
 	if err := s.syncManagedAccountModels(ctx, client, adminTarget, remoteID); err != nil {
 		return nil, s.failManagedMember(member, err)
 	}
-	l0, err := s.CheckMember(ctx, poolID, member.ID, HealthCheckInput{Level: "L0", Force: true})
-	if err != nil || l0.Check.Status != "success" {
-		if err == nil {
-			err = fmt.Errorf("initial L0 health check status: %s", l0.Check.Status)
-		}
-		return nil, s.failManagedMember(member, err)
-	}
-	if effectiveHealthModel(pool.Platform, member.HealthModel, s.configuredHealthModels()) != "" {
-		l1, err := s.CheckMember(ctx, poolID, member.ID, HealthCheckInput{Level: "L1", Force: true})
-		if err != nil || l1.Check.Status != "success" {
+	auditDetail := "model sync and initial health checks completed; scheduling reconciled"
+	if member.HealthEnabled {
+		l0, err := s.CheckMember(ctx, poolID, member.ID, HealthCheckInput{Level: "L0", Force: true})
+		if err != nil || l0.Check.Status != "success" {
 			if err == nil {
-				err = fmt.Errorf("initial L1 health check status: %s", l1.Check.Status)
+				err = fmt.Errorf("initial L0 health check status: %s", l0.Check.Status)
 			}
 			return nil, s.failManagedMember(member, err)
 		}
+		if effectiveHealthModel(pool.Platform, member.HealthModel, s.configuredHealthModels()) != "" {
+			l1, err := s.CheckMember(ctx, poolID, member.ID, HealthCheckInput{Level: "L1", Force: true})
+			if err != nil || l1.Check.Status != "success" {
+				if err == nil {
+					err = fmt.Errorf("initial L1 health check status: %s", l1.Check.Status)
+				}
+				return nil, s.failManagedMember(member, err)
+			}
+		}
+	} else {
+		member.Status = "active"
+		if err := s.store.UpdateMember(member); err != nil {
+			return nil, s.failManagedMember(member, err)
+		}
+		auditDetail = "model sync completed with health checks disabled; scheduling reconciled"
 	}
 	if _, err := s.ClearGuardLock(ctx, remoteID, "sync", "syncer"); err != nil {
 		return nil, s.failManagedMember(member, err)
@@ -1098,7 +1111,7 @@ func (s *Service) SyncMember(ctx context.Context, poolID, memberID uint) (*stora
 	if err != nil {
 		return nil, err
 	}
-	_ = s.appendAudit(&poolID, &member.ID, &remoteID, "member_managed_sync", "manual", true, nil, member, nil, "initial health checks passed and scheduling was reconciled", "")
+	_ = s.appendAudit(&poolID, &member.ID, &remoteID, "member_managed_sync", "manual", true, nil, member, nil, auditDetail, "")
 	if rankingErr := s.markPoolRankingDirty(poolID); rankingErr != nil && s.log != nil {
 		s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", poolID)
 	}
