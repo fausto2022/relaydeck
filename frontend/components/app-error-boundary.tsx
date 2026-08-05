@@ -1,6 +1,10 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
 import { AlertTriangle, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  reportClientError,
+  scheduleDOMMismatchRecovery,
+} from "@/lib/client-error-reporting"
 
 interface Props {
   children: ReactNode
@@ -19,6 +23,8 @@ export class AppErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("application render failed", error, info)
+    reportClientError(error, info.componentStack ?? "")
+    scheduleDOMMismatchRecovery(error)
   }
 
   render() {

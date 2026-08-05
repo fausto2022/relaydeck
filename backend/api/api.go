@@ -94,6 +94,7 @@ func Register(r *gin.Engine, d *Deps) {
 		api.Use(d.Runtime.AuthMiddleware())
 	}
 	{
+		registerClientErrors(api, d)
 		registerVersion(api, d)
 		registerAuth(api, d)
 		registerChannels(api, d)
