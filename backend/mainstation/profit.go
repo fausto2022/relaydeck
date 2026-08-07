@@ -500,7 +500,7 @@ func (s *Service) buildProfitCheck(pool *storage.MainAccountPool, member *storag
 	check.CostMultiplierMicros = effectiveCost
 	check.MarginValueMicros = saleMicros - effectiveCost
 	check.MarginBasisPoints = profitBasisPoints(saleMicros, effectiveCost)
-	if check.MarginValueMicros <= 0 {
+	if check.MarginValueMicros < 0 {
 		check.Status = "risk"
 		check.Reason = fmt.Sprintf("sale multiplier %d does not exceed cost multiplier %d", saleMicros, effectiveCost)
 	} else if check.MarginBasisPoints < policy.MinimumMarginBasisPoints {

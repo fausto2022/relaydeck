@@ -130,7 +130,7 @@ func TestProfitProtectionUsesFixedPointAndKeepsLocksIndependent(t *testing.T) {
 	}
 }
 
-func TestProfitEvaluationTreatsBreakEvenAsRisk(t *testing.T) {
+func TestProfitEvaluationTreatsBreakEvenAsHealthy(t *testing.T) {
 	service, db, admin, _ := newTestService(t)
 	current := time.Date(2026, 7, 17, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	service.now = func() time.Time { return current }
@@ -140,7 +140,7 @@ func TestProfitEvaluationTreatsBreakEvenAsRisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("evaluate break-even margin: %v", err)
 	}
-	if len(result.Checks) != 1 || result.Checks[0].Status != "risk" || result.Checks[0].MarginBasisPoints != 0 {
+	if len(result.Checks) != 1 || result.Checks[0].Status != "healthy" || result.Checks[0].MarginBasisPoints != 0 {
 		t.Fatalf("break-even evaluation = %#v", result)
 	}
 }
