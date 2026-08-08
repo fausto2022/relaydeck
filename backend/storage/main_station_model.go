@@ -25,7 +25,7 @@ type MainStationConfig struct {
 	HealthIntervalSeconds    int        `gorm:"not null;default:30" json:"health_interval_seconds"`
 	HealthFailureThreshold   int        `gorm:"not null;default:10" json:"health_failure_threshold"`
 	HealthRecoveryThreshold  int        `gorm:"not null;default:3" json:"health_recovery_threshold"`
-	RankingIntervalSeconds   int        `gorm:"not null;default:30" json:"ranking_interval_seconds"`
+	RankingIntervalSeconds   int        `gorm:"not null;default:300" json:"ranking_interval_seconds"`
 	SyncIntervalSeconds      int        `gorm:"not null;default:300" json:"sync_interval_seconds"`
 	ObservationEvaluatedAt   *time.Time `json:"observation_evaluated_at,omitempty"`
 	HealthObservedAt         *time.Time `json:"health_observed_at,omitempty"`
@@ -186,9 +186,9 @@ func (MainAccountPoolMember) TableName() string { return "main_account_pool_memb
 type MainAccountHealthCheck struct {
 	ID                  uint      `gorm:"primaryKey" json:"id"`
 	PoolID              uint      `gorm:"not null;index" json:"pool_id"`
-	MemberID            uint      `gorm:"not null;index;index:idx_health_member_created,priority:1" json:"member_id"`
+	MemberID            uint      `gorm:"not null;index:idx_health_member_created,priority:1;index:idx_health_member_level_created,priority:1" json:"member_id"`
 	RemoteAccountID     int64     `gorm:"not null;index" json:"remote_account_id"`
-	Level               string    `gorm:"size:8;not null;index" json:"level"`
+	Level               string    `gorm:"size:8;not null;index;index:idx_health_member_level_created,priority:2" json:"level"`
 	Protocol            string    `gorm:"size:32" json:"protocol,omitempty"`
 	Model               string    `gorm:"size:256" json:"model,omitempty"`
 	Endpoint            string    `gorm:"size:512" json:"endpoint,omitempty"`
@@ -202,9 +202,9 @@ type MainAccountHealthCheck struct {
 	EstimatedCostMicros *int64    `json:"estimated_cost_micros,omitempty"`
 	Message             string    `gorm:"type:text" json:"message,omitempty"`
 	TriggeredAction     string    `gorm:"size:64" json:"triggered_action,omitempty"`
-	StartedAt           time.Time `gorm:"not null;index" json:"started_at"`
+	StartedAt           time.Time `gorm:"not null" json:"started_at"`
 	FinishedAt          time.Time `gorm:"not null" json:"finished_at"`
-	CreatedAt           time.Time `gorm:"not null;index;index:idx_health_member_created,priority:2" json:"created_at"`
+	CreatedAt           time.Time `gorm:"not null;index;index:idx_health_member_created,priority:2;index:idx_health_member_level_created,priority:3" json:"created_at"`
 }
 
 func (MainAccountHealthCheck) TableName() string { return "main_account_health_checks" }
@@ -224,7 +224,7 @@ type MainAccountProfitCheck struct {
 	Status               string    `gorm:"size:32;not null;index" json:"status"`
 	Reason               string    `gorm:"type:text" json:"reason,omitempty"`
 	ObservedAt           time.Time `gorm:"not null;index" json:"observed_at"`
-	CreatedAt            time.Time `gorm:"not null;index" json:"created_at"`
+	CreatedAt            time.Time `gorm:"not null" json:"created_at"`
 }
 
 func (MainAccountProfitCheck) TableName() string { return "main_account_profit_checks" }

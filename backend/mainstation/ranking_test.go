@@ -48,6 +48,49 @@ func TestRankSchedulingSignalsLatencyCanMoveHigherBasePriorityBehindAnotherAccou
 	}
 }
 
+func TestSchedulingCostPenaltiesKeepEqualCostsInSameBucket(t *testing.T) {
+	penalties := schedulingCostPenalties([]schedulingRankSignal{
+		{MemberID: 1, CostKnown: true, CostMicros: 100_000},
+		{MemberID: 2, CostKnown: true, CostMicros: 100_000},
+		{MemberID: 3, CostKnown: true, CostMicros: 200_000},
+		{MemberID: 4, CostKnown: true, CostMicros: 300_000},
+	}, "asc")
+	if penalties[1] != penalties[2] {
+		t.Fatalf("equal costs received different penalties: %#v", penalties)
+	}
+	if penalties[3] <= penalties[2] || penalties[4] <= penalties[3] {
+		t.Fatalf("higher costs should receive increasing penalties: %#v", penalties)
+	}
+}
+
+func TestRankSchedulingSignalsKeepsCurrentOrderWithinHysteresis(t *testing.T) {
+	priorities := rankSchedulingSignals([]schedulingRankSignal{
+		{MemberID: 1, Priority: 1, CurrentPriority: 20},
+		{MemberID: 2, Priority: 2, CurrentPriority: 10},
+	}, "asc")
+	if priorities[2] >= priorities[1] {
+		t.Fatalf("small score change should preserve current order: %#v", priorities)
+	}
+
+	priorities = rankSchedulingSignals([]schedulingRankSignal{
+		{MemberID: 1, Priority: 1, CurrentPriority: 20},
+		{MemberID: 2, Priority: 5, CurrentPriority: 10},
+	}, "asc")
+	if priorities[1] >= priorities[2] {
+		t.Fatalf("meaningful score advantage should change order: %#v", priorities)
+	}
+}
+
+func TestRankSchedulingSignalsUsesWiderStabilityHysteresis(t *testing.T) {
+	priorities := rankSchedulingSignals([]schedulingRankSignal{
+		{MemberID: 1, Priority: 1, CurrentPriority: 20},
+		{MemberID: 2, Priority: 5, CurrentPriority: 10},
+	}, "stability")
+	if priorities[2] >= priorities[1] {
+		t.Fatalf("stability mode should preserve order at threshold: %#v", priorities)
+	}
+}
+
 func TestAssignSparseSchedulingPrioritiesPreservesStableValuesAndUsesGaps(t *testing.T) {
 	ordered := []schedulingRankSignal{
 		{MemberID: 1, CurrentPriority: 10},
@@ -101,6 +144,15 @@ func TestAutomaticSchedulingDefaults(t *testing.T) {
 	}
 	if automaticLoadFactor(37) != 37 || automaticLoadFactor(0) != 1 {
 		t.Fatal("automatic load factor must follow concurrency")
+	}
+}
+
+func TestEffectivePoolRankingIntervalNormalizesLegacyValues(t *testing.T) {
+	if interval := effectivePoolRankingInterval(&storage.MainAccountPool{RankingIntervalSeconds: 30}, 30); interval != 5*time.Minute {
+		t.Fatalf("legacy ranking interval = %s, want 5m", interval)
+	}
+	if interval := effectivePoolRankingInterval(&storage.MainAccountPool{RankingIntervalSeconds: 600}, 300); interval != 10*time.Minute {
+		t.Fatalf("configured pool ranking interval = %s, want 10m", interval)
 	}
 }
 

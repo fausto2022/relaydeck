@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -206,6 +207,7 @@ func (f *fakeAdminClient) TestAccount(context.Context, sub2api.AdminTarget, int6
 }
 
 type fakeChannelService struct {
+	mu                     sync.Mutex
 	secret                 string
 	revealKeyErr           error
 	groups                 []connector.APIKeyGroup
@@ -291,6 +293,8 @@ func (f *fakeChannelService) ListAPIKeys(context.Context, uint, connector.APIKey
 func (f *fakeChannelService) GetAccountLimits(_ context.Context, channelID uint) (*connector.AccountLimits, error) {
 	done := f.beginBindingCall()
 	defer done()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.accountLimitCalls == nil {
 		f.accountLimitCalls = make(map[uint]int)
 	}
@@ -573,6 +577,46 @@ func TestMainStationAccountUsesLatestSourceGroupRate(t *testing.T) {
 	if accounts[0].Member.CurrentProfit == nil || accounts[0].Member.CurrentProfit.CostMultiplierMicros != 110000 ||
 		accounts[0].Member.CurrentProfit.MarginBasisPoints != 80909 {
 		t.Fatalf("updated current profit = %#v", accounts[0].Member.CurrentProfit)
+	}
+}
+
+func TestListGroupAccountsPageReturnsOnlyRequestedAccounts(t *testing.T) {
+	service, _, admin, _ := newTestService(t)
+	configureTestStation(t, service)
+	admin.groups = []sub2api.AdminGroup{{ID: 11, Name: "main", RateMultiplier: 1, Status: "active"}}
+	admin.accounts = []sub2api.AdminAccount{
+		{ID: 21, Name: "first", Status: "active", GroupIDs: []int64{11}},
+		{ID: 22, Name: "second", Status: "active", GroupIDs: []int64{11}},
+		{ID: 23, Name: "third", Status: "active", GroupIDs: []int64{11}},
+	}
+	if _, err := service.Sync(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	groups, err := service.ListGroups(false)
+	if err != nil || len(groups) != 1 {
+		t.Fatalf("list groups: groups=%#v err=%v", groups, err)
+	}
+
+	first, err := service.ListGroupAccountsPage(groups[0].ID, false, 1, 2)
+	if err != nil {
+		t.Fatalf("list first group account page: %v", err)
+	}
+	if first.Total != 3 || first.Pages != 2 || first.Page != 1 || first.PageSize != 2 || len(first.Items) != 2 {
+		t.Fatalf("first group account page = %#v", first)
+	}
+	second, err := service.ListGroupAccountsPage(groups[0].ID, false, 2, 2)
+	if err != nil {
+		t.Fatalf("list second group account page: %v", err)
+	}
+	if second.Total != 3 || second.Pages != 2 || second.Page != 2 || len(second.Items) != 1 || second.Items[0].RemoteAccountID != 23 {
+		t.Fatalf("second group account page = %#v", second)
+	}
+	filtered, err := service.ListGroupAccountsPageFiltered(groups[0].ID, false, 1, 2, "third", "all")
+	if err != nil {
+		t.Fatalf("filter group account page: %v", err)
+	}
+	if filtered.Total != 1 || filtered.Pages != 1 || len(filtered.Items) != 1 || filtered.Items[0].RemoteAccountID != 23 {
+		t.Fatalf("filtered group account page = %#v", filtered)
 	}
 }
 

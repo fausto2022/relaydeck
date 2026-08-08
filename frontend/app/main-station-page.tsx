@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   Activity,
   ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
   CircleDollarSign,
   History,
   Link2,
@@ -93,8 +95,12 @@ export default function MainStationPage() {
   const [selectedGroupID, setSelectedGroupID] = useState<number | null>(null)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const deferredSearch = useDeferredValue(search)
   const [loading, setLoading] = useState(true)
   const [accountsLoading, setAccountsLoading] = useState(false)
+  const [accountsPage, setAccountsPage] = useState(1)
+  const [accountsPages, setAccountsPages] = useState(0)
+  const [accountsTotal, setAccountsTotal] = useState(0)
   const [error, setError] = useState("")
   const [syncing, setSyncing] = useState(false)
   const [ranking, setRanking] = useState(false)
@@ -129,6 +135,8 @@ export default function MainStationPage() {
       if (!station.configured) {
         setWorkspaces([])
         setAccounts([])
+        setAccountsTotal(0)
+        setAccountsPages(0)
         return
       }
       const [groupResult, channelResult] = await Promise.all([
@@ -148,33 +156,48 @@ export default function MainStationPage() {
     }
   }, [])
 
-  const loadAccounts = useCallback(async (groupID: number | null, silent = false) => {
+  const loadAccounts = useCallback(async (groupID: number | null, silent = false, page = accountsPage) => {
     if (silent && accountsInFlightRef.current > 0) return
     const requestID = ++accountsRequestRef.current
     accountsInFlightRef.current += 1
     if (!silent) setAccountsLoading(true)
     try {
       const result = groupID == null
-        ? await apiFetch<MainStationPage<MainStationAccount>>("/main-station/accounts?page=1&page_size=100")
-        : await apiFetch<{ items: MainStationAccount[] }>(`/main-station/groups/${groupID}/accounts`)
-      if (requestID === accountsRequestRef.current) setAccounts(result.items)
+        ? await apiFetch<MainStationPage<MainStationAccount>>(`/main-station/accounts?page=${page}&page_size=50`)
+        : await apiFetch<MainStationPage<MainStationAccount>>(`/main-station/groups/${groupID}/accounts?${new URLSearchParams({
+          page: String(page),
+          page_size: "50",
+          search: deferredSearch.trim(),
+          status: statusFilter,
+        })}`)
+      if (requestID === accountsRequestRef.current) {
+        if (result.pages > 0 && page > result.pages) {
+          setAccountsPage(result.pages)
+          return
+        }
+        setAccounts(result.items)
+        setAccountsTotal(result.total)
+        setAccountsPages(result.pages)
+      }
     } catch (loadError) {
       if (!silent && requestID === accountsRequestRef.current) {
         toast.error(loadError instanceof Error ? loadError.message : "加载账号失败")
         setAccounts([])
+        setAccountsTotal(0)
+        setAccountsPages(0)
       }
     } finally {
       accountsInFlightRef.current -= 1
       if (!silent && requestID === accountsRequestRef.current) setAccountsLoading(false)
     }
-  }, [])
+  }, [accountsPage, deferredSearch, statusFilter])
 
   const loadRisk = useCallback(async (groupID: number | null) => {
     if (!config?.configured) return
     try {
       const query = groupID == null ? "" : `?group_id=${groupID}`
       const [previewResult, auditResult] = await Promise.all([
-        apiFetch<MainStationProtectionPreview>("/main-station/protection-preview"),
+        apiFetch<MainStationProtectionPreview>(`/main-station/protection-preview${query}`),
         apiFetch<MainStationPage<MainStationAuditLog>>(`/main-station/audit-logs${query}${query ? "&" : "?"}page=1&page_size=50`),
       ])
       setPreview(previewResult)
@@ -187,14 +210,19 @@ export default function MainStationPage() {
   useEffect(() => { void loadBase() }, [loadBase])
   useEffect(() => {
     if (!config?.configured) return
-    void loadAccounts(selectedGroupID)
     void loadRisk(selectedGroupID)
-  }, [config?.configured, loadAccounts, loadRisk, selectedGroupID])
+  }, [config?.configured, loadRisk, selectedGroupID])
+  useEffect(() => { setAccountsPage(1) }, [selectedGroupID])
+  useEffect(() => { setAccountsPage(1) }, [deferredSearch, statusFilter])
+  useEffect(() => {
+    if (!config?.configured) return
+    void loadAccounts(selectedGroupID)
+  }, [accountsPage, config?.configured, loadAccounts, selectedGroupID])
   useEffect(() => {
     if (!config?.configured) return
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void loadAccounts(selectedGroupID, true)
-    }, 10_000)
+    }, 30_000)
     return () => window.clearInterval(timer)
   }, [config?.configured, loadAccounts, selectedGroupID])
 
@@ -218,22 +246,9 @@ export default function MainStationPage() {
     return left.name.localeCompare(right.name)
   }), [filteredAccounts])
 
-  const selectedMemberIDs = useMemo(
-    () => new Set(accounts.flatMap((account) => account.member ? [account.member.id] : [])),
-    [accounts],
-  )
-  const visibleActiveLocks = useMemo(
-    () => (preview?.active_locks ?? []).filter((lock) => selectedGroupID == null || selectedMemberIDs.has(lock.member_id)),
-    [preview?.active_locks, selectedGroupID, selectedMemberIDs],
-  )
-  const visibleUnhealthyMemberIDs = useMemo(
-    () => (preview?.unhealthy_member_ids ?? []).filter((memberID) => selectedGroupID == null || selectedMemberIDs.has(memberID)),
-    [preview?.unhealthy_member_ids, selectedGroupID, selectedMemberIDs],
-  )
-  const visibleMarginRiskMemberIDs = useMemo(
-    () => (preview?.margin_risk_member_ids ?? []).filter((memberID) => selectedGroupID == null || selectedMemberIDs.has(memberID)),
-    [preview?.margin_risk_member_ids, selectedGroupID, selectedMemberIDs],
-  )
+  const visibleActiveLocks = preview?.active_locks ?? []
+  const visibleUnhealthyMemberIDs = preview?.unhealthy_member_ids ?? []
+  const visibleMarginRiskMemberIDs = preview?.margin_risk_member_ids ?? []
   const riskCount = useMemo(() => new Set([
     ...visibleActiveLocks.map((lock) => lock.member_id),
     ...visibleUnhealthyMemberIDs,
@@ -475,7 +490,7 @@ export default function MainStationPage() {
                       <p className="truncate text-sm font-semibold">{selectedWorkspace?.group.name ?? "全部账号"}</p>
                       {selectedWorkspace ? <Badge variant="outline" className="shrink-0 tabular-nums">倍率 {formatMainStationMultiplier(selectedWorkspace.group.rate_multiplier_micros)}</Badge> : null}
                     </div>
-                    <p className="text-xs text-muted-foreground">{accounts.length} 个账号</p>
+                    <p className="text-xs text-muted-foreground">共 {accountsTotal} 个账号 · 第 {accountsPages === 0 ? 0 : accountsPage}/{accountsPages} 页</p>
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     {selectedWorkspace ? <IconButton label="分组设置" onClick={() => setSettingsOpen(true)}><Settings2 className="size-4" /></IconButton> : null}
@@ -572,6 +587,17 @@ export default function MainStationPage() {
                     </TableBody>
                   </Table>
                 </div>
+                {accountsPages > 1 ? (
+                  <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
+                    <span className="text-xs text-muted-foreground">第 {accountsPage} / {accountsPages} 页</span>
+                    <IconButton label="上一页" onClick={() => setAccountsPage((current) => Math.max(1, current - 1))} disabled={accountsPage <= 1}>
+                      <ChevronLeft className="size-4" />
+                    </IconButton>
+                    <IconButton label="下一页" onClick={() => setAccountsPage((current) => Math.min(accountsPages, current + 1))} disabled={accountsPage >= accountsPages}>
+                      <ChevronRight className="size-4" />
+                    </IconButton>
+                  </div>
+                ) : null}
               </section>
         </div>
       )}
@@ -927,8 +953,8 @@ function AuditTable({ items, accounts, empty }: { items: MainStationAuditLog[]; 
   )
 }
 
-function IconButton({ label, children, onClick }: { label: string; children: ReactNode; onClick: () => void }) {
-  return <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label={label} onClick={onClick}>{children}</Button></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>
+function IconButton({ label, children, onClick, disabled = false }: { label: string; children: ReactNode; onClick: () => void; disabled?: boolean }) {
+  return <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label={label} onClick={onClick} disabled={disabled}>{children}</Button></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>
 }
 
 function Metric({ label, value, danger = false }: { label: string; value: ReactNode; danger?: boolean }) {

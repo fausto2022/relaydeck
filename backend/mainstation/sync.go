@@ -402,7 +402,7 @@ func (s *Service) loadAccountDTOBatch(items []storage.MainStationAccountSnapshot
 			channelIDs = append(channelIDs, member.SourceChannelID)
 		}
 	}
-	recentByMember, err := s.store.ListRecentHealthChecksByMember(memberIDs, 100)
+	recentByMember, err := s.store.ListRecentHealthChecksByMember(memberIDs, 20)
 	if err != nil {
 		return accountDTOBatch{}, err
 	}
@@ -465,7 +465,7 @@ func (b accountDTOBatch) accountDTO(item storage.MainStationAccountSnapshot) Acc
 			HealthIntervalSeconds:     member.HealthIntervalSeconds,
 			HealthFailureThreshold:    member.HealthFailureThreshold,
 			HealthRecoveryThreshold:   member.HealthRecoveryThreshold,
-			Recent20SuccessRate:       successRate(b.recentByMember[member.ID], time.Time{}),
+			Recent20SuccessRate:       successRate(limitChecks(b.recentByMember[member.ID], 20), time.Time{}),
 			LastHealthStatus:          member.LastHealthStatus,
 			LastHealthAt:              member.LastHealthAt,
 			ConsecutiveHealthSuccess:  member.ConsecutiveHealthSuccess,

@@ -361,12 +361,19 @@ func TestDeleteMainStationHistoryBefore(t *testing.T) {
 			t.Fatalf("create audit log: %v", err)
 		}
 	}
+	oldAuditLogs := make([]MainAccountAuditLog, mainStationHistoryDeleteBatchSize)
+	for i := range oldAuditLogs {
+		oldAuditLogs[i] = MainAccountAuditLog{Action: "batch-test", Source: "test", Success: true, CreatedAt: old}
+	}
+	if err := db.CreateInBatches(oldAuditLogs, 500).Error; err != nil {
+		t.Fatalf("create batched audit logs: %v", err)
+	}
 
 	result, err := store.DeleteHistoryBefore(now.AddDate(0, 0, -30))
 	if err != nil {
 		t.Fatalf("delete history: %v", err)
 	}
-	if result.HealthChecks != 1 || result.ProfitChecks != 1 || result.ProfitSnapshots != 1 || result.AuditLogs != 1 {
+	if result.HealthChecks != 1 || result.ProfitChecks != 1 || result.ProfitSnapshots != 1 || result.AuditLogs != mainStationHistoryDeleteBatchSize+1 {
 		t.Fatalf("retention result = %#v", result)
 	}
 	for name, model := range map[string]any{
@@ -379,6 +386,41 @@ func TestDeleteMainStationHistoryBefore(t *testing.T) {
 		}
 		if count != 1 {
 			t.Fatalf("%s rows = %d, want 1", name, count)
+		}
+	}
+}
+
+func TestListLatestHealthChecksHandlesLargeMemberSets(t *testing.T) {
+	db := openTestDB(t)
+	store := NewMainStationStore(db)
+	now := time.Now().Truncate(time.Second)
+	const memberCount = 520
+	checks := make([]MainAccountHealthCheck, 0, memberCount*2)
+	keys := make([]HealthCheckMemberLevel, 0, memberCount)
+	for memberID := 1; memberID <= memberCount; memberID++ {
+		keys = append(keys, HealthCheckMemberLevel{MemberID: uint(memberID), Level: "L0"})
+		for offset := 1; offset >= 0; offset-- {
+			createdAt := now.Add(-time.Duration(offset) * time.Minute)
+			checks = append(checks, MainAccountHealthCheck{
+				PoolID: 1, MemberID: uint(memberID), RemoteAccountID: int64(memberID), Level: "L0",
+				Status: "success", StartedAt: createdAt, FinishedAt: createdAt, CreatedAt: createdAt,
+			})
+		}
+	}
+	if err := db.CreateInBatches(checks, 200).Error; err != nil {
+		t.Fatalf("create health checks: %v", err)
+	}
+
+	latest, err := store.ListLatestHealthChecks(keys)
+	if err != nil {
+		t.Fatalf("list latest health checks: %v", err)
+	}
+	if len(latest) != memberCount {
+		t.Fatalf("latest health checks = %d, want %d", len(latest), memberCount)
+	}
+	for _, key := range keys {
+		if item := latest[key]; item == nil || !item.CreatedAt.Equal(now) {
+			t.Fatalf("latest health check for %#v = %#v", key, item)
 		}
 	}
 }

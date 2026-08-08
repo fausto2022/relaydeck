@@ -100,6 +100,10 @@ func guardLockActive(locks []storage.MainAccountGuardLock, lockType string) bool
 }
 
 func (s *Service) ProtectionPreview() (*ProtectionPreview, error) {
+	return s.ProtectionPreviewForPool(0)
+}
+
+func (s *Service) ProtectionPreviewForPool(poolID uint) (*ProtectionPreview, error) {
 	config, err := s.store.GetConfig()
 	if err != nil {
 		return nil, err
@@ -108,14 +112,55 @@ func (s *Service) ProtectionPreview() (*ProtectionPreview, error) {
 	if err != nil {
 		return nil, err
 	}
+	if poolID != 0 {
+		filtered := make([]storage.MainAccountPoolMember, 0, len(members))
+		for i := range members {
+			if members[i].PoolID == poolID {
+				filtered = append(filtered, members[i])
+			}
+		}
+		members = filtered
+	}
+	memberIDs := make([]uint, 0, len(members))
+	memberIDSet := make(map[uint]struct{}, len(members))
+	for i := range members {
+		memberIDs = append(memberIDs, members[i].ID)
+		memberIDSet[members[i].ID] = struct{}{}
+	}
 	locks, err := s.store.ListAllActiveGuardLocks()
 	if err != nil {
 		return nil, err
 	}
+	filteredLocks := make([]storage.MainAccountGuardLock, 0, len(locks))
+	for i := range locks {
+		if _, ok := memberIDSet[locks[i].MemberID]; ok {
+			filteredLocks = append(filteredLocks, locks[i])
+		}
+	}
+	poolGroups, err := s.store.ListAllPoolGroups()
+	if err != nil {
+		return nil, err
+	}
+	groupIDsByPool := make(map[uint][]uint)
+	for i := range poolGroups {
+		groupIDsByPool[poolGroups[i].PoolID] = append(groupIDsByPool[poolGroups[i].PoolID], poolGroups[i].TargetGroupID)
+	}
+	latestProfit, err := s.store.ListLatestProfitChecksForMembers(memberIDs)
+	if err != nil {
+		return nil, err
+	}
+	snapshots, err := s.store.ListAllAccountSnapshots(false)
+	if err != nil {
+		return nil, err
+	}
+	snapshotsByRemote := make(map[int64]storage.MainStationAccountSnapshot, len(snapshots))
+	for i := range snapshots {
+		snapshotsByRemote[snapshots[i].RemoteAccountID] = snapshots[i]
+	}
 	preview := &ProtectionPreview{
 		HealthReady: config.HealthObservedAt != nil,
 		MarginReady: config.MarginObservedAt != nil,
-		ActiveLocks: locks,
+		ActiveLocks: filteredLocks,
 	}
 	healthIDs := make(map[uint]struct{})
 	marginIDs := make(map[uint]struct{})
@@ -124,15 +169,14 @@ func (s *Service) ProtectionPreview() (*ProtectionPreview, error) {
 		if member.LastHealthStatus == "unhealthy" || member.Status == "quarantined" {
 			healthIDs[member.ID] = struct{}{}
 		}
-		groupIDs, _ := s.store.ListPoolGroupIDs(member.PoolID)
-		for _, groupID := range groupIDs {
-			if check, checkErr := s.store.LatestProfitCheck(member.ID, groupID); checkErr == nil && check.Status == "risk" {
+		for _, groupID := range groupIDsByPool[member.PoolID] {
+			if check, ok := latestProfit[storage.ProfitCheckMemberGroup{MemberID: member.ID, TargetGroupID: groupID}]; ok && check.Status == "risk" {
 				marginIDs[member.ID] = struct{}{}
 				break
 			}
 		}
 		if member.RemoteAccountID != nil {
-			if snapshot, snapshotErr := s.store.FindAccountSnapshot(*member.RemoteAccountID); snapshotErr == nil && snapshot.Schedulable && !snapshot.Missing {
+			if snapshot, ok := snapshotsByRemote[*member.RemoteAccountID]; ok && snapshot.Schedulable && !snapshot.Missing {
 				schedulableIDs[*member.RemoteAccountID] = struct{}{}
 			}
 		}

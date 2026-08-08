@@ -980,7 +980,7 @@ func buildMemberHealthStats(member *storage.MainAccountPoolMember, checks []stor
 			}
 		}
 	}
-	stats.Recent20SuccessRate = successRate(checks, time.Time{})
+	stats.Recent20SuccessRate = successRate(limitChecks(checks, 20), time.Time{})
 	if len(latencies) > 0 {
 		sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 		var total int64
@@ -1102,36 +1102,61 @@ func (s *Service) RunDueHealthChecks(ctx context.Context) {
 		level    string
 	}
 	tasks := make([]task, 0, healthSchedulerBatchLimit)
-	poolCache := make(map[uint]*storage.MainAccountPool)
+	pools, err := s.store.ListAllPools()
+	if err != nil {
+		if s.log != nil {
+			s.log.Warn("list main station health check pools", "err", err)
+		}
+		return
+	}
+	poolCache := make(map[uint]*storage.MainAccountPool, len(pools))
+	for i := range pools {
+		poolCache[pools[i].ID] = &pools[i]
+	}
 	settings := s.configuredHealthSettings()
 	now := s.now()
 	sort.SliceStable(members, func(i, j int) bool {
 		return memberHealthOrderTime(members[i]).Before(memberHealthOrderTime(members[j]))
 	})
+	type candidate struct {
+		member storage.MainAccountPoolMember
+		level  string
+	}
+	candidates := make([]candidate, 0, len(members))
+	latestKeys := make([]storage.HealthCheckMemberLevel, 0, len(members))
 	for _, member := range members {
-		if len(tasks) >= healthSchedulerBatchLimit {
-			break
-		}
 		if !member.HealthEnabled || member.RemoteAccountID == nil ||
 			(member.BindingStatus != "verified" && member.BindingStatus != "manual_confirmed") {
 			continue
 		}
 		pool := poolCache[member.PoolID]
 		if pool == nil {
-			pool, err = s.store.FindPool(member.PoolID)
-			if err != nil {
-				continue
-			}
-			poolCache[member.PoolID] = pool
+			continue
 		}
 		model := effectiveHealthModel(pool.Platform, member.HealthModel, settings.Models)
 		level := "L0"
 		if model != "" {
 			level = "L1"
 		}
+		candidates = append(candidates, candidate{member: member, level: level})
+		latestKeys = append(latestKeys, storage.HealthCheckMemberLevel{MemberID: member.ID, Level: level})
+	}
+	latestChecks, err := s.store.ListLatestHealthChecks(latestKeys)
+	if err != nil {
+		if s.log != nil {
+			s.log.Warn("list latest main station health checks", "err", err)
+		}
+		return
+	}
+	for _, item := range candidates {
+		if len(tasks) >= healthSchedulerBatchLimit {
+			break
+		}
+		member := item.member
+		level := item.level
 		failureThreshold := effectiveHealthThreshold(member.HealthFailureThreshold, settings.FailureThreshold, defaultHealthFailureThreshold)
 		interval := effectiveHealthCheckInterval(&member, settings.IntervalSeconds, failureThreshold)
-		if s.healthLevelDue(&member, level, now, interval) {
+		if healthLevelDueAt(&member, latestChecks[storage.HealthCheckMemberLevel{MemberID: member.ID, Level: level}], now, interval) {
 			tasks = append(tasks, task{poolID: member.PoolID, memberID: member.ID, level: level})
 		}
 	}
@@ -1147,6 +1172,17 @@ func (s *Service) RunDueHealthChecks(ctx context.Context) {
 		}()
 	}
 	wait.Wait()
+}
+
+func healthLevelDueAt(member *storage.MainAccountPoolMember, last *storage.MainAccountHealthCheck, now time.Time, interval time.Duration) bool {
+	if member == nil || interval <= 0 {
+		return false
+	}
+	base := member.CreatedAt
+	if last != nil {
+		base = last.CreatedAt
+	}
+	return !now.Before(base.Add(interval))
 }
 
 func effectiveHealthCheckInterval(member *storage.MainAccountPoolMember, globalSeconds, failureThreshold int) time.Duration {
@@ -1165,14 +1201,13 @@ func (s *Service) healthLevelDue(member *storage.MainAccountPoolMember, level st
 		return false
 	}
 	last, err := s.store.LastHealthCheck(member.ID, level)
-	base := member.CreatedAt
-	if err == nil {
-		base = last.CreatedAt
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false
 	}
-	due := base.Add(interval)
-	return !now.Before(due)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		last = nil
+	}
+	return healthLevelDueAt(member, last, now, interval)
 }
 
 func memberHealthOrderTime(member storage.MainAccountPoolMember) time.Time {

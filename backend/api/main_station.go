@@ -97,7 +97,16 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		c.JSON(http.StatusOK, result)
 	})
 	group.GET("/protection-preview", func(c *gin.Context) {
-		result, err := d.MainStation.ProtectionPreview()
+		poolID := uint(0)
+		if groupID := uint(queryIntDefault(c, "group_id", 0)); groupID != 0 {
+			var err error
+			poolID, err = d.MainStation.GroupPoolID(groupID)
+			if err != nil {
+				failMainStation(c, err)
+				return
+			}
+		}
+		result, err := d.MainStation.ProtectionPreviewForPool(poolID)
 		if err != nil {
 			failMainStation(c, err)
 			return
@@ -165,12 +174,19 @@ func registerMainStation(g *gin.RouterGroup, d *Deps) {
 		if !ok {
 			return
 		}
-		items, err := d.MainStation.ListGroupAccounts(groupID, queryBool(c, "include_missing"))
+		items, err := d.MainStation.ListGroupAccountsPageFiltered(
+			groupID,
+			queryBool(c, "include_missing"),
+			queryIntDefault(c, "page", 1),
+			queryIntDefault(c, "page_size", 20),
+			c.Query("search"),
+			c.Query("status"),
+		)
 		if err != nil {
 			failMainStation(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"items": items})
+		c.JSON(http.StatusOK, items)
 	})
 	group.GET("/groups/:id/binding-recommendations", func(c *gin.Context) {
 		groupID, ok := mainStationUintParam(c, "id")

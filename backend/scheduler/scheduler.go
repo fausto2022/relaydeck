@@ -121,10 +121,10 @@ func (s *Scheduler) Start() error {
 		}
 	}
 	if s.mainStation != nil {
-		if _, err := s.cron.AddFunc("@every 1s", s.runMainStationHealth); err != nil {
+		if _, err := s.cron.AddFunc("@every 5s", s.runMainStationHealth); err != nil {
 			return err
 		}
-		if _, err := s.cron.AddFunc("@every 1s", s.runMainStationMaintenance); err != nil {
+		if _, err := s.cron.AddFunc("@every 5s", s.runMainStationMaintenance); err != nil {
 			return err
 		}
 		if _, err := s.cron.AddFunc(dailyBusinessSummaryCron, s.runDailyBusinessSummary); err != nil {

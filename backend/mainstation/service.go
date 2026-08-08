@@ -29,8 +29,8 @@ const (
 	maximumHealthIntervalSeconds       = 86400
 	defaultHealthFailureThreshold      = 10
 	defaultHealthRecoveryThreshold     = 3
-	defaultRankingIntervalSeconds      = 30
-	minimumRankingIntervalSeconds      = 5
+	defaultRankingIntervalSeconds      = 300
+	minimumRankingIntervalSeconds      = 60
 	defaultMainStationSyncInterval     = 300
 	maximumHealthThreshold             = 100
 	defaultGuaranteedRevenueRatioBP    = int64(10000)

@@ -202,6 +202,15 @@ func ensureSQLiteIndexes(db *gorm.DB) error {
 	if db.Dialector.Name() != "sqlite" {
 		return nil
 	}
+	for _, name := range []string{
+		"idx_main_account_health_checks_started_at",
+		"idx_main_account_health_checks_member_id",
+		"idx_main_account_profit_checks_created_at",
+	} {
+		if err := db.Exec("DROP INDEX IF EXISTS " + name).Error; err != nil {
+			return fmt.Errorf("drop obsolete sqlite index %s: %w", name, err)
+		}
+	}
 	indexes := []struct {
 		name       string
 		table      string

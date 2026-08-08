@@ -417,6 +417,14 @@ func (r *MainStationStore) ListPoolGroupIDs(poolID uint) ([]uint, error) {
 	return ids, nil
 }
 
+func (r *MainStationStore) ListAllPoolGroups() ([]MainAccountPoolGroup, error) {
+	var list []MainAccountPoolGroup
+	if err := r.db.Order("pool_id ASC, target_group_id ASC").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *MainStationStore) ListMembers(poolID uint) ([]MainAccountPoolMember, error) {
 	var list []MainAccountPoolMember
 	if err := r.db.Where("pool_id = ?", poolID).Order("priority ASC, id ASC").Find(&list).Error; err != nil {
@@ -523,6 +531,63 @@ func (r *MainStationStore) LastHealthCheck(memberID uint, level string) (*MainAc
 	return &item, nil
 }
 
+type HealthCheckMemberLevel struct {
+	MemberID uint
+	Level    string
+}
+
+func (r *MainStationStore) ListLatestHealthChecks(keys []HealthCheckMemberLevel) (map[HealthCheckMemberLevel]*MainAccountHealthCheck, error) {
+	result := make(map[HealthCheckMemberLevel]*MainAccountHealthCheck, len(keys))
+	if len(keys) == 0 {
+		return result, nil
+	}
+	seen := make(map[HealthCheckMemberLevel]struct{}, len(keys))
+	memberIDs := make([]uint, 0, len(keys))
+	levels := make([]string, 0, len(keys))
+	seenMembers := make(map[uint]struct{}, len(keys))
+	seenLevels := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		key.Level = strings.ToUpper(strings.TrimSpace(key.Level))
+		if key.MemberID == 0 || key.Level == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if _, ok := seenMembers[key.MemberID]; !ok {
+			seenMembers[key.MemberID] = struct{}{}
+			memberIDs = append(memberIDs, key.MemberID)
+		}
+		if _, ok := seenLevels[key.Level]; !ok {
+			seenLevels[key.Level] = struct{}{}
+			levels = append(levels, key.Level)
+		}
+	}
+	if len(seen) == 0 {
+		return result, nil
+	}
+	var list []MainAccountHealthCheck
+	if err := r.db.Raw(`SELECT * FROM (
+		SELECT checks.*, ROW_NUMBER() OVER (
+			PARTITION BY checks.member_id, checks.level
+			ORDER BY checks.created_at DESC, checks.id DESC
+		) AS row_num
+		FROM main_account_health_checks AS checks
+		WHERE checks.member_id IN ? AND checks.level IN ?
+	) AS ranked WHERE row_num = 1`, memberIDs, levels).Scan(&list).Error; err != nil {
+		return nil, err
+	}
+	for i := range list {
+		item := &list[i]
+		key := HealthCheckMemberLevel{MemberID: item.MemberID, Level: item.Level}
+		if _, ok := seen[key]; ok {
+			result[key] = item
+		}
+	}
+	return result, nil
+}
+
 func (r *MainStationStore) ListHealthChecks(poolID, memberID uint, level string, page, pageSize int) ([]MainAccountHealthCheck, int64, error) {
 	page, pageSize = normalizeStoragePage(page, pageSize)
 	q := r.db.Model(&MainAccountHealthCheck{}).Where("pool_id = ?", poolID)
@@ -589,22 +654,16 @@ func (r *MainStationStore) ListRecentHealthChecksByMember(memberIDs []uint, limi
 	if limit <= 0 {
 		limit = 100
 	}
-	var query strings.Builder
-	args := make([]any, 0, len(memberIDs)*2)
-	for i, memberID := range memberIDs {
-		if i > 0 {
-			query.WriteString(" UNION ALL ")
-		}
-		fmt.Fprintf(&query, `SELECT * FROM (
-			SELECT * FROM main_account_health_checks
-			WHERE member_id = ? AND status IN ('success', 'failure')
-			ORDER BY created_at DESC, id DESC LIMIT ?
-		) AS recent_%d`, i)
-		args = append(args, memberID, limit)
-	}
-	query.WriteString(" ORDER BY member_id ASC, created_at DESC, id DESC")
 	var list []MainAccountHealthCheck
-	err := r.db.Raw(query.String(), args...).Scan(&list).Error
+	err := r.db.Raw(`SELECT * FROM (
+		SELECT checks.*, ROW_NUMBER() OVER (
+			PARTITION BY checks.member_id
+			ORDER BY checks.created_at DESC, checks.id DESC
+		) AS row_num
+		FROM main_account_health_checks AS checks
+		WHERE checks.member_id IN ? AND checks.status IN ('success', 'failure')
+	) AS ranked WHERE row_num <= ?
+	ORDER BY member_id ASC, created_at DESC, id DESC`, memberIDs, limit).Scan(&list).Error
 	if err != nil {
 		return nil, err
 	}
@@ -757,26 +816,48 @@ func (r *MainStationStore) ListLatestProfitChecksByMember(memberIDs []uint, targ
 	if len(memberIDs) == 0 {
 		return result, nil
 	}
-	var query strings.Builder
-	args := make([]any, 0, len(memberIDs)*2)
-	for i, memberID := range memberIDs {
-		if i > 0 {
-			query.WriteString(" UNION ALL ")
-		}
-		fmt.Fprintf(&query, `SELECT * FROM (
-			SELECT * FROM main_account_profit_checks
-			WHERE member_id = ? AND target_group_id = ?
-			ORDER BY observed_at DESC, id DESC LIMIT 1
-		) AS recent_%d`, i)
-		args = append(args, memberID, targetGroupID)
-	}
 	var list []MainAccountProfitCheck
-	err := r.db.Raw(query.String(), args...).Scan(&list).Error
+	err := r.db.Raw(`SELECT * FROM (
+		SELECT checks.*, ROW_NUMBER() OVER (
+			PARTITION BY checks.member_id
+			ORDER BY checks.observed_at DESC, checks.id DESC
+		) AS row_num
+		FROM main_account_profit_checks AS checks
+		WHERE checks.member_id IN ? AND checks.target_group_id = ?
+	) AS ranked WHERE row_num = 1`, memberIDs, targetGroupID).Scan(&list).Error
 	if err != nil {
 		return nil, err
 	}
 	for i := range list {
 		result[list[i].MemberID] = list[i]
+	}
+	return result, nil
+}
+
+type ProfitCheckMemberGroup struct {
+	MemberID      uint
+	TargetGroupID uint
+}
+
+func (r *MainStationStore) ListLatestProfitChecksForMembers(memberIDs []uint) (map[ProfitCheckMemberGroup]MainAccountProfitCheck, error) {
+	result := make(map[ProfitCheckMemberGroup]MainAccountProfitCheck, len(memberIDs))
+	if len(memberIDs) == 0 {
+		return result, nil
+	}
+	var list []MainAccountProfitCheck
+	if err := r.db.Raw(`SELECT * FROM (
+		SELECT checks.*, ROW_NUMBER() OVER (
+			PARTITION BY checks.member_id, checks.target_group_id
+			ORDER BY checks.observed_at DESC, checks.id DESC
+		) AS row_num
+		FROM main_account_profit_checks AS checks
+		WHERE checks.member_id IN ?
+	) AS ranked WHERE row_num = 1`, memberIDs).Scan(&list).Error; err != nil {
+		return nil, err
+	}
+	for i := range list {
+		item := list[i]
+		result[ProfitCheckMemberGroup{MemberID: item.MemberID, TargetGroupID: item.TargetGroupID}] = item
 	}
 	return result, nil
 }
@@ -875,33 +956,41 @@ type MainStationRetentionResult struct {
 
 func (r *MainStationStore) DeleteHistoryBefore(cutoff time.Time) (MainStationRetentionResult, error) {
 	result := MainStationRetentionResult{}
-	err := r.db.Transaction(func(tx *gorm.DB) error {
-		res := tx.Where("created_at < ?", cutoff).Delete(&MainAccountHealthCheck{})
-		if res.Error != nil {
-			return res.Error
-		}
-		result.HealthChecks = res.RowsAffected
-
-		res = tx.Where("observed_at < ?", cutoff).Delete(&MainAccountProfitCheck{})
-		if res.Error != nil {
-			return res.Error
-		}
-		result.ProfitChecks = res.RowsAffected
-
-		res = tx.Where("day < ?", cutoff.Format("2006-01-02")).Delete(&MainStationProfitSnapshot{})
-		if res.Error != nil {
-			return res.Error
-		}
-		result.ProfitSnapshots = res.RowsAffected
-
-		res = tx.Where("created_at < ?", cutoff).Delete(&MainAccountAuditLog{})
-		if res.Error != nil {
-			return res.Error
-		}
-		result.AuditLogs = res.RowsAffected
-		return nil
-	})
+	var err error
+	if result.HealthChecks, err = r.deleteHistoryBatches(&MainAccountHealthCheck{}, "main_account_health_checks", "created_at", cutoff); err != nil {
+		return result, err
+	}
+	if result.ProfitChecks, err = r.deleteHistoryBatches(&MainAccountProfitCheck{}, "main_account_profit_checks", "observed_at", cutoff); err != nil {
+		return result, err
+	}
+	if result.ProfitSnapshots, err = r.deleteHistoryBatches(&MainStationProfitSnapshot{}, "main_station_profit_snapshots", "day", cutoff.Format("2006-01-02")); err != nil {
+		return result, err
+	}
+	result.AuditLogs, err = r.deleteHistoryBatches(&MainAccountAuditLog{}, "main_account_audit_logs", "created_at", cutoff)
 	return result, err
+}
+
+const mainStationHistoryDeleteBatchSize = 5000
+
+func (r *MainStationStore) deleteHistoryBatches(model any, table, column string, cutoff any) (int64, error) {
+	var total int64
+	for {
+		var ids []uint
+		if err := r.db.Table(table).Where(column+" < ?", cutoff).Order("id ASC").Limit(mainStationHistoryDeleteBatchSize).Pluck("id", &ids).Error; err != nil {
+			return total, err
+		}
+		if len(ids) == 0 {
+			return total, nil
+		}
+		result := r.db.Where("id IN ?", ids).Delete(model)
+		if result.Error != nil {
+			return total, result.Error
+		}
+		total += result.RowsAffected
+		if len(ids) < mainStationHistoryDeleteBatchSize {
+			return total, nil
+		}
+	}
 }
 
 func (r *MainStationStore) MarkMembersOrphaned(remoteAccountIDs []int64) ([]MainAccountPoolMember, error) {

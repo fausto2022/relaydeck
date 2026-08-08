@@ -122,8 +122,8 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
 
   async function handleSave() {
     if (!workspace) return
-    if (rankingIntervalSeconds !== 0 && (rankingIntervalSeconds < 5 || rankingIntervalSeconds > 86400)) {
-      toast.error("分组重排间隔必须为 0，或在 5 到 86400 秒之间")
+    if (rankingIntervalSeconds !== 0 && (rankingIntervalSeconds < 60 || rankingIntervalSeconds > 86400)) {
+      toast.error("分组重排间隔必须为 0，或在 1 到 1440 分钟之间")
       return
     }
     const autoExpandMarginValue = autoExpandMinMarginPercent.trim() === "" ? null : Number(autoExpandMinMarginPercent)
@@ -214,16 +214,16 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
             <Switch id="group-enabled" checked={enabled} onCheckedChange={setEnabled} />
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="group-ranking-interval">本分组重排间隔（秒）</Label>
+            <Label htmlFor="group-ranking-interval">本分组重排间隔（分钟）</Label>
             <Input
               id="group-ranking-interval"
               type="number"
               min={0}
-              max={86400}
-              value={rankingIntervalSeconds}
-              onChange={(event) => setRankingIntervalSeconds(Number(event.target.value))}
+              max={1440}
+              value={rankingIntervalSeconds / 60}
+              onChange={(event) => setRankingIntervalSeconds(Math.round(Number(event.target.value) * 60))}
             />
-            <p className="text-xs text-muted-foreground">填 0 继承主站全局设置；最小自定义间隔为 5 秒。</p>
+            <p className="text-xs text-muted-foreground">填 0 继承主站全局设置；最小自定义间隔为 1 分钟。</p>
           </div>
           <div className="space-y-2 border-t pt-4 sm:col-span-2">
             <Label htmlFor="group-minimum-margin">本分组最低利润率（%）</Label>

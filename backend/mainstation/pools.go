@@ -123,48 +123,64 @@ func (s *Service) ListGroupWorkspaces(includeMissing bool) ([]GroupWorkspaceDTO,
 	if err != nil {
 		return nil, err
 	}
+	pools, err := s.store.ListAllPools()
+	if err != nil {
+		return nil, err
+	}
+	poolGroups, err := s.store.ListAllPoolGroups()
+	if err != nil {
+		return nil, err
+	}
+	members, err := s.store.ListAllMembers()
+	if err != nil {
+		return nil, err
+	}
+	poolsByID := make(map[uint]*storage.MainAccountPool, len(pools))
+	for i := range pools {
+		poolsByID[pools[i].ID] = &pools[i]
+	}
+	poolIDsByGroup := make(map[uint][]uint, len(poolGroups))
+	groupCountByPool := make(map[uint]int, len(poolGroups))
+	for i := range poolGroups {
+		mapping := poolGroups[i]
+		poolIDsByGroup[mapping.TargetGroupID] = append(poolIDsByGroup[mapping.TargetGroupID], mapping.PoolID)
+		groupCountByPool[mapping.PoolID]++
+	}
+	memberCountByPool := make(map[uint]int, len(pools))
+	for i := range members {
+		memberCountByPool[members[i].PoolID]++
+	}
+	accountCountByGroup := make(map[int64]int, len(groups))
+	for i := range snapshots {
+		var remoteGroupIDs []int64
+		if json.Unmarshal([]byte(snapshots[i].GroupIDsJSON), &remoteGroupIDs) != nil {
+			continue
+		}
+		seen := make(map[int64]struct{}, len(remoteGroupIDs))
+		for _, remoteGroupID := range remoteGroupIDs {
+			if _, ok := seen[remoteGroupID]; ok {
+				continue
+			}
+			seen[remoteGroupID] = struct{}{}
+			accountCountByGroup[remoteGroupID]++
+		}
+	}
 	result := make([]GroupWorkspaceDTO, 0, len(groups))
 	for i := range groups {
-		pool, err := s.poolForGroup(&groups[i])
-		if err != nil {
-			return nil, err
+		var pool *storage.MainAccountPool
+		poolIDs := poolIDsByGroup[groups[i].ID]
+		if len(poolIDs) == 1 && groupCountByPool[poolIDs[0]] == 1 {
+			pool = poolsByID[poolIDs[0]]
 		}
-		members, err := s.store.ListMembers(pool.ID)
-		if err != nil {
-			return nil, err
-		}
-		accountCount := 0
-		for j := range snapshots {
-			if accountBelongsToRemoteGroup(&snapshots[j], groups[i].RemoteGroupID) {
-				accountCount++
+		if pool == nil {
+			pool, err = s.poolForGroup(&groups[i])
+			if err != nil {
+				return nil, err
 			}
 		}
-		result = append(result, GroupWorkspaceDTO{
-			Group:                          groups[i],
-			Enabled:                        pool.Enabled,
-			MinimumHealthyAccounts:         pool.MinimumHealthyMembers,
-			MinimumEffectiveConcurrency:    pool.MinimumEffectiveConcurrency,
-			RateSortDirection:              pool.RateSortDirection,
-			HealthPolicy:                   pool.HealthPolicyJSON,
-			MarginPolicy:                   pool.MarginPolicyJSON,
-			MinimumMarginBasisPoints:       poolMinimumMarginOverride(pool),
-			LastStatus:                     pool.LastStatus,
-			LastEvaluatedAt:                pool.LastEvaluatedAt,
-			RankingIntervalSeconds:         pool.RankingIntervalSeconds,
-			RankingDirtyAt:                 pool.RankingDirtyAt,
-			LastRankingAt:                  pool.LastRankingAt,
-			LastRankingError:               pool.LastRankingError,
-			AutoExpandEnabled:              pool.AutoExpandEnabled,
-			AutoExpandMinMarginBasisPoints: pool.AutoExpandMinMarginBasisPoints,
-			AutoExpandMinRateMicros:        pool.AutoExpandMinRateMicros,
-			AutoExpandCategoryRuleID:       pool.AutoExpandCategoryRuleID,
-			AutoExpandBlockedKeywords:      pool.AutoExpandBlockedKeywords,
-			DisabledCleanupSeconds:         pool.DisabledCleanupSeconds,
-			LastAutoExpandAt:               pool.LastAutoExpandAt,
-			LastAutoExpandError:            pool.LastAutoExpandError,
-			AccountCount:                   accountCount,
-			ManagedAccountCount:            len(members),
-		})
+		result = append(result, groupWorkspaceDTO(
+			groups[i], pool, accountCountByGroup[groups[i].RemoteGroupID], memberCountByPool[pool.ID],
+		))
 	}
 	return result, nil
 }
@@ -180,40 +196,140 @@ func (s *Service) groupWorkspace(group storage.UpstreamSyncTargetGroup, pool *st
 			accountCount++
 		}
 	}
-	return &GroupWorkspaceDTO{
+	dto := groupWorkspaceDTO(group, pool, accountCount, len(members))
+	return &dto, nil
+}
+
+func groupWorkspaceDTO(group storage.UpstreamSyncTargetGroup, pool *storage.MainAccountPool, accountCount, memberCount int) GroupWorkspaceDTO {
+	return GroupWorkspaceDTO{
 		Group: group, Enabled: pool.Enabled, MinimumHealthyAccounts: pool.MinimumHealthyMembers,
 		MinimumEffectiveConcurrency: pool.MinimumEffectiveConcurrency, RateSortDirection: pool.RateSortDirection,
 		HealthPolicy: pool.HealthPolicyJSON, MarginPolicy: pool.MarginPolicyJSON,
 		MinimumMarginBasisPoints: poolMinimumMarginOverride(pool), LastStatus: pool.LastStatus,
-		LastEvaluatedAt: pool.LastEvaluatedAt, RankingIntervalSeconds: pool.RankingIntervalSeconds,
+		LastEvaluatedAt: pool.LastEvaluatedAt, RankingIntervalSeconds: normalizedPoolRankingInterval(pool.RankingIntervalSeconds),
 		RankingDirtyAt: pool.RankingDirtyAt, LastRankingAt: pool.LastRankingAt, LastRankingError: pool.LastRankingError,
 		AutoExpandEnabled: pool.AutoExpandEnabled, AutoExpandMinMarginBasisPoints: pool.AutoExpandMinMarginBasisPoints,
 		AutoExpandMinRateMicros: pool.AutoExpandMinRateMicros, AutoExpandCategoryRuleID: pool.AutoExpandCategoryRuleID,
 		AutoExpandBlockedKeywords: pool.AutoExpandBlockedKeywords, DisabledCleanupSeconds: pool.DisabledCleanupSeconds,
 		LastAutoExpandAt: pool.LastAutoExpandAt, LastAutoExpandError: pool.LastAutoExpandError,
-		AccountCount: accountCount, ManagedAccountCount: len(members),
-	}, nil
+		AccountCount: accountCount, ManagedAccountCount: memberCount,
+	}
+}
+
+func normalizedPoolRankingInterval(value int) int {
+	if value == 0 {
+		return 0
+	}
+	return normalizedRankingInterval(value)
 }
 
 func (s *Service) ListGroupAccounts(groupID uint, includeMissing bool) ([]AccountDTO, error) {
-	group, err := s.mainStationGroup(groupID)
+	group, pool, selected, err := s.groupAccountSnapshots(groupID, includeMissing)
 	if err != nil {
 		return nil, err
+	}
+	return s.groupAccountDTOs(group, pool, selected)
+}
+
+func (s *Service) ListGroupAccountsPage(groupID uint, includeMissing bool, page, pageSize int) (*Page[AccountDTO], error) {
+	return s.ListGroupAccountsPageFiltered(groupID, includeMissing, page, pageSize, "", "all")
+}
+
+func (s *Service) ListGroupAccountsPageFiltered(groupID uint, includeMissing bool, page, pageSize int, search, status string) (*Page[AccountDTO], error) {
+	group, pool, selected, err := s.groupAccountSnapshots(groupID, includeMissing)
+	if err != nil {
+		return nil, err
+	}
+	selected, err = s.filterGroupAccountSnapshots(selected, search, status)
+	if err != nil {
+		return nil, err
+	}
+	page, pageSize = normalizePage(page, pageSize)
+	total := int64(len(selected))
+	start := (page - 1) * pageSize
+	if start > len(selected) {
+		start = len(selected)
+	}
+	end := start + pageSize
+	if end > len(selected) {
+		end = len(selected)
+	}
+	items, err := s.groupAccountDTOs(group, pool, selected[start:end])
+	if err != nil {
+		return nil, err
+	}
+	return &Page[AccountDTO]{
+		Items: items, Total: total, Page: page, PageSize: pageSize, Pages: pageCount(total, pageSize),
+	}, nil
+}
+
+func (s *Service) filterGroupAccountSnapshots(items []storage.MainStationAccountSnapshot, search, status string) ([]storage.MainStationAccountSnapshot, error) {
+	search = strings.ToLower(strings.TrimSpace(search))
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		status = "all"
+	}
+	membersByRemote := make(map[int64]*storage.MainAccountPoolMember)
+	if status == "unmanaged" || status == "unhealthy" {
+		remoteIDs := make([]int64, 0, len(items))
+		for i := range items {
+			remoteIDs = append(remoteIDs, items[i].RemoteAccountID)
+		}
+		members, err := s.store.ListMembersByRemoteAccountIDs(remoteIDs)
+		if err != nil {
+			return nil, err
+		}
+		for i := range members {
+			if members[i].RemoteAccountID != nil {
+				membersByRemote[*members[i].RemoteAccountID] = &members[i]
+			}
+		}
+	}
+	filtered := make([]storage.MainStationAccountSnapshot, 0, len(items))
+	for i := range items {
+		item := items[i]
+		if search != "" && !strings.Contains(strings.ToLower(fmt.Sprintf("%s %d %s", item.Name, item.RemoteAccountID, item.Platform)), search) {
+			continue
+		}
+		member := membersByRemote[item.RemoteAccountID]
+		switch status {
+		case "all":
+		case "enabled":
+			if !item.Schedulable {
+				continue
+			}
+		case "disabled":
+			if item.Schedulable {
+				continue
+			}
+		case "unmanaged":
+			if member != nil {
+				continue
+			}
+		case "unhealthy":
+			if member == nil || member.LastHealthStatus != "unhealthy" {
+				continue
+			}
+		default:
+			return nil, errors.New("invalid account status filter")
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered, nil
+}
+
+func (s *Service) groupAccountSnapshots(groupID uint, includeMissing bool) (*storage.UpstreamSyncTargetGroup, *storage.MainAccountPool, []storage.MainStationAccountSnapshot, error) {
+	group, err := s.mainStationGroup(groupID)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	pool, err := s.poolForGroup(group)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	config, err := s.store.GetConfig()
-	if err != nil {
-		return nil, err
-	}
-	policy := parseMarginPolicy(pool.MarginPolicyJSON)
-	policy.MinimumMarginBasisPoints = effectiveMinimumMarginBasisPoints(config, pool)
-	now := s.now()
 	items, err := s.store.ListAllAccountSnapshots(includeMissing)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	selected := make([]storage.MainStationAccountSnapshot, 0)
 	for i := range items {
@@ -221,6 +337,17 @@ func (s *Service) ListGroupAccounts(groupID uint, includeMissing bool) ([]Accoun
 			selected = append(selected, items[i])
 		}
 	}
+	return group, pool, selected, nil
+}
+
+func (s *Service) groupAccountDTOs(group *storage.UpstreamSyncTargetGroup, pool *storage.MainAccountPool, selected []storage.MainStationAccountSnapshot) ([]AccountDTO, error) {
+	config, err := s.store.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+	policy := parseMarginPolicy(pool.MarginPolicyJSON)
+	policy.MinimumMarginBasisPoints = effectiveMinimumMarginBasisPoints(config, pool)
+	now := s.now()
 	batch, err := s.loadAccountDTOBatch(selected)
 	if err != nil {
 		return nil, err

@@ -62,7 +62,7 @@ func TestSyncBackfillsAndUpdatesProfitSummary(t *testing.T) {
 	if err := storage.NewChannels(db).UpdateCosts(channel.ID, 4, 4); err != nil {
 		t.Fatalf("update current upstream cost: %v", err)
 	}
-	if err := storage.NewRates(db).AppendCost(&storage.CostSnapshot{ChannelID: channel.ID, TodayCost: 4, SampledAt: now.Add(time.Hour)}); err != nil {
+	if err := service.rates.AppendCost(&storage.CostSnapshot{ChannelID: channel.ID, TodayCost: 4, SampledAt: now.Add(time.Hour)}); err != nil {
 		t.Fatalf("append refreshed cost: %v", err)
 	}
 	if _, err := service.Sync(context.Background()); err != nil {

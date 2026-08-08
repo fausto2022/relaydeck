@@ -31,6 +31,11 @@ type schedulingRankSignal struct {
 
 const schedulingPriorityStep = 10
 
+const (
+	schedulingScoreHysteresis          = 2
+	schedulingStabilityScoreHysteresis = 4
+)
+
 func normalizeSchedulingPriority(priority int) int {
 	if priority > 0 {
 		return priority
@@ -54,14 +59,48 @@ func (s *Service) poolSchedulingPriorities(poolID uint) (map[uint]int, error) {
 	if err != nil {
 		return nil, err
 	}
+	priorities, _, err := s.poolSchedulingPrioritiesFor(pool, members)
+	return priorities, err
+}
+
+func (s *Service) poolSchedulingPrioritiesFor(
+	pool *storage.MainAccountPool,
+	members []storage.MainAccountPoolMember,
+) (map[uint]int, map[int64]*storage.MainStationAccountSnapshot, error) {
 	now := s.now()
+	memberIDs := make([]uint, 0, len(members))
+	for i := range members {
+		memberIDs = append(memberIDs, members[i].ID)
+	}
+	recentByMember, err := s.store.ListRecentHealthChecksByMember(memberIDs, 20)
+	if err != nil {
+		return nil, nil, err
+	}
+	aggregates, err := s.store.HealthAggregates(memberIDs, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	snapshots, err := s.store.ListAllAccountSnapshots(true)
+	if err != nil {
+		return nil, nil, err
+	}
+	snapshotsByRemote := make(map[int64]*storage.MainStationAccountSnapshot, len(snapshots))
+	for i := range snapshots {
+		snapshot := &snapshots[i]
+		snapshotsByRemote[snapshot.RemoteAccountID] = snapshot
+	}
+	locks, err := s.store.ListAllActiveGuardLocks()
+	if err != nil {
+		return nil, nil, err
+	}
+	lockedRemoteIDs := make(map[int64]struct{}, len(locks))
+	for i := range locks {
+		lockedRemoteIDs[locks[i].RemoteAccountID] = struct{}{}
+	}
 	signals := make([]schedulingRankSignal, 0, len(members))
 	for i := range members {
 		member := &members[i]
-		stats, statsErr := s.MemberHealthStats(member.ID)
-		if statsErr != nil {
-			stats = HealthStats{}
-		}
+		stats := buildMemberHealthStats(member, recentByMember[member.ID], aggregates[member.ID])
 		costKnown := validCostSnapshot(member, now)
 		costMicros := int64(0)
 		if costKnown {
@@ -72,14 +111,13 @@ func (s *Service) poolSchedulingPriorities(poolID uint) (map[uint]int, error) {
 		remoteActive := false
 		locksClear := false
 		if member.RemoteAccountID != nil {
-			if snapshot, snapshotErr := s.store.FindAccountSnapshot(*member.RemoteAccountID); snapshotErr == nil {
+			if snapshot := snapshotsByRemote[*member.RemoteAccountID]; snapshot != nil {
 				currentPriority = normalizeRemotePriority(snapshot.Priority)
 				remoteSchedulable = snapshot.Schedulable && !snapshot.Missing
 				remoteActive = strings.EqualFold(snapshot.Status, "active")
 			}
-			if locks, lockErr := s.store.ListActiveGuardLocks(*member.RemoteAccountID); lockErr == nil {
-				locksClear = len(locks) == 0
-			}
+			_, locked := lockedRemoteIDs[*member.RemoteAccountID]
+			locksClear = !locked
 		}
 		healthBand := schedulingHealthBand(member)
 		successBucket := schedulingSuccessBucket(stats.Recent20SuccessRate)
@@ -104,11 +142,15 @@ func (s *Service) poolSchedulingPriorities(poolID uint) (map[uint]int, error) {
 				(!member.HealthEnabled || (member.LastHealthStatus != "unhealthy" && member.Status != "quarantined")),
 		})
 	}
-	return rankSchedulingSignals(signals, pool.RateSortDirection), nil
+	return rankSchedulingSignals(signals, pool.RateSortDirection), snapshotsByRemote, nil
 }
 
 func rankSchedulingSignals(signals []schedulingRankSignal, rateSortDirection string) map[uint]int {
 	costPenalties := schedulingCostPenalties(signals, rateSortDirection)
+	hysteresis := schedulingScoreHysteresis
+	if strings.EqualFold(rateSortDirection, "stability") {
+		hysteresis = schedulingStabilityScoreHysteresis
+	}
 	for i := range signals {
 		signals[i].Score = signals[i].Priority + schedulingSuccessPenalty(signals[i].SuccessBucket) +
 			schedulingLatencyPenalty(signals[i].LatencyBucket) + costPenalties[signals[i].MemberID]
@@ -122,6 +164,8 @@ func rankSchedulingSignals(signals []schedulingRankSignal, rateSortDirection str
 			return left.HealthBand < right.HealthBand
 		case left.Preferred != right.Preferred:
 			return left.Preferred
+		case left.CurrentPriority > 0 && right.CurrentPriority > 0 && left.CurrentPriority != right.CurrentPriority:
+			return left.CurrentPriority < right.CurrentPriority
 		case left.Score != right.Score:
 			return left.Score < right.Score
 		case left.CurrentPriority != right.CurrentPriority:
@@ -138,7 +182,20 @@ func rankSchedulingSignals(signals []schedulingRankSignal, rateSortDirection str
 			return left.MemberID < right.MemberID
 		}
 	})
+	for index := 1; index < len(signals); index++ {
+		for current := index; current > 0; current-- {
+			left, right := signals[current-1], signals[current]
+			if !sameSchedulingRankBand(left, right) || right.Score+hysteresis >= left.Score {
+				break
+			}
+			signals[current-1], signals[current] = signals[current], signals[current-1]
+		}
+	}
 	return assignSparseSchedulingPriorities(signals)
+}
+
+func sameSchedulingRankBand(left, right schedulingRankSignal) bool {
+	return left.Enabled == right.Enabled && left.HealthBand == right.HealthBand && left.Preferred == right.Preferred
 }
 
 func schedulingCostPenalties(signals []schedulingRankSignal, direction string) map[uint]int {
@@ -162,8 +219,15 @@ func schedulingCostPenalties(signals []schedulingRankSignal, direction string) m
 	for _, signal := range signals {
 		penalties[signal.MemberID] = unknownPenalty
 	}
+	lastCost := int64(0)
+	lastBucket := 0
 	for index, signal := range known {
-		bucket := index * 4 / maxInt(len(known), 1)
+		bucket := lastBucket
+		if index == 0 || signal.CostMicros != lastCost {
+			bucket = index * 4 / maxInt(len(known), 1)
+			lastCost = signal.CostMicros
+			lastBucket = bucket
+		}
 		if direction == "stability" {
 			penalties[signal.MemberID] = bucket
 		} else {
@@ -387,7 +451,7 @@ func validatePoolRankingInterval(value int) error {
 func effectivePoolRankingInterval(pool *storage.MainAccountPool, globalSeconds int) time.Duration {
 	seconds := normalizedRankingInterval(globalSeconds)
 	if pool != nil && pool.RankingIntervalSeconds != 0 {
-		seconds = pool.RankingIntervalSeconds
+		seconds = normalizedRankingInterval(pool.RankingIntervalSeconds)
 	}
 	return time.Duration(seconds) * time.Second
 }
@@ -457,7 +521,7 @@ func (s *Service) reconcilePoolRanking(ctx context.Context, poolID uint, source 
 	if err != nil {
 		return err
 	}
-	priorities, err := s.poolSchedulingPriorities(poolID)
+	priorities, snapshotsByRemote, err := s.poolSchedulingPrioritiesFor(pool, members)
 	if err != nil {
 		return err
 	}
@@ -486,8 +550,8 @@ func (s *Service) reconcilePoolRanking(ctx context.Context, poolID uint, source 
 				continue
 			}
 		}
-		snapshot, snapshotErr := s.store.FindAccountSnapshot(*member.RemoteAccountID)
-		if snapshotErr == nil && snapshot.Priority == desiredPriority && snapshot.Concurrency == member.Concurrency && snapshot.Weight == desiredLoadFactor {
+		snapshot := snapshotsByRemote[*member.RemoteAccountID]
+		if snapshot != nil && snapshot.Priority == desiredPriority && snapshot.Concurrency == member.Concurrency && snapshot.Weight == desiredLoadFactor {
 			continue
 		}
 		updated, updateErr := client.UpdateAccountScheduling(ctx, adminTarget, *member.RemoteAccountID, sub2api.AdminAccountSchedulingUpdate{
@@ -514,12 +578,41 @@ func (s *Service) reconcilePoolRanking(ctx context.Context, poolID uint, source 
 		if updated != nil {
 			s.saveRemoteSchedulingSnapshot(updated, *member.RemoteAccountID)
 		}
-		_ = s.appendAudit(&pool.ID, &member.ID, member.RemoteAccountID, "member_scheduling_rank", source, true, snapshot, updated, map[string]any{
+		_ = s.appendAudit(&pool.ID, &member.ID, member.RemoteAccountID, "member_scheduling_rank", source, true, schedulingAuditState(snapshot), schedulingAuditState(updated), map[string]any{
 			"automatic_priority": desiredPriority,
 			"load_factor":        desiredLoadFactor,
 		}, "automatic scheduling fields applied", "")
 	}
 	return errors.Join(reconcileErrors...)
+}
+
+func schedulingAuditState(account any) any {
+	switch item := account.(type) {
+	case *storage.MainStationAccountSnapshot:
+		if item == nil {
+			return nil
+		}
+		return map[string]any{
+			"priority":    item.Priority,
+			"concurrency": item.Concurrency,
+			"load_factor": item.Weight,
+			"schedulable": item.Schedulable,
+			"status":      item.Status,
+		}
+	case *sub2api.AdminAccount:
+		if item == nil {
+			return nil
+		}
+		return map[string]any{
+			"priority":    item.Priority,
+			"concurrency": item.Concurrency,
+			"load_factor": item.LoadFactor,
+			"schedulable": item.Schedulable,
+			"status":      item.Status,
+		}
+	default:
+		return nil
+	}
 }
 
 func validCostSnapshot(member *storage.MainAccountPoolMember, now time.Time) bool {

@@ -16,7 +16,8 @@ type Rates struct {
 	balanceTrendMu    sync.Mutex
 	costTrendMu       sync.Mutex
 	balanceTrendCache map[int]balanceTrendCacheEntry
-	costTrendCache    map[int]costTrendCacheEntry
+	costTrendCache    map[costTrendCacheKey]costTrendCacheEntry
+	currentCostCache  map[string]currentCostCacheEntry
 }
 
 type balanceTrendCacheEntry struct {
@@ -27,15 +28,25 @@ type balanceTrendCacheEntry struct {
 
 type costTrendCacheEntry struct {
 	loadedAt time.Time
-	day      string
 	items    []DailyCostAggregate
+}
+
+type costTrendCacheKey struct {
+	days int
+	day  string
+}
+
+type currentCostCacheEntry struct {
+	loadedAt time.Time
+	items    map[uint]float64
 }
 
 func NewRates(db *gorm.DB) *Rates {
 	return &Rates{
 		db:                db,
 		balanceTrendCache: make(map[int]balanceTrendCacheEntry),
-		costTrendCache:    make(map[int]costTrendCacheEntry),
+		costTrendCache:    make(map[costTrendCacheKey]costTrendCacheEntry),
+		currentCostCache:  make(map[string]currentCostCacheEntry),
 	}
 }
 
@@ -316,24 +327,7 @@ func (r *Rates) AggregateBalanceTrend(days int) ([]DailyAggregate, error) {
 
 // AggregateCostTrend 取最近 N 天按 Asia/Shanghai 自然日归一化后的渠道消费增量。
 func (r *Rates) AggregateCostTrend(days int) ([]DailyCostAggregate, error) {
-	if days <= 0 {
-		days = 7
-	}
-	now := trendNow()
-	cacheDay := dayKey(dayStart(now))
-	r.costTrendMu.Lock()
-	defer r.costTrendMu.Unlock()
-	cached, ok := r.costTrendCache[days]
-	cacheAge := now.Sub(cached.loadedAt)
-	if ok && cached.day == cacheDay && cacheAge >= 0 && cacheAge < trendCacheTTL {
-		return append([]DailyCostAggregate(nil), cached.items...), nil
-	}
-	items, err := r.AggregateCostTrendAt(days, now)
-	if err != nil {
-		return nil, err
-	}
-	r.costTrendCache[days] = costTrendCacheEntry{loadedAt: now, day: cacheDay, items: append([]DailyCostAggregate(nil), items...)}
-	return items, nil
+	return r.AggregateCostTrendAt(days, trendNow())
 }
 
 func (r *Rates) invalidateBalanceTrend() {
@@ -344,7 +338,8 @@ func (r *Rates) invalidateBalanceTrend() {
 
 func (r *Rates) invalidateCostTrend() {
 	r.costTrendMu.Lock()
-	r.costTrendCache = make(map[int]costTrendCacheEntry)
+	r.costTrendCache = make(map[costTrendCacheKey]costTrendCacheEntry)
+	r.currentCostCache = make(map[string]currentCostCacheEntry)
 	r.costTrendMu.Unlock()
 }
 
@@ -354,6 +349,16 @@ func (r *Rates) AggregateCostTrendAt(days int, now time.Time) ([]DailyCostAggreg
 		days = 7
 	}
 	today := dayStart(now)
+	key := costTrendCacheKey{days: days, day: dayKey(today)}
+	loadedAt := trendNow()
+	r.costTrendMu.Lock()
+	defer r.costTrendMu.Unlock()
+	if cached, ok := r.costTrendCache[key]; ok {
+		cacheAge := loadedAt.Sub(cached.loadedAt)
+		if cacheAge >= 0 && cacheAge < trendCacheTTL {
+			return append([]DailyCostAggregate(nil), cached.items...), nil
+		}
+	}
 	since := today.AddDate(0, 0, -(days - 1))
 
 	rows, err := r.aggregateDailyCostDeltas(since, days)
@@ -361,6 +366,7 @@ func (r *Rates) AggregateCostTrendAt(days int, now time.Time) ([]DailyCostAggreg
 		return nil, err
 	}
 	if len(rows) == 0 {
+		r.costTrendCache[key] = costTrendCacheEntry{loadedAt: loadedAt, items: []DailyCostAggregate{}}
 		return []DailyCostAggregate{}, nil
 	}
 	byDay := make(map[string]float64, days)
@@ -372,6 +378,7 @@ func (r *Rates) AggregateCostTrendAt(days int, now time.Time) ([]DailyCostAggreg
 	for day := since; !day.After(today); day = day.AddDate(0, 0, 1) {
 		out = append(out, DailyCostAggregate{Day: day, Cost: byDay[dayKey(day)]})
 	}
+	r.costTrendCache[key] = costTrendCacheEntry{loadedAt: loadedAt, items: append([]DailyCostAggregate(nil), out...)}
 	return out, nil
 }
 
@@ -380,6 +387,16 @@ func (r *Rates) AggregateCostTrendAt(days int, now time.Time) ([]DailyCostAggreg
 // 归零后，归零前后的增量会连续累加，不会重复计算或丢失凌晨消费。
 func (r *Rates) CurrentDayCostsAt(now time.Time) (map[uint]float64, error) {
 	today := dayStart(now)
+	key := dayKey(today)
+	loadedAt := trendNow()
+	r.costTrendMu.Lock()
+	defer r.costTrendMu.Unlock()
+	if cached, ok := r.currentCostCache[key]; ok {
+		cacheAge := loadedAt.Sub(cached.loadedAt)
+		if cacheAge >= 0 && cacheAge < trendCacheTTL {
+			return cloneCurrentCosts(cached.items), nil
+		}
+	}
 	rows, err := r.aggregateDailyCostDeltas(today, 1)
 	if err != nil {
 		return nil, err
@@ -388,7 +405,16 @@ func (r *Rates) CurrentDayCostsAt(now time.Time) (map[uint]float64, error) {
 	for _, row := range rows {
 		result[row.ChannelID] = row.Total
 	}
+	r.currentCostCache[key] = currentCostCacheEntry{loadedAt: loadedAt, items: cloneCurrentCosts(result)}
 	return result, nil
+}
+
+func cloneCurrentCosts(items map[uint]float64) map[uint]float64 {
+	cloned := make(map[uint]float64, len(items))
+	for channelID, cost := range items {
+		cloned[channelID] = cost
+	}
+	return cloned
 }
 
 type dailyChannelCostRow struct {
