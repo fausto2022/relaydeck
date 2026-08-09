@@ -113,6 +113,10 @@ func TestClassifierUsesUpstreamPlatformBeforeNameInference(t *testing.T) {
 	if xai.Provider != "grok" {
 		t.Fatalf("xai alias classification = %#v", xai)
 	}
+	inferredImage := classifier.ClassifyWithProvider("", "生图套餐", "")
+	if inferredImage.Provider != "image" || !inferredImage.Visible {
+		t.Fatalf("inferred image classification = %#v", inferredImage)
+	}
 }
 
 func TestServiceSaveNormalizesAndPersistsRules(t *testing.T) {
