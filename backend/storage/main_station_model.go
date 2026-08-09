@@ -186,13 +186,13 @@ func (MainAccountPoolMember) TableName() string { return "main_account_pool_memb
 type MainAccountHealthCheck struct {
 	ID                  uint      `gorm:"primaryKey" json:"id"`
 	PoolID              uint      `gorm:"not null;index" json:"pool_id"`
-	MemberID            uint      `gorm:"not null;index:idx_health_member_created,priority:1;index:idx_health_member_level_created,priority:1" json:"member_id"`
+	MemberID            uint      `gorm:"not null;index:idx_health_member_created,priority:1;index:idx_health_member_level_created,priority:1;index:idx_health_member_status_created,priority:1" json:"member_id"`
 	RemoteAccountID     int64     `gorm:"not null;index" json:"remote_account_id"`
 	Level               string    `gorm:"size:8;not null;index;index:idx_health_member_level_created,priority:2" json:"level"`
 	Protocol            string    `gorm:"size:32" json:"protocol,omitempty"`
 	Model               string    `gorm:"size:256" json:"model,omitempty"`
 	Endpoint            string    `gorm:"size:512" json:"endpoint,omitempty"`
-	Status              string    `gorm:"size:32;not null;index" json:"status"`
+	Status              string    `gorm:"size:32;not null;index;index:idx_health_member_status_created,priority:2" json:"status"`
 	ErrorClass          string    `gorm:"size:64;index" json:"error_class,omitempty"`
 	HTTPStatus          int       `json:"http_status,omitempty"`
 	LatencyMS           int64     `gorm:"not null;default:0" json:"latency_ms"`
@@ -204,7 +204,7 @@ type MainAccountHealthCheck struct {
 	TriggeredAction     string    `gorm:"size:64" json:"triggered_action,omitempty"`
 	StartedAt           time.Time `gorm:"not null" json:"started_at"`
 	FinishedAt          time.Time `gorm:"not null" json:"finished_at"`
-	CreatedAt           time.Time `gorm:"not null;index;index:idx_health_member_created,priority:2;index:idx_health_member_level_created,priority:3" json:"created_at"`
+	CreatedAt           time.Time `gorm:"not null;index;index:idx_health_member_created,priority:2;index:idx_health_member_level_created,priority:3;index:idx_health_member_status_created,priority:3" json:"created_at"`
 }
 
 func (MainAccountHealthCheck) TableName() string { return "main_account_health_checks" }

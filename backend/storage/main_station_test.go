@@ -94,6 +94,37 @@ func TestEmptyDatabaseCreatesMainStationSchemaWithoutConfiguration(t *testing.T)
 	}
 }
 
+func TestListLatestProfitChecksForMemberGroupsFiltersTargetGroups(t *testing.T) {
+	db := openTestDB(t)
+	store := NewMainStationStore(db)
+	now := time.Now()
+	checks := []MainAccountProfitCheck{
+		{PoolID: 1, MemberID: 7, TargetGroupID: 11, Status: "healthy", ObservedAt: now.Add(-2 * time.Minute), CreatedAt: now.Add(-2 * time.Minute)},
+		{PoolID: 1, MemberID: 7, TargetGroupID: 11, Status: "risk", ObservedAt: now.Add(-time.Minute), CreatedAt: now.Add(-time.Minute)},
+		{PoolID: 1, MemberID: 7, TargetGroupID: 22, Status: "healthy", ObservedAt: now, CreatedAt: now},
+	}
+	if err := db.Create(&checks).Error; err != nil {
+		t.Fatalf("create profit checks: %v", err)
+	}
+
+	filtered, err := store.ListLatestProfitChecksForMemberGroups([]uint{7}, []uint{11})
+	if err != nil {
+		t.Fatalf("list filtered profit checks: %v", err)
+	}
+	check, ok := filtered[ProfitCheckMemberGroup{MemberID: 7, TargetGroupID: 11}]
+	if !ok || check.Status != "risk" || len(filtered) != 1 {
+		t.Fatalf("filtered profit checks = %#v", filtered)
+	}
+
+	all, err := store.ListLatestProfitChecksForMembers([]uint{7})
+	if err != nil {
+		t.Fatalf("list all profit checks: %v", err)
+	}
+	if len(all) != 2 || all[ProfitCheckMemberGroup{MemberID: 7, TargetGroupID: 22}].Status != "healthy" {
+		t.Fatalf("all profit checks = %#v", all)
+	}
+}
+
 func TestMainStationModelsUseMySQLCompatibleUpsertAndIndexes(t *testing.T) {
 	db, err := gorm.Open(mysqlDriver.New(mysqlDriver.Config{
 		DSN:                       "user:password@tcp(127.0.0.1:3306)/relaydeck?charset=utf8mb4&parseTime=True&loc=Local",

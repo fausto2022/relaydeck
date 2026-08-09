@@ -145,7 +145,13 @@ func (s *Service) ProtectionPreviewForPool(poolID uint) (*ProtectionPreview, err
 	for i := range poolGroups {
 		groupIDsByPool[poolGroups[i].PoolID] = append(groupIDsByPool[poolGroups[i].PoolID], poolGroups[i].TargetGroupID)
 	}
-	latestProfit, err := s.store.ListLatestProfitChecksForMembers(memberIDs)
+	var latestProfit map[storage.ProfitCheckMemberGroup]storage.MainAccountProfitCheck
+	if poolID != 0 {
+		targetGroupIDs := uniquePoolTargetGroupIDs(groupIDsByPool, poolID)
+		latestProfit, err = s.store.ListLatestProfitChecksForMemberGroups(memberIDs, targetGroupIDs)
+	} else {
+		latestProfit, err = s.store.ListLatestProfitChecksForMembers(memberIDs)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +196,21 @@ func (s *Service) ProtectionPreviewForPool(poolID uint) (*ProtectionPreview, err
 		return preview.SchedulableAccountIDs[i] < preview.SchedulableAccountIDs[j]
 	})
 	return preview, nil
+}
+
+func uniquePoolTargetGroupIDs(groupIDsByPool map[uint][]uint, poolID uint) []uint {
+	seen := make(map[uint]struct{})
+	for _, groupID := range groupIDsByPool[poolID] {
+		if groupID != 0 {
+			seen[groupID] = struct{}{}
+		}
+	}
+	result := make([]uint, 0, len(seen))
+	for groupID := range seen {
+		result = append(result, groupID)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
 }
 
 func (s *Service) ClearAutomaticLocks(ctx context.Context, remoteAccountID int64, clearedBy string) (*SchedulingDecision, error) {

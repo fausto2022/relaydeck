@@ -121,6 +121,11 @@ export default function MainStationPage() {
   const accountsRequestRef = useRef(0)
   const accountsInFlightRef = useRef(0)
 
+  const selectGroup = useCallback((groupID: number | null) => {
+    setAccountsPage(1)
+    setSelectedGroupID(groupID)
+  }, [])
+
   const selectedWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.group.id === selectedGroupID) ?? null,
     [selectedGroupID, workspaces],
@@ -212,8 +217,6 @@ export default function MainStationPage() {
     if (!config?.configured) return
     void loadRisk(selectedGroupID)
   }, [config?.configured, loadRisk, selectedGroupID])
-  useEffect(() => { setAccountsPage(1) }, [selectedGroupID])
-  useEffect(() => { setAccountsPage(1) }, [deferredSearch, statusFilter])
   useEffect(() => {
     if (!config?.configured) return
     void loadAccounts(selectedGroupID)
@@ -469,7 +472,7 @@ export default function MainStationPage() {
                   <p className="text-xs text-muted-foreground">{workspaces.length} 个分组</p>
                 </div>
                 <nav className="max-h-64 overflow-y-auto p-2 md:max-h-[520px]">
-                  <GroupButton active={selectedGroupID == null} name="全部账号" count={workspaces.reduce((sum, item) => sum + item.account_count, 0)} icon={<Users className="size-4" />} onClick={() => setSelectedGroupID(null)} />
+                  <GroupButton active={selectedGroupID == null} name="全部账号" count={workspaces.reduce((sum, item) => sum + item.account_count, 0)} icon={<Users className="size-4" />} onClick={() => selectGroup(null)} />
                   {workspaces.map((workspace) => (
                     <GroupButton
                       key={workspace.group.id}
@@ -477,7 +480,7 @@ export default function MainStationPage() {
                       name={workspace.group.name}
                       count={workspace.account_count}
                       status={workspace.last_status}
-                      onClick={() => setSelectedGroupID(workspace.group.id)}
+                      onClick={() => selectGroup(workspace.group.id)}
                     />
                   ))}
                 </nav>
@@ -505,9 +508,9 @@ export default function MainStationPage() {
                 <div className="flex flex-wrap gap-2 border-b px-4 py-3">
                   <div className="relative min-w-52 flex-1">
                     <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称或 ID" className="pl-9" />
+                    <Input value={search} onChange={(event) => { setAccountsPage(1); setSearch(event.target.value) }} placeholder="搜索名称或 ID" className="pl-9" />
                   </div>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <Select value={statusFilter} onValueChange={(value) => { setAccountsPage(1); setStatusFilter(value) }}>
                     <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">全部状态</SelectItem>

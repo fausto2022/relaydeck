@@ -15,6 +15,16 @@ import (
 	"github.com/fausto2022/relaydeck/backend/storage"
 )
 
+func TestUniquePoolTargetGroupIDs(t *testing.T) {
+	got := uniquePoolTargetGroupIDs(map[uint][]uint{
+		3: {22, 11, 22, 0},
+	}, 3)
+	want := []uint{11, 22}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("target group ids = %#v, want %#v", got, want)
+	}
+}
+
 func TestProtectionPolicyRequiresObservationAndDisablingPreservesLocks(t *testing.T) {
 	unobservedService, _, _, _ := newTestService(t)
 	configureTestStation(t, unobservedService)

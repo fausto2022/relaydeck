@@ -654,17 +654,16 @@ func (r *MainStationStore) ListRecentHealthChecksByMember(memberIDs []uint, limi
 	if limit <= 0 {
 		limit = 100
 	}
+	// 每个成员的子查询都命中 member_id + status + created_at 复合索引并立即 LIMIT，
+	// 再用 UNION ALL 合并，避免窗口函数先扫描、排序所有成员的历史探活记录。
+	parts := make([]string, 0, len(memberIDs))
+	args := make([]any, 0, len(memberIDs)*2)
+	for index, memberID := range memberIDs {
+		parts = append(parts, fmt.Sprintf("SELECT * FROM (SELECT * FROM main_account_health_checks WHERE member_id = ? AND status IN ('success', 'failure') ORDER BY created_at DESC, id DESC LIMIT ?) AS member_%d", index))
+		args = append(args, memberID, limit)
+	}
 	var list []MainAccountHealthCheck
-	err := r.db.Raw(`SELECT * FROM (
-		SELECT checks.*, ROW_NUMBER() OVER (
-			PARTITION BY checks.member_id
-			ORDER BY checks.created_at DESC, checks.id DESC
-		) AS row_num
-		FROM main_account_health_checks AS checks
-		WHERE checks.member_id IN ? AND checks.status IN ('success', 'failure')
-	) AS ranked WHERE row_num <= ?
-	ORDER BY member_id ASC, created_at DESC, id DESC`, memberIDs, limit).Scan(&list).Error
-	if err != nil {
+	if err := r.db.Raw(strings.Join(parts, " UNION ALL "), args...).Scan(&list).Error; err != nil {
 		return nil, err
 	}
 	for i := range list {
@@ -840,19 +839,35 @@ type ProfitCheckMemberGroup struct {
 }
 
 func (r *MainStationStore) ListLatestProfitChecksForMembers(memberIDs []uint) (map[ProfitCheckMemberGroup]MainAccountProfitCheck, error) {
+	return r.listLatestProfitChecksForMemberGroups(memberIDs, nil)
+}
+
+// ListLatestProfitChecksForMemberGroups 只读取指定成员和目标分组的最新利润记录。
+// 主站风险预览只需要当前池绑定的目标分组，避免扫描成员在其他分组的历史记录。
+func (r *MainStationStore) ListLatestProfitChecksForMemberGroups(memberIDs, targetGroupIDs []uint) (map[ProfitCheckMemberGroup]MainAccountProfitCheck, error) {
+	return r.listLatestProfitChecksForMemberGroups(memberIDs, targetGroupIDs)
+}
+
+func (r *MainStationStore) listLatestProfitChecksForMemberGroups(memberIDs, targetGroupIDs []uint) (map[ProfitCheckMemberGroup]MainAccountProfitCheck, error) {
 	result := make(map[ProfitCheckMemberGroup]MainAccountProfitCheck, len(memberIDs))
 	if len(memberIDs) == 0 {
 		return result, nil
 	}
 	var list []MainAccountProfitCheck
-	if err := r.db.Raw(`SELECT * FROM (
+	query := `SELECT * FROM (
 		SELECT checks.*, ROW_NUMBER() OVER (
 			PARTITION BY checks.member_id, checks.target_group_id
 			ORDER BY checks.observed_at DESC, checks.id DESC
 		) AS row_num
 		FROM main_account_profit_checks AS checks
-		WHERE checks.member_id IN ?
-	) AS ranked WHERE row_num = 1`, memberIDs).Scan(&list).Error; err != nil {
+		WHERE checks.member_id IN ?`
+	args := []any{memberIDs}
+	if len(targetGroupIDs) > 0 {
+		query += " AND checks.target_group_id IN ?"
+		args = append(args, targetGroupIDs)
+	}
+	query += ") AS ranked WHERE row_num = 1"
+	if err := r.db.Raw(query, args...).Scan(&list).Error; err != nil {
 		return nil, err
 	}
 	for i := range list {
