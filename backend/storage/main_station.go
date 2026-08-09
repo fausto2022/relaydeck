@@ -536,16 +536,18 @@ type HealthCheckMemberLevel struct {
 	Level    string
 }
 
+const (
+	latestHealthChecksQueryBatchSize = 200
+	recentHealthChecksQueryBatchSize = 200
+)
+
 func (r *MainStationStore) ListLatestHealthChecks(keys []HealthCheckMemberLevel) (map[HealthCheckMemberLevel]*MainAccountHealthCheck, error) {
 	result := make(map[HealthCheckMemberLevel]*MainAccountHealthCheck, len(keys))
 	if len(keys) == 0 {
 		return result, nil
 	}
 	seen := make(map[HealthCheckMemberLevel]struct{}, len(keys))
-	memberIDs := make([]uint, 0, len(keys))
-	levels := make([]string, 0, len(keys))
-	seenMembers := make(map[uint]struct{}, len(keys))
-	seenLevels := make(map[string]struct{}, len(keys))
+	uniqueKeys := make([]HealthCheckMemberLevel, 0, len(keys))
 	for _, key := range keys {
 		key.Level = strings.ToUpper(strings.TrimSpace(key.Level))
 		if key.MemberID == 0 || key.Level == "" {
@@ -555,34 +557,29 @@ func (r *MainStationStore) ListLatestHealthChecks(keys []HealthCheckMemberLevel)
 			continue
 		}
 		seen[key] = struct{}{}
-		if _, ok := seenMembers[key.MemberID]; !ok {
-			seenMembers[key.MemberID] = struct{}{}
-			memberIDs = append(memberIDs, key.MemberID)
-		}
-		if _, ok := seenLevels[key.Level]; !ok {
-			seenLevels[key.Level] = struct{}{}
-			levels = append(levels, key.Level)
-		}
+		uniqueKeys = append(uniqueKeys, key)
 	}
-	if len(seen) == 0 {
+	if len(uniqueKeys) == 0 {
 		return result, nil
 	}
-	var list []MainAccountHealthCheck
-	if err := r.db.Raw(`SELECT * FROM (
-		SELECT checks.*, ROW_NUMBER() OVER (
-			PARTITION BY checks.member_id, checks.level
-			ORDER BY checks.created_at DESC, checks.id DESC
-		) AS row_num
-		FROM main_account_health_checks AS checks
-		WHERE checks.member_id IN ? AND checks.level IN ?
-	) AS ranked WHERE row_num = 1`, memberIDs, levels).Scan(&list).Error; err != nil {
-		return nil, err
-	}
-	for i := range list {
-		item := &list[i]
-		key := HealthCheckMemberLevel{MemberID: item.MemberID, Level: item.Level}
-		if _, ok := seen[key]; ok {
-			result[key] = item
+	for start := 0; start < len(uniqueKeys); start += latestHealthChecksQueryBatchSize {
+		end := min(start+latestHealthChecksQueryBatchSize, len(uniqueKeys))
+		parts := make([]string, 0, end-start)
+		args := make([]any, 0, (end-start)*2)
+		for index, key := range uniqueKeys[start:end] {
+			parts = append(parts, fmt.Sprintf("SELECT * FROM (SELECT * FROM main_account_health_checks WHERE member_id = ? AND level = ? ORDER BY created_at DESC, id DESC LIMIT 1) AS latest_%d", index))
+			args = append(args, key.MemberID, key.Level)
+		}
+		var list []MainAccountHealthCheck
+		if err := r.db.Raw(strings.Join(parts, " UNION ALL "), args...).Scan(&list).Error; err != nil {
+			return nil, err
+		}
+		for i := range list {
+			item := &list[i]
+			key := HealthCheckMemberLevel{MemberID: item.MemberID, Level: item.Level}
+			if _, ok := seen[key]; ok {
+				result[key] = item
+			}
 		}
 	}
 	return result, nil
@@ -656,19 +653,22 @@ func (r *MainStationStore) ListRecentHealthChecksByMember(memberIDs []uint, limi
 	}
 	// 每个成员的子查询都命中 member_id + status + created_at 复合索引并立即 LIMIT，
 	// 再用 UNION ALL 合并，避免窗口函数先扫描、排序所有成员的历史探活记录。
-	parts := make([]string, 0, len(memberIDs))
-	args := make([]any, 0, len(memberIDs)*2)
-	for index, memberID := range memberIDs {
-		parts = append(parts, fmt.Sprintf("SELECT * FROM (SELECT * FROM main_account_health_checks WHERE member_id = ? AND status IN ('success', 'failure') ORDER BY created_at DESC, id DESC LIMIT ?) AS member_%d", index))
-		args = append(args, memberID, limit)
-	}
-	var list []MainAccountHealthCheck
-	if err := r.db.Raw(strings.Join(parts, " UNION ALL "), args...).Scan(&list).Error; err != nil {
-		return nil, err
-	}
-	for i := range list {
-		check := list[i]
-		result[check.MemberID] = append(result[check.MemberID], check)
+	for start := 0; start < len(memberIDs); start += recentHealthChecksQueryBatchSize {
+		end := min(start+recentHealthChecksQueryBatchSize, len(memberIDs))
+		parts := make([]string, 0, end-start)
+		args := make([]any, 0, (end-start)*2)
+		for index, memberID := range memberIDs[start:end] {
+			parts = append(parts, fmt.Sprintf("SELECT * FROM (SELECT * FROM main_account_health_checks WHERE member_id = ? AND status IN ('success', 'failure') ORDER BY created_at DESC, id DESC LIMIT ?) AS member_%d", index))
+			args = append(args, memberID, limit)
+		}
+		var list []MainAccountHealthCheck
+		if err := r.db.Raw(strings.Join(parts, " UNION ALL "), args...).Scan(&list).Error; err != nil {
+			return nil, err
+		}
+		for i := range list {
+			check := list[i]
+			result[check.MemberID] = append(result[check.MemberID], check)
+		}
 	}
 	return result, nil
 }

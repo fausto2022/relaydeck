@@ -454,4 +454,22 @@ func TestListLatestHealthChecksHandlesLargeMemberSets(t *testing.T) {
 			t.Fatalf("latest health check for %#v = %#v", key, item)
 		}
 	}
+
+	memberIDs := make([]uint, 0, len(keys))
+	for _, key := range keys {
+		memberIDs = append(memberIDs, key.MemberID)
+	}
+	recent, err := store.ListRecentHealthChecksByMember(memberIDs, 1)
+	if err != nil {
+		t.Fatalf("list recent health checks: %v", err)
+	}
+	if len(recent) != memberCount {
+		t.Fatalf("recent health checks = %d, want %d", len(recent), memberCount)
+	}
+	for _, memberID := range memberIDs {
+		items := recent[memberID]
+		if len(items) != 1 || !items[0].CreatedAt.Equal(now) {
+			t.Fatalf("recent health checks for member %d = %#v", memberID, items)
+		}
+	}
 }
