@@ -84,6 +84,7 @@ const RETENTION_CRON_PRESETS: CronPreset[] = [
 ];
 
 const RETENTION_DAY_PRESETS = [7, 15, 30, 60, 90, 180, 365];
+const LOG_RETENTION_DAY_PRESETS = [3, ...RETENTION_DAY_PRESETS];
 
 interface ProxyTestResult {
   ok: boolean;
@@ -553,6 +554,7 @@ export default function SettingsPage() {
                 >
                   <RetentionDaysSelect
                     value={form.scheduler.retention.runtimeLogsDays}
+                    presets={LOG_RETENTION_DAY_PRESETS}
                     onChange={(value) =>
                       setForm((prev) =>
                         prev
@@ -577,6 +579,7 @@ export default function SettingsPage() {
                 >
                   <RetentionDaysSelect
                     value={form.scheduler.retention.monitorLogsDays}
+                    presets={LOG_RETENTION_DAY_PRESETS}
                     onChange={(value) =>
                       setForm((prev) =>
                         prev
@@ -1547,13 +1550,15 @@ function CronScheduleField({
 function RetentionDaysSelect({
   value,
   onChange,
+  presets = RETENTION_DAY_PRESETS,
 }: {
   value: number;
   onChange: (value: number) => void;
+  presets?: number[];
 }) {
-  const values = RETENTION_DAY_PRESETS.includes(value)
-    ? RETENTION_DAY_PRESETS
-    : [...RETENTION_DAY_PRESETS, value].sort((left, right) => left - right);
+  const values = presets.includes(value)
+    ? presets
+    : [...presets, value].sort((left, right) => left - right);
 
   return (
     <Select value={String(value)} onValueChange={(nextValue) => onChange(num(nextValue))}>
