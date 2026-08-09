@@ -1038,6 +1038,39 @@ func TestUpdateCosts(t *testing.T) {
 	}
 }
 
+func TestUpdateTodayCostPreservesTotalCost(t *testing.T) {
+	db := openTestDB(t)
+	channels := NewChannels(db)
+	totalCost := 9.87
+	c := &Channel{
+		Name:           "test-today-cost",
+		Type:           ChannelTypeSub2API,
+		SiteURL:        "https://example.com",
+		Username:       "u",
+		PasswordCipher: "x",
+		MonitorEnabled: true,
+		TotalCost:      &totalCost,
+	}
+	if err := channels.Create(c); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+
+	if err := channels.UpdateTodayCost(c.ID, 1.23); err != nil {
+		t.Fatalf("update today cost: %v", err)
+	}
+
+	got, err := channels.FindByID(c.ID)
+	if err != nil {
+		t.Fatalf("find channel: %v", err)
+	}
+	if got.TodayCost == nil || *got.TodayCost != 1.23 {
+		t.Fatalf("today cost mismatch: %#v", got.TodayCost)
+	}
+	if got.TotalCost == nil || *got.TotalCost != totalCost {
+		t.Fatalf("total cost mismatch: %#v", got.TotalCost)
+	}
+}
+
 func TestHardDeleteAllowsReusingNames(t *testing.T) {
 	db := openTestDB(t)
 

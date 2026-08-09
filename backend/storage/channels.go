@@ -134,6 +134,10 @@ func (r *Channels) UpdateCosts(id uint, todayCost float64, totalCost float64) er
 		"total_cost": totalCost,
 	}).Error
 }
+
+func (r *Channels) UpdateTodayCost(id uint, todayCost float64) error {
+	return r.db.Model(&Channel{}).Where("id = ?", id).Update("today_cost", todayCost).Error
+}
 func (r *Channels) SetLastError(id uint, msg string) error {
 	return r.db.Model(&Channel{}).Where("id = ?", id).Update("last_error", msg).Error
 }

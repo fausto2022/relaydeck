@@ -149,7 +149,12 @@ func (s *Service) RefreshBalance(ctx context.Context, c *storage.Channel) error 
 		s.notifyError(ctx, c, storage.EventMonitorFailed, "消费采集失败", err)
 		return err
 	}
-	if err := s.channels.UpdateCosts(c.ID, costRes.TodayCost, costRes.TotalCost); err != nil {
+	if costRes.TotalCostAvailable {
+		err = s.channels.UpdateCosts(c.ID, costRes.TodayCost, costRes.TotalCost)
+	} else {
+		err = s.channels.UpdateTodayCost(c.ID, costRes.TodayCost)
+	}
+	if err != nil {
 		progress.Fail(ctx, progress.StageCost, err.Error())
 		s.notifyLowBalance(ctx, c, res.Balance, sampledAt, &costRes.TodayCost)
 		return err
@@ -161,8 +166,13 @@ func (s *Service) RefreshBalance(ctx context.Context, c *storage.Channel) error 
 	}); err != nil {
 		s.log.Warn("append cost snapshot failed", "channel", c.Name, "err", err)
 	}
-	progress.OK(ctx, progress.StageCost, fmt.Sprintf("今日 %0.4f / 累计 %0.4f", costRes.TodayCost, costRes.TotalCost),
-		map[string]any{"today_cost": costRes.TodayCost, "total_cost": costRes.TotalCost})
+	if costRes.TotalCostAvailable {
+		progress.OK(ctx, progress.StageCost, fmt.Sprintf("今日 %0.4f / 累计 %0.4f", costRes.TodayCost, costRes.TotalCost),
+			map[string]any{"today_cost": costRes.TodayCost, "total_cost": costRes.TotalCost})
+	} else {
+		progress.OK(ctx, progress.StageCost, fmt.Sprintf("今日 %0.4f / 累计不可获取", costRes.TodayCost),
+			map[string]any{"today_cost": costRes.TodayCost, "total_cost_available": false})
+	}
 
 	s.notifyLowBalance(ctx, c, res.Balance, sampledAt, &costRes.TodayCost)
 	return nil

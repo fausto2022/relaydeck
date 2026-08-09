@@ -99,8 +99,9 @@ type BalanceResult struct {
 
 // CostResult 一次消费采集结果。单位统一为展示货币（通常是 USD）。
 type CostResult struct {
-	TodayCost float64
-	TotalCost float64
+	TodayCost          float64
+	TotalCost          float64
+	TotalCostAvailable bool
 }
 
 // AccountLimits 是上游账号本身的调度限制，不是单条 API Key 的限额。

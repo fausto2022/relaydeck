@@ -305,6 +305,69 @@ func TestGetCosts(t *testing.T) {
 	if res.TotalCost != 45.67 {
 		t.Fatalf("total cost = %v, want 45.67", res.TotalCost)
 	}
+	if !res.TotalCostAvailable {
+		t.Fatal("total cost should be available")
+	}
+}
+
+func TestGetCostsFallsBackToUsageStatsWhenDashboardStatsMissing(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+	mux.HandleFunc("/api/v1/usage/stats", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if got := r.URL.Query().Get("timezone"); got != "Asia/Shanghai" {
+			t.Fatalf("timezone = %q", got)
+		}
+		startDate := r.URL.Query().Get("start_date")
+		if startDate == "" || r.URL.Query().Get("end_date") != startDate {
+			t.Fatalf("date range = %q to %q", startDate, r.URL.Query().Get("end_date"))
+		}
+		_, _ = w.Write([]byte(`{"code":0,"message":"","data":{"total_actual_cost":12.4}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	multiplier := 2.0
+	res, err := New().GetCosts(context.Background(), &connector.Channel{
+		SiteURL:                srv.URL,
+		RechargeMultiplier:     &multiplier,
+		RechargeMultiplierMode: connector.RechargeMultiplierModeDivide,
+	}, &connector.AuthSession{AccessToken: "token"})
+	if err != nil {
+		t.Fatalf("GetCosts: %v", err)
+	}
+	if res.TodayCost != 6.2 {
+		t.Fatalf("today cost = %v, want 6.2", res.TodayCost)
+	}
+	if res.TotalCostAvailable {
+		t.Fatal("total cost should be unavailable for usage stats fallback")
+	}
+}
+
+func TestGetCostsDoesNotFallbackForDashboardStatsErrorsOtherThanNotFound(t *testing.T) {
+	usageStatsCalls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporary failure", http.StatusBadGateway)
+	})
+	mux.HandleFunc("/api/v1/usage/stats", func(w http.ResponseWriter, r *http.Request) {
+		usageStatsCalls++
+		_, _ = w.Write([]byte(`{"code":0,"message":"","data":{"total_actual_cost":12.4}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	_, err := New().GetCosts(context.Background(), &connector.Channel{SiteURL: srv.URL}, &connector.AuthSession{AccessToken: "token"})
+	if connector.HTTPStatusCode(err) != http.StatusBadGateway {
+		t.Fatalf("error = %v", err)
+	}
+	if usageStatsCalls != 0 {
+		t.Fatalf("usage stats calls = %d, want 0", usageStatsCalls)
+	}
 }
 
 func TestGetCostsAppliesUpstreamRechargeMultiplier(t *testing.T) {
@@ -333,6 +396,9 @@ func TestGetCostsAppliesUpstreamRechargeMultiplier(t *testing.T) {
 	}
 	if res.TotalCost != 10 {
 		t.Fatalf("total cost = %v, want 10", res.TotalCost)
+	}
+	if !res.TotalCostAvailable {
+		t.Fatal("total cost should be available")
 	}
 }
 

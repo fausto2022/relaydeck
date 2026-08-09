@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"strconv"
@@ -288,9 +289,13 @@ func (c *Client) GetAccountLimits(ctx context.Context, ch *connector.Channel, se
 }
 
 func (c *Client) GetCosts(ctx context.Context, ch *connector.Channel, session *connector.AuthSession) (*connector.CostResult, error) {
-	body, err := c.getJSON(ctx, strings.TrimRight(ch.SiteURL, "/")+"/api/v1/usage/dashboard/stats", session)
+	site := strings.TrimRight(ch.SiteURL, "/")
+	body, err := c.getJSON(ctx, site+"/api/v1/usage/dashboard/stats", session)
 	if err != nil {
-		return nil, fmt.Errorf("sub2api dashboard stats: %w", err)
+		if connector.HTTPStatusCode(err) != http.StatusNotFound {
+			return nil, fmt.Errorf("sub2api dashboard stats: %w", err)
+		}
+		return c.getCostsFromUsageStats(ctx, ch, session, site)
 	}
 	var stats struct {
 		TodayActualCost float64 `json:"today_actual_cost"`
@@ -301,8 +306,31 @@ func (c *Client) GetCosts(ctx context.Context, ch *connector.Channel, session *c
 	}
 	multiplier := c.rechargeMultiplier(ctx, ch, session)
 	return &connector.CostResult{
-		TodayCost: connector.ApplyRechargeMultiplier(stats.TodayActualCost, multiplier, ch.RechargeMultiplierMode),
-		TotalCost: connector.ApplyRechargeMultiplier(stats.TotalActualCost, multiplier, ch.RechargeMultiplierMode),
+		TodayCost:          connector.ApplyRechargeMultiplier(stats.TodayActualCost, multiplier, ch.RechargeMultiplierMode),
+		TotalCost:          connector.ApplyRechargeMultiplier(stats.TotalActualCost, multiplier, ch.RechargeMultiplierMode),
+		TotalCostAvailable: true,
+	}, nil
+}
+
+func (c *Client) getCostsFromUsageStats(ctx context.Context, ch *connector.Channel, session *connector.AuthSession, site string) (*connector.CostResult, error) {
+	now := time.Now().In(time.FixedZone("CST", 8*60*60))
+	params := url.Values{}
+	params.Set("start_date", now.Format("2006-01-02"))
+	params.Set("end_date", now.Format("2006-01-02"))
+	params.Set("timezone", "Asia/Shanghai")
+	body, err := c.getJSON(ctx, site+"/api/v1/usage/stats?"+params.Encode(), session)
+	if err != nil {
+		return nil, fmt.Errorf("sub2api usage stats fallback: %w", err)
+	}
+	var stats struct {
+		TotalActualCost float64 `json:"total_actual_cost"`
+	}
+	if err := json.Unmarshal(body, &stats); err != nil {
+		return nil, fmt.Errorf("sub2api usage stats fallback decode: %w", err)
+	}
+	multiplier := c.rechargeMultiplier(ctx, ch, session)
+	return &connector.CostResult{
+		TodayCost: connector.ApplyRechargeMultiplier(stats.TotalActualCost, multiplier, ch.RechargeMultiplierMode),
 	}, nil
 }
 
