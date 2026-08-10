@@ -941,7 +941,13 @@ func (s *Service) UpdateMember(ctx context.Context, poolID, memberID uint, in Me
 		value := scaleFloat(*in.ManualCostMultiplier)
 		member.ManualCostMicros = &value
 	}
-	member.HealthModel = strings.TrimSpace(in.HealthModel)
+	nextHealthModel := strings.TrimSpace(in.HealthModel)
+	if in.HealthModelAutoSelected != nil {
+		member.HealthModelAutoSelected = *in.HealthModelAutoSelected
+	} else if !strings.EqualFold(member.HealthModel, nextHealthModel) {
+		member.HealthModelAutoSelected = false
+	}
+	member.HealthModel = nextHealthModel
 	if strings.TrimSpace(in.HealthAPIMode) != "" {
 		member.HealthAPIMode = strings.TrimSpace(in.HealthAPIMode)
 	}
@@ -1610,6 +1616,7 @@ func memberFromInput(poolID uint, in MemberInput) *storage.MainAccountPoolMember
 		ManualCostMicros:        manualCost,
 		HealthEnabled:           healthEnabled,
 		HealthModel:             strings.TrimSpace(in.HealthModel),
+		HealthModelAutoSelected: in.HealthModelAutoSelected != nil && *in.HealthModelAutoSelected,
 		HealthIntervalSeconds:   healthIntervalSeconds,
 		HealthFailureThreshold:  healthFailureThreshold,
 		HealthRecoveryThreshold: healthRecoveryThreshold,

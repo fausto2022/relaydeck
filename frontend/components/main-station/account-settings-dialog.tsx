@@ -45,6 +45,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
   const [preferred, setPreferred] = useState(false)
   const [healthEnabled, setHealthEnabled] = useState(true)
   const [healthModel, setHealthModel] = useState("")
+  const [healthModelAutoSelected, setHealthModelAutoSelected] = useState(false)
   const [healthInterval, setHealthInterval] = useState("")
   const [healthFailureThreshold, setHealthFailureThreshold] = useState("")
   const [healthRecoveryThreshold, setHealthRecoveryThreshold] = useState("")
@@ -59,6 +60,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
     setPreferred(account.member.preferred)
     setHealthEnabled(account.member.health_enabled)
     setHealthModel(account.member.health_model ?? "")
+    setHealthModelAutoSelected(account.member.health_model_auto_selected ?? false)
     setHealthInterval(account.member.health_interval_seconds > 0 ? String(account.member.health_interval_seconds) : "")
     setHealthFailureThreshold(account.member.health_failure_threshold > 0 ? String(account.member.health_failure_threshold) : "")
     setHealthRecoveryThreshold(account.member.health_recovery_threshold > 0 ? String(account.member.health_recovery_threshold) : "")
@@ -111,6 +113,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
           concurrency,
           health_enabled: healthEnabled,
           health_model: healthModel.trim(),
+          health_model_auto_selected: healthModelAutoSelected,
           health_interval_seconds: healthIntervalSeconds,
           health_failure_threshold: failureThreshold,
           health_recovery_threshold: recoveryThreshold,
@@ -132,6 +135,7 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
   const platform = normalizeMainStationPlatform(account?.platform)
   const globalModel = config?.health_models?.[platform] ?? ""
   const globalFallbackModel = config?.health_fallback_models?.[platform] ?? ""
+  const globalSecondFallbackModel = config?.health_second_fallback_models?.[platform] ?? ""
   const catalog = modelCatalogs.find((item) => item.platform === platform)
   const modelOptions = Array.from(new Set([...(catalog?.models ?? []), healthModel].filter(Boolean)))
   const actualPriority = account?.priority
@@ -163,14 +167,17 @@ export function AccountSettingsDialog({ open, onOpenChange, workspace, account, 
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label>账号探活模型</Label>
-            <Select value={healthModel || "__inherit__"} onValueChange={(value) => setHealthModel(value === "__inherit__" ? "" : value)}>
+            <Select value={healthModel || "__inherit__"} onValueChange={(value) => {
+              setHealthModel(value === "__inherit__" ? "" : value)
+              setHealthModelAutoSelected(value === "__inherit__")
+            }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="__inherit__">继承全局{globalModel ? `（${globalModel}）` : "（仅快速检测）"}</SelectItem>
                 {modelOptions.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">继承全局时{globalFallbackModel ? `可在主模型不可用时切换至 ${globalFallbackModel}` : "不使用备用模型"}；单独指定模型后不使用全局备用模型。</p>
+            <p className="text-xs text-muted-foreground">{healthModelAutoSelected || !healthModel ? `继承链：${[globalModel, globalFallbackModel, globalSecondFallbackModel].filter(Boolean).join(" -> ") || "仅快速检测"}` : "单独指定模型后不使用全局备用模型。"}</p>
             {catalog?.error ? <p className="text-xs text-destructive">{catalog.error}</p> : null}
           </div>
           <div className="space-y-2 sm:col-span-2">

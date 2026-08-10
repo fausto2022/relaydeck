@@ -37,11 +37,12 @@ const (
 )
 
 type globalHealthSettings struct {
-	Models            map[string]string
-	FallbackModels    map[string]string
-	IntervalSeconds   int
-	FailureThreshold  int
-	RecoveryThreshold int
+	Models               map[string]string
+	FallbackModels       map[string]string
+	SecondFallbackModels map[string]string
+	IntervalSeconds      int
+	FailureThreshold     int
+	RecoveryThreshold    int
 }
 
 type channelService interface {
@@ -170,14 +171,15 @@ func (s *Service) UpdateProbeConfig(proxy config.ProxyConfig, timeout time.Durat
 
 func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto := &ConfigDTO{
-		HealthModels:             map[string]string{},
-		HealthFallbackModels:     map[string]string{},
-		HealthIntervalSeconds:    defaultHealthIntervalSeconds,
-		HealthFailureThreshold:   defaultHealthFailureThreshold,
-		HealthRecoveryThreshold:  defaultHealthRecoveryThreshold,
-		RankingIntervalSeconds:   defaultRankingIntervalSeconds,
-		SyncIntervalSeconds:      defaultMainStationSyncInterval,
-		GuaranteedRevenueRatioBP: defaultGuaranteedRevenueRatioBP,
+		HealthModels:               map[string]string{},
+		HealthFallbackModels:       map[string]string{},
+		HealthSecondFallbackModels: map[string]string{},
+		HealthIntervalSeconds:      defaultHealthIntervalSeconds,
+		HealthFailureThreshold:     defaultHealthFailureThreshold,
+		HealthRecoveryThreshold:    defaultHealthRecoveryThreshold,
+		RankingIntervalSeconds:     defaultRankingIntervalSeconds,
+		SyncIntervalSeconds:        defaultMainStationSyncInterval,
+		GuaranteedRevenueRatioBP:   defaultGuaranteedRevenueRatioBP,
 	}
 	if state, err := s.store.GetMigrationState(); err == nil {
 		dto.Migration = &MigrationStateDTO{Status: state.Status, Detail: state.Detail}
@@ -212,6 +214,7 @@ func (s *Service) GetConfig() (*ConfigDTO, error) {
 	dto.GuaranteedRevenueRatioBP = normalizedGuaranteedRevenueRatioBP(config.GuaranteedRevenueRatioBP)
 	dto.HealthModels = decodeHealthModels(config.HealthModelsJSON)
 	dto.HealthFallbackModels = decodeHealthModels(config.HealthFallbackModelsJSON)
+	dto.HealthSecondFallbackModels = decodeHealthModels(config.HealthSecondFallbackModelsJSON)
 	dto.HealthIntervalSeconds = normalizedGlobalHealthInterval(config.HealthIntervalSeconds)
 	dto.HealthFailureThreshold = normalizedHealthThreshold(config.HealthFailureThreshold, defaultHealthFailureThreshold)
 	dto.HealthRecoveryThreshold = normalizedHealthThreshold(config.HealthRecoveryThreshold, defaultHealthRecoveryThreshold)
@@ -264,7 +267,11 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 	if err != nil {
 		return nil, err
 	}
-	if err := validateHealthModelFallbacks(in.HealthModels, in.HealthFallbackModels); err != nil {
+	healthSecondFallbackModelsJSON, err := encodeHealthModels(in.HealthSecondFallbackModels)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateHealthModelFallbacks(in.HealthModels, in.HealthFallbackModels, in.HealthSecondFallbackModels); err != nil {
 		return nil, err
 	}
 	healthIntervalSeconds := defaultHealthIntervalSeconds
@@ -317,17 +324,18 @@ func (s *Service) CreateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		}
 	}
 	config := &storage.MainStationConfig{
-		ID:                       storage.MainStationSingletonID,
-		Enabled:                  enabled,
-		HealthModelsJSON:         healthModelsJSON,
-		HealthFallbackModelsJSON: healthFallbackModelsJSON,
-		HealthIntervalSeconds:    healthIntervalSeconds,
-		HealthFailureThreshold:   healthFailureThreshold,
-		HealthRecoveryThreshold:  healthRecoveryThreshold,
-		MinimumMarginBasisPoints: minimumMarginBasisPoints,
-		GuaranteedRevenueRatioBP: guaranteedRevenueRatioBP,
-		RankingIntervalSeconds:   rankingIntervalSeconds,
-		SyncIntervalSeconds:      syncIntervalSeconds,
+		ID:                             storage.MainStationSingletonID,
+		Enabled:                        enabled,
+		HealthModelsJSON:               healthModelsJSON,
+		HealthFallbackModelsJSON:       healthFallbackModelsJSON,
+		HealthSecondFallbackModelsJSON: healthSecondFallbackModelsJSON,
+		HealthIntervalSeconds:          healthIntervalSeconds,
+		HealthFailureThreshold:         healthFailureThreshold,
+		HealthRecoveryThreshold:        healthRecoveryThreshold,
+		MinimumMarginBasisPoints:       minimumMarginBasisPoints,
+		GuaranteedRevenueRatioBP:       guaranteedRevenueRatioBP,
+		RankingIntervalSeconds:         rankingIntervalSeconds,
+		SyncIntervalSeconds:            syncIntervalSeconds,
 	}
 	target := &storage.UpstreamSyncTarget{
 		Name:              name,
@@ -443,16 +451,20 @@ func (s *Service) UpdateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 		}
 		config.GuaranteedRevenueRatioBP = *in.GuaranteedRevenueRatioBP
 	}
-	if in.HealthModels != nil || in.HealthFallbackModels != nil {
+	if in.HealthModels != nil || in.HealthFallbackModels != nil || in.HealthSecondFallbackModels != nil {
 		nextHealthModels := decodeHealthModels(config.HealthModelsJSON)
 		nextHealthFallbackModels := decodeHealthModels(config.HealthFallbackModelsJSON)
+		nextHealthSecondFallbackModels := decodeHealthModels(config.HealthSecondFallbackModelsJSON)
 		if in.HealthModels != nil {
 			nextHealthModels = normalizeHealthModels(in.HealthModels)
 		}
 		if in.HealthFallbackModels != nil {
 			nextHealthFallbackModels = normalizeHealthModels(in.HealthFallbackModels)
 		}
-		if err := validateHealthModelFallbacks(nextHealthModels, nextHealthFallbackModels); err != nil {
+		if in.HealthSecondFallbackModels != nil {
+			nextHealthSecondFallbackModels = normalizeHealthModels(in.HealthSecondFallbackModels)
+		}
+		if err := validateHealthModelFallbacks(nextHealthModels, nextHealthFallbackModels, nextHealthSecondFallbackModels); err != nil {
 			return nil, err
 		}
 		config.HealthModelsJSON, err = encodeHealthModels(nextHealthModels)
@@ -460,6 +472,10 @@ func (s *Service) UpdateConfig(ctx context.Context, in ConfigInput) (*ConfigDTO,
 			return nil, err
 		}
 		config.HealthFallbackModelsJSON, err = encodeHealthModels(nextHealthFallbackModels)
+		if err != nil {
+			return nil, err
+		}
+		config.HealthSecondFallbackModelsJSON, err = encodeHealthModels(nextHealthSecondFallbackModels)
 		if err != nil {
 			return nil, err
 		}
@@ -796,15 +812,16 @@ func (s *Service) configuredHealthSettings() globalHealthSettings {
 	config, err := s.store.GetConfig()
 	if err != nil {
 		return globalHealthSettings{
-			Models: map[string]string{}, FallbackModels: map[string]string{}, IntervalSeconds: defaultHealthIntervalSeconds,
+			Models: map[string]string{}, FallbackModels: map[string]string{}, SecondFallbackModels: map[string]string{}, IntervalSeconds: defaultHealthIntervalSeconds,
 			FailureThreshold: defaultHealthFailureThreshold, RecoveryThreshold: defaultHealthRecoveryThreshold,
 		}
 	}
 	return globalHealthSettings{
-		Models:            decodeHealthModels(config.HealthModelsJSON),
-		FallbackModels:    decodeHealthModels(config.HealthFallbackModelsJSON),
-		IntervalSeconds:   normalizedGlobalHealthInterval(config.HealthIntervalSeconds),
-		FailureThreshold:  normalizedHealthThreshold(config.HealthFailureThreshold, defaultHealthFailureThreshold),
-		RecoveryThreshold: normalizedHealthThreshold(config.HealthRecoveryThreshold, defaultHealthRecoveryThreshold),
+		Models:               decodeHealthModels(config.HealthModelsJSON),
+		FallbackModels:       decodeHealthModels(config.HealthFallbackModelsJSON),
+		SecondFallbackModels: decodeHealthModels(config.HealthSecondFallbackModelsJSON),
+		IntervalSeconds:      normalizedGlobalHealthInterval(config.HealthIntervalSeconds),
+		FailureThreshold:     normalizedHealthThreshold(config.HealthFailureThreshold, defaultHealthFailureThreshold),
+		RecoveryThreshold:    normalizedHealthThreshold(config.HealthRecoveryThreshold, defaultHealthRecoveryThreshold),
 	}
 }

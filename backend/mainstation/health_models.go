@@ -68,15 +68,29 @@ func encodeHealthModels(models map[string]string) (string, error) {
 	return string(raw), nil
 }
 
-func validateHealthModelFallbacks(primary, fallback map[string]string) error {
+func validateHealthModelFallbacks(primary, fallback, secondFallback map[string]string) error {
 	normalizedPrimary := normalizeHealthModels(primary)
-	for platform, model := range normalizeHealthModels(fallback) {
+	normalizedFallback := normalizeHealthModels(fallback)
+	for platform, model := range normalizedFallback {
 		primaryModel := strings.TrimSpace(normalizedPrimary[platform])
 		if primaryModel == "" {
 			return fmt.Errorf("%s 备用探测模型必须先配置主探测模型", platform)
 		}
 		if strings.EqualFold(primaryModel, model) {
 			return fmt.Errorf("%s 主探测模型和备用探测模型不能相同", platform)
+		}
+	}
+	for platform, model := range normalizeHealthModels(secondFallback) {
+		primaryModel := strings.TrimSpace(normalizedPrimary[platform])
+		fallbackModel := strings.TrimSpace(normalizedFallback[platform])
+		if primaryModel == "" {
+			return fmt.Errorf("%s 第三探测模型必须先配置主探测模型", platform)
+		}
+		if fallbackModel == "" {
+			return fmt.Errorf("%s 第三探测模型必须先配置第二探测模型", platform)
+		}
+		if strings.EqualFold(primaryModel, model) || strings.EqualFold(fallbackModel, model) {
+			return fmt.Errorf("%s 三档探测模型不能重复", platform)
 		}
 	}
 	return nil
@@ -115,20 +129,53 @@ func effectiveHealthModel(platform, memberModel string, globalModels map[string]
 }
 
 type healthModelSelection struct {
-	Primary  string
-	Fallback string
+	Primary   string
+	Fallbacks []string
 }
 
-// 账号显式指定模型时保持该设置的权威性，不自动套用全局备用模型。
-func effectiveHealthModelSelection(platform, memberModel string, settings globalHealthSettings) healthModelSelection {
+// 账号显式指定模型时保持该设置的权威性；自动选中的模型会继续继承其后的备用链。
+func effectiveHealthModelSelection(platform, memberModel string, autoSelected bool, settings globalHealthSettings) healthModelSelection {
+	platform = normalizeHealthPlatform(platform)
+	chain := healthModelChain(
+		strings.TrimSpace(settings.Models[platform]),
+		strings.TrimSpace(settings.FallbackModels[platform]),
+		strings.TrimSpace(settings.SecondFallbackModels[platform]),
+	)
 	if model := strings.TrimSpace(memberModel); model != "" {
+		if autoSelected {
+			for index, item := range chain {
+				if strings.EqualFold(item, model) {
+					return healthModelSelection{Primary: item, Fallbacks: append([]string(nil), chain[index+1:]...)}
+				}
+			}
+		}
 		return healthModelSelection{Primary: model}
 	}
-	platform = normalizeHealthPlatform(platform)
-	return healthModelSelection{
-		Primary:  strings.TrimSpace(settings.Models[platform]),
-		Fallback: strings.TrimSpace(settings.FallbackModels[platform]),
+	if len(chain) == 0 {
+		return healthModelSelection{}
 	}
+	return healthModelSelection{Primary: chain[0], Fallbacks: append([]string(nil), chain[1:]...)}
+}
+
+func healthModelChain(models ...string) []string {
+	chain := make([]string, 0, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		duplicate := false
+		for _, item := range chain {
+			if strings.EqualFold(item, model) {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			chain = append(chain, model)
+		}
+	}
+	return chain
 }
 
 func (s *Service) configuredHealthModels() map[string]string {
@@ -149,6 +196,9 @@ func (s *Service) ListHealthModelCatalogs(ctx context.Context) ([]HealthModelCat
 		platforms[platform] = struct{}{}
 	}
 	for platform := range settings.FallbackModels {
+		platforms[platform] = struct{}{}
+	}
+	for platform := range settings.SecondFallbackModels {
 		platforms[platform] = struct{}{}
 	}
 	snapshots, err := s.store.ListAllAccountSnapshots(false)

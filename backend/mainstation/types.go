@@ -20,52 +20,54 @@ type MigrationStateDTO struct {
 }
 
 type ConfigDTO struct {
-	Configured               bool               `json:"configured"`
-	ID                       uint               `json:"id,omitempty"`
-	TargetID                 uint               `json:"target_id,omitempty"`
-	Name                     string             `json:"name,omitempty"`
-	BaseURL                  string             `json:"base_url,omitempty"`
-	HasAdminAPIKey           bool               `json:"has_admin_api_key"`
-	Enabled                  bool               `json:"enabled"`
-	LastSyncStatus           string             `json:"last_sync_status,omitempty"`
-	LastSyncAt               *time.Time         `json:"last_sync_at,omitempty"`
-	LastSyncError            string             `json:"last_sync_error,omitempty"`
-	AutoMarginProtection     bool               `json:"auto_margin_protection"`
-	AutoHealthProtection     bool               `json:"auto_health_protection"`
-	AutoRecovery             bool               `json:"auto_recovery"`
-	MinimumMarginBasisPoints int64              `json:"minimum_margin_basis_points"`
-	GuaranteedRevenueRatioBP int64              `json:"guaranteed_revenue_ratio_basis_points"`
-	HealthModels             map[string]string  `json:"health_models"`
-	HealthFallbackModels     map[string]string  `json:"health_fallback_models"`
-	HealthIntervalSeconds    int                `json:"health_interval_seconds"`
-	HealthFailureThreshold   int                `json:"health_failure_threshold"`
-	HealthRecoveryThreshold  int                `json:"health_recovery_threshold"`
-	RankingIntervalSeconds   int                `json:"ranking_interval_seconds"`
-	SyncIntervalSeconds      int                `json:"sync_interval_seconds"`
-	ObservationEvaluatedAt   *time.Time         `json:"observation_evaluated_at,omitempty"`
-	HealthObservedAt         *time.Time         `json:"health_observed_at,omitempty"`
-	MarginObservedAt         *time.Time         `json:"margin_observed_at,omitempty"`
-	Migration                *MigrationStateDTO `json:"migration,omitempty"`
+	Configured                 bool               `json:"configured"`
+	ID                         uint               `json:"id,omitempty"`
+	TargetID                   uint               `json:"target_id,omitempty"`
+	Name                       string             `json:"name,omitempty"`
+	BaseURL                    string             `json:"base_url,omitempty"`
+	HasAdminAPIKey             bool               `json:"has_admin_api_key"`
+	Enabled                    bool               `json:"enabled"`
+	LastSyncStatus             string             `json:"last_sync_status,omitempty"`
+	LastSyncAt                 *time.Time         `json:"last_sync_at,omitempty"`
+	LastSyncError              string             `json:"last_sync_error,omitempty"`
+	AutoMarginProtection       bool               `json:"auto_margin_protection"`
+	AutoHealthProtection       bool               `json:"auto_health_protection"`
+	AutoRecovery               bool               `json:"auto_recovery"`
+	MinimumMarginBasisPoints   int64              `json:"minimum_margin_basis_points"`
+	GuaranteedRevenueRatioBP   int64              `json:"guaranteed_revenue_ratio_basis_points"`
+	HealthModels               map[string]string  `json:"health_models"`
+	HealthFallbackModels       map[string]string  `json:"health_fallback_models"`
+	HealthSecondFallbackModels map[string]string  `json:"health_second_fallback_models"`
+	HealthIntervalSeconds      int                `json:"health_interval_seconds"`
+	HealthFailureThreshold     int                `json:"health_failure_threshold"`
+	HealthRecoveryThreshold    int                `json:"health_recovery_threshold"`
+	RankingIntervalSeconds     int                `json:"ranking_interval_seconds"`
+	SyncIntervalSeconds        int                `json:"sync_interval_seconds"`
+	ObservationEvaluatedAt     *time.Time         `json:"observation_evaluated_at,omitempty"`
+	HealthObservedAt           *time.Time         `json:"health_observed_at,omitempty"`
+	MarginObservedAt           *time.Time         `json:"margin_observed_at,omitempty"`
+	Migration                  *MigrationStateDTO `json:"migration,omitempty"`
 }
 
 type ConfigInput struct {
-	TargetID                 uint              `json:"target_id,omitempty"`
-	Name                     string            `json:"name"`
-	BaseURL                  string            `json:"base_url"`
-	AdminAPIKey              string            `json:"admin_api_key"`
-	Enabled                  *bool             `json:"enabled,omitempty"`
-	AutoMarginProtection     *bool             `json:"auto_margin_protection,omitempty"`
-	AutoHealthProtection     *bool             `json:"auto_health_protection,omitempty"`
-	AutoRecovery             *bool             `json:"auto_recovery,omitempty"`
-	MinimumMarginBasisPoints *int64            `json:"minimum_margin_basis_points,omitempty"`
-	GuaranteedRevenueRatioBP *int64            `json:"guaranteed_revenue_ratio_basis_points,omitempty"`
-	HealthModels             map[string]string `json:"health_models,omitempty"`
-	HealthFallbackModels     map[string]string `json:"health_fallback_models,omitempty"`
-	HealthIntervalSeconds    *int              `json:"health_interval_seconds,omitempty"`
-	HealthFailureThreshold   *int              `json:"health_failure_threshold,omitempty"`
-	HealthRecoveryThreshold  *int              `json:"health_recovery_threshold,omitempty"`
-	RankingIntervalSeconds   *int              `json:"ranking_interval_seconds,omitempty"`
-	SyncIntervalSeconds      *int              `json:"sync_interval_seconds,omitempty"`
+	TargetID                   uint              `json:"target_id,omitempty"`
+	Name                       string            `json:"name"`
+	BaseURL                    string            `json:"base_url"`
+	AdminAPIKey                string            `json:"admin_api_key"`
+	Enabled                    *bool             `json:"enabled,omitempty"`
+	AutoMarginProtection       *bool             `json:"auto_margin_protection,omitempty"`
+	AutoHealthProtection       *bool             `json:"auto_health_protection,omitempty"`
+	AutoRecovery               *bool             `json:"auto_recovery,omitempty"`
+	MinimumMarginBasisPoints   *int64            `json:"minimum_margin_basis_points,omitempty"`
+	GuaranteedRevenueRatioBP   *int64            `json:"guaranteed_revenue_ratio_basis_points,omitempty"`
+	HealthModels               map[string]string `json:"health_models,omitempty"`
+	HealthFallbackModels       map[string]string `json:"health_fallback_models,omitempty"`
+	HealthSecondFallbackModels map[string]string `json:"health_second_fallback_models,omitempty"`
+	HealthIntervalSeconds      *int              `json:"health_interval_seconds,omitempty"`
+	HealthFailureThreshold     *int              `json:"health_failure_threshold,omitempty"`
+	HealthRecoveryThreshold    *int              `json:"health_recovery_threshold,omitempty"`
+	RankingIntervalSeconds     *int              `json:"ranking_interval_seconds,omitempty"`
+	SyncIntervalSeconds        *int              `json:"sync_interval_seconds,omitempty"`
 }
 
 type HealthModelCatalog struct {
@@ -138,6 +140,7 @@ type AccountMemberDTO struct {
 	Concurrency               int               `json:"concurrency"`
 	HealthEnabled             bool              `json:"health_enabled"`
 	HealthModel               string            `json:"health_model,omitempty"`
+	HealthModelAutoSelected   bool              `json:"health_model_auto_selected"`
 	HealthIntervalSeconds     int               `json:"health_interval_seconds"`
 	HealthFailureThreshold    int               `json:"health_failure_threshold"`
 	HealthRecoveryThreshold   int               `json:"health_recovery_threshold"`
@@ -220,7 +223,8 @@ type RateQuickTestInput struct {
 	Model    string `json:"model"`
 	Mode     string `json:"mode,omitempty"`
 	// 仅供自动扩池等内部调用传入，不开放给前端覆盖全局备用模型。
-	FallbackModel string `json:"-"`
+	FallbackModel  string   `json:"-"`
+	FallbackModels []string `json:"-"`
 }
 
 type RateQuickTestAttempt struct {
@@ -255,6 +259,7 @@ type RateQuickTestResult struct {
 	TotalTokens        *int64                 `json:"total_tokens,omitempty"`
 	FallbackUsed       bool                   `json:"fallback_used,omitempty"`
 	PrimaryModel       string                 `json:"primary_model,omitempty"`
+	FallbackDepth      int                    `json:"fallback_depth,omitempty"`
 	ImageURL           string                 `json:"image_url,omitempty"`
 	TemporaryKeyName   string                 `json:"temporary_key_name"`
 	TemporaryKeyStatus string                 `json:"temporary_key_status"`
@@ -337,6 +342,7 @@ type MemberInput struct {
 	ManualCostMultiplier    *float64 `json:"manual_cost_multiplier,omitempty"`
 	HealthEnabled           *bool    `json:"health_enabled,omitempty"`
 	HealthModel             string   `json:"health_model,omitempty"`
+	HealthModelAutoSelected *bool    `json:"health_model_auto_selected,omitempty"`
 	HealthIntervalSeconds   *int     `json:"health_interval_seconds,omitempty"`
 	HealthFailureThreshold  *int     `json:"health_failure_threshold,omitempty"`
 	HealthRecoveryThreshold *int     `json:"health_recovery_threshold,omitempty"`

@@ -766,6 +766,7 @@ export interface MainStationConfig {
   guaranteed_revenue_ratio_basis_points: number
   health_models: Record<string, string>
   health_fallback_models: Record<string, string>
+  health_second_fallback_models: Record<string, string>
   health_interval_seconds: number
   health_failure_threshold: number
   health_recovery_threshold: number
@@ -861,6 +862,7 @@ export interface MainStationAccountMember {
   concurrency: number
   health_enabled: boolean
   health_model?: string
+  health_model_auto_selected: boolean
   health_interval_seconds: number
   health_failure_threshold: number
   health_recovery_threshold: number
@@ -929,6 +931,7 @@ export interface MainStationMember {
   manual_cost_micros?: number | null
   health_enabled: boolean
   health_model?: string
+  health_model_auto_selected: boolean
   health_interval_seconds: number
   health_failure_threshold: number
   health_recovery_threshold: number

@@ -47,13 +47,14 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 	}
 	platform := normalizeHealthPlatform(in.Platform)
 	model := strings.TrimSpace(in.Model)
-	fallbackModel := strings.TrimSpace(in.FallbackModel)
+	fallbackModels := append([]string(nil), in.FallbackModels...)
+	if fallbackModel := strings.TrimSpace(in.FallbackModel); fallbackModel != "" {
+		fallbackModels = append([]string{fallbackModel}, fallbackModels...)
+	}
 	if model == "" {
-		selection := effectiveHealthModelSelection(platform, "", s.configuredHealthSettings())
+		selection := effectiveHealthModelSelection(platform, "", false, s.configuredHealthSettings())
 		model = selection.Primary
-		if fallbackModel == "" {
-			fallbackModel = selection.Fallback
-		}
+		fallbackModels = selection.Fallbacks
 	}
 	if model == "" {
 		return nil, errors.New("请选择快速测试模型")
@@ -62,16 +63,20 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 	if err != nil {
 		return nil, err
 	}
-	fallbackRequest := probeRequest{}
-	if fallbackModel != "" && !strings.EqualFold(model, fallbackModel) {
-		fallbackRequest, err = buildQuickTestProbeRequest(mode, fallbackModel)
-		if err != nil {
-			fallbackModel = ""
-		}
-	}
 	request, err := buildQuickTestProbeRequest(mode, model)
 	if err != nil {
 		return nil, err
+	}
+	probeModels := []quickTestProbeModel{{model: model, request: request}}
+	for _, fallbackModel := range healthModelChain(fallbackModels...) {
+		if strings.EqualFold(model, fallbackModel) {
+			continue
+		}
+		fallbackRequest, buildErr := buildQuickTestProbeRequest(mode, fallbackModel)
+		if buildErr != nil {
+			return nil, fmt.Errorf("构建备用探测模型 %s 请求失败：%w", fallbackModel, buildErr)
+		}
+		probeModels = append(probeModels, quickTestProbeModel{model: fallbackModel, request: fallbackRequest})
 	}
 
 	keyName, err := temporaryAPIKeyName()
@@ -113,23 +118,14 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 
 	attemptCount := quickTestAttemptCount(mode)
 	executions := make([]probeExecution, 0, attemptCount)
-	activeRequest := request
-	activeModel := model
-	fallbackUsed := false
+	activeModelIndex := 0
 	for range attemptCount {
-		execution := s.performProbeRequest(ctx, channel, secret, activeRequest)
-		if !fallbackUsed && fallbackModel != "" && activeModel == model && modelFallbackEligible(execution) {
-			fallbackExecution := s.performProbeRequest(ctx, channel, secret, fallbackRequest)
-			execution = mergeFallbackExecution(execution, fallbackExecution, fallbackModel)
-			fallbackUsed = true
-			activeModel = fallbackModel
-			activeRequest = fallbackRequest
-		}
-		if fallbackUsed {
-			execution.FallbackUsed = true
-			if execution.PrimaryModel == "" {
-				execution.PrimaryModel = model
-			}
+		execution := s.performProbeRequest(ctx, channel, secret, probeModels[activeModelIndex].request)
+		for modelFallbackEligible(execution) && activeModelIndex+1 < len(probeModels) {
+			activeModelIndex++
+			fallback := probeModels[activeModelIndex]
+			fallbackExecution := s.performProbeRequest(ctx, channel, secret, fallback.request)
+			execution = mergeFallbackExecution(execution, fallbackExecution, fallback.model)
 		}
 		executions = append(executions, execution)
 	}
@@ -138,15 +134,21 @@ func (s *Service) quickTestRate(ctx context.Context, channelID, rateID uint, in 
 	auditResult := *result
 	auditResult.ImageURL = ""
 	_ = s.appendAudit(nil, nil, nil, "rate_quick_test", source, result.Usable, nil, &auditResult, map[string]any{
-		"channel_id":    channelID,
-		"rate_id":       rateID,
-		"group":         rate.ModelName,
-		"platform":      platform,
-		"model":         result.Model,
-		"primary_model": result.PrimaryModel,
-		"fallback_used": result.FallbackUsed,
+		"channel_id":     channelID,
+		"rate_id":        rateID,
+		"group":          rate.ModelName,
+		"platform":       platform,
+		"model":          result.Model,
+		"primary_model":  result.PrimaryModel,
+		"fallback_used":  result.FallbackUsed,
+		"fallback_depth": result.FallbackDepth,
 	}, result.Message, result.CleanupError)
 	return result, nil
+}
+
+type quickTestProbeModel struct {
+	model   string
+	request probeRequest
 }
 
 func buildQuickTestProbeRequest(mode, model string) (probeRequest, error) {
@@ -343,6 +345,7 @@ func quickTestResult(executions []probeExecution, keyName string, cleanupErr err
 	var representative probeExecution
 	var firstFailure *probeExecution
 	fallbackUsed := false
+	fallbackDepth := 0
 	primaryModel := ""
 	for i := range executions {
 		execution := executions[i]
@@ -351,6 +354,9 @@ func quickTestResult(executions []probeExecution, keyName string, cleanupErr err
 		}
 		if execution.FallbackUsed {
 			fallbackUsed = true
+			if execution.FallbackDepth > fallbackDepth {
+				fallbackDepth = execution.FallbackDepth
+			}
 			if primaryModel == "" {
 				primaryModel = strings.TrimSpace(execution.PrimaryModel)
 			}
@@ -405,7 +411,8 @@ func quickTestResult(executions []probeExecution, keyName string, cleanupErr err
 		OutputTokens: sumProbeTokens(executions, func(item probeExecution) *int64 { return item.OutputTokens }),
 		TotalTokens:  sumProbeTokens(executions, func(item probeExecution) *int64 { return item.TotalTokens }), TemporaryKeyName: keyName,
 		FallbackUsed: fallbackUsed, PrimaryModel: primaryModel,
-		ImageURL: imageResultURL(executions), TemporaryKeyStatus: cleanupStatus, CleanupError: cleanupMessage, TestedAt: testedAt,
+		FallbackDepth: fallbackDepth,
+		ImageURL:      imageResultURL(executions), TemporaryKeyStatus: cleanupStatus, CleanupError: cleanupMessage, TestedAt: testedAt,
 	}
 }
 

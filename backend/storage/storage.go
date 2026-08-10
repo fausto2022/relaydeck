@@ -143,6 +143,8 @@ func resolveSQLitePath(path string) string {
 func AutoMigrate(db *gorm.DB) error {
 	upgradeHealthDefaults := db.Migrator().HasTable(&MainStationConfig{}) &&
 		!db.Migrator().HasColumn(&MainStationConfig{}, "health_failure_threshold")
+	upgradeHealthModelAutoSelected := db.Migrator().HasTable(&MainAccountPoolMember{}) &&
+		!db.Migrator().HasColumn(&MainAccountPoolMember{}, "health_model_auto_selected")
 	if err := dropDeletedAtColumns(db); err != nil {
 		return err
 	}
@@ -193,6 +195,13 @@ func AutoMigrate(db *gorm.DB) error {
 			Where("health_interval_seconds = ?", 300).
 			Update("health_interval_seconds", defaultMainStationHealthIntervalSeconds).Error; err != nil {
 			return fmt.Errorf("migrate main station health interval default: %w", err)
+		}
+	}
+	if upgradeHealthModelAutoSelected {
+		if err := db.Model(&MainAccountPoolMember{}).
+			Where("id IN (SELECT DISTINCT member_id FROM main_account_audit_logs WHERE member_id IS NOT NULL AND action IN ? AND success = ?)", []string{"auto_expand_member_add", "health_model_fallback"}, true).
+			Update("health_model_auto_selected", true).Error; err != nil {
+			return fmt.Errorf("migrate automatic health model members: %w", err)
 		}
 	}
 	return migrateLegacyMainStationData(db)

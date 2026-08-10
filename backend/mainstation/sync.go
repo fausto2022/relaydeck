@@ -462,6 +462,7 @@ func (b accountDTOBatch) accountDTO(item storage.MainStationAccountSnapshot) Acc
 			Concurrency:               member.Concurrency,
 			HealthEnabled:             member.HealthEnabled,
 			HealthModel:               member.HealthModel,
+			HealthModelAutoSelected:   member.HealthModelAutoSelected,
 			HealthIntervalSeconds:     member.HealthIntervalSeconds,
 			HealthFailureThreshold:    member.HealthFailureThreshold,
 			HealthRecoveryThreshold:   member.HealthRecoveryThreshold,

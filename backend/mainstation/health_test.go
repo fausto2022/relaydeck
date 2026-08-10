@@ -263,9 +263,65 @@ func TestHealthProbeFallsBackForUnavailableModelAndPinsAccountModel(t *testing.T
 	if result.Member.HealthModel != "gpt-fallback" {
 		t.Fatalf("member health model = %q", result.Member.HealthModel)
 	}
+	if !result.Member.HealthModelAutoSelected {
+		t.Fatalf("fallback model must retain the global fallback chain: %#v", result.Member)
+	}
 	var audit storage.MainAccountAuditLog
 	if err := db.Where("action = ? AND member_id = ?", "health_model_fallback", member.ID).Order("id DESC").First(&audit).Error; err != nil {
 		t.Fatalf("fallback audit: %v", err)
+	}
+}
+
+func TestHealthProbeFallsBackToThirdModelAndRetainsRemainingChain(t *testing.T) {
+	phase := atomic.Bool{}
+	var models []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/chat/completions" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatalf("decode third fallback health body: %v", err)
+		}
+		model, _ := body["model"].(string)
+		models = append(models, model)
+		if model == "gpt-primary" || (model == "gpt-fallback" && phase.Load()) {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "model unavailable"}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": "OK"}}},
+			"usage":   map[string]any{"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
+		})
+	}))
+	defer server.Close()
+
+	service, db, admin, _ := newTestService(t)
+	member := createHealthMember(t, service, db, admin, server.URL, "")
+	if err := db.Model(member).Update("health_model", "").Error; err != nil {
+		t.Fatalf("clear member health model: %v", err)
+	}
+	if _, err := service.UpdateConfig(context.Background(), ConfigInput{
+		HealthModels:               map[string]string{"openai": "gpt-primary"},
+		HealthFallbackModels:       map[string]string{"openai": "gpt-fallback"},
+		HealthSecondFallbackModels: map[string]string{"openai": "gpt-third"},
+	}); err != nil {
+		t.Fatalf("save third fallback health models: %v", err)
+	}
+
+	first, err := service.CheckMember(context.Background(), member.PoolID, member.ID, HealthCheckInput{Level: "L1", Force: true})
+	if err != nil || first.Check.Model != "gpt-fallback" || !first.Member.HealthModelAutoSelected {
+		t.Fatalf("first fallback result = %#v, err=%v", first, err)
+	}
+	phase.Store(true)
+	second, err := service.CheckMember(context.Background(), member.PoolID, member.ID, HealthCheckInput{Level: "L1", Force: true})
+	if err != nil || second.Check.Model != "gpt-third" || !second.Member.HealthModelAutoSelected {
+		t.Fatalf("third fallback result = %#v, err=%v", second, err)
+	}
+	if got := strings.Join(models, ","); got != "gpt-primary,gpt-fallback,gpt-fallback,gpt-third" {
+		t.Fatalf("fallback chain requests = %q", got)
 	}
 }
 
@@ -303,11 +359,12 @@ func TestHealthProbeDoesNotFallbackForExhaustedBalance(t *testing.T) {
 }
 
 func TestHealthModelFallbackSelectionAndClassification(t *testing.T) {
-	selection := effectiveHealthModelSelection("openai", "member-model", globalHealthSettings{
-		Models:         map[string]string{"openai": "global-model"},
-		FallbackModels: map[string]string{"openai": "fallback-model"},
+	selection := effectiveHealthModelSelection("openai", "member-model", false, globalHealthSettings{
+		Models:               map[string]string{"openai": "global-model"},
+		FallbackModels:       map[string]string{"openai": "fallback-model"},
+		SecondFallbackModels: map[string]string{"openai": "third-model"},
 	})
-	if selection.Primary != "member-model" || selection.Fallback != "" {
+	if selection.Primary != "member-model" || len(selection.Fallbacks) != 0 {
 		t.Fatalf("explicit model selection = %#v", selection)
 	}
 	tests := []struct {
@@ -334,14 +391,17 @@ func TestHealthModelFallbackSelectionAndClassification(t *testing.T) {
 }
 
 func TestHealthFallbackModelValidation(t *testing.T) {
-	if err := validateHealthModelFallbacks(map[string]string{"openai": "gpt-primary"}, map[string]string{"openai": "gpt-primary"}); err == nil {
+	if err := validateHealthModelFallbacks(map[string]string{"openai": "gpt-primary"}, map[string]string{"openai": "gpt-primary"}, nil); err == nil {
 		t.Fatal("same primary and fallback model was accepted")
 	}
-	if err := validateHealthModelFallbacks(nil, map[string]string{"openai": "gpt-fallback"}); err == nil {
+	if err := validateHealthModelFallbacks(nil, map[string]string{"openai": "gpt-fallback"}, nil); err == nil {
 		t.Fatal("fallback without primary model was accepted")
 	}
-	if err := validateHealthModelFallbacks(map[string]string{"OpenAI": "gpt-primary"}, map[string]string{"openai": "gpt-fallback"}); err != nil {
+	if err := validateHealthModelFallbacks(map[string]string{"OpenAI": "gpt-primary"}, map[string]string{"openai": "gpt-fallback"}, map[string]string{"openai": "gpt-third"}); err != nil {
 		t.Fatalf("valid health fallback models: %v", err)
+	}
+	if err := validateHealthModelFallbacks(map[string]string{"openai": "gpt-primary"}, nil, map[string]string{"openai": "gpt-third"}); err == nil {
+		t.Fatal("third model without second model was accepted")
 	}
 }
 

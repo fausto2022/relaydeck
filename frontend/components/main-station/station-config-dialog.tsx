@@ -53,6 +53,7 @@ export function StationConfigDialog({
   const [guaranteedRevenueRatioPercent, setGuaranteedRevenueRatioPercent] = useState(100)
   const [healthModels, setHealthModels] = useState<Record<string, string>>({})
   const [healthFallbackModels, setHealthFallbackModels] = useState<Record<string, string>>({})
+  const [healthSecondFallbackModels, setHealthSecondFallbackModels] = useState<Record<string, string>>({})
   const [healthIntervalSeconds, setHealthIntervalSeconds] = useState(30)
   const [healthFailureThreshold, setHealthFailureThreshold] = useState(10)
   const [healthRecoveryThreshold, setHealthRecoveryThreshold] = useState(3)
@@ -76,6 +77,7 @@ export function StationConfigDialog({
     setGuaranteedRevenueRatioPercent((config?.guaranteed_revenue_ratio_basis_points ?? 10000) / 100)
     setHealthModels(config?.health_models ?? {})
     setHealthFallbackModels(config?.health_fallback_models ?? {})
+    setHealthSecondFallbackModels(config?.health_second_fallback_models ?? {})
     setHealthIntervalSeconds(config?.health_interval_seconds ?? 30)
     setHealthFailureThreshold(config?.health_failure_threshold ?? 10)
     setHealthRecoveryThreshold(config?.health_recovery_threshold ?? 3)
@@ -194,6 +196,7 @@ export function StationConfigDialog({
           guaranteed_revenue_ratio_basis_points: Math.round(guaranteedRevenueRatioPercent * 100),
           health_models: healthModels,
           health_fallback_models: healthFallbackModels,
+          health_second_fallback_models: healthSecondFallbackModels,
           health_interval_seconds: healthIntervalSeconds,
           health_failure_threshold: healthFailureThreshold,
           health_recovery_threshold: healthRecoveryThreshold,
@@ -218,6 +221,11 @@ export function StationConfigDialog({
     }
   }
   for (const platform of Object.keys(healthFallbackModels)) {
+    if (!catalogs.some((item) => item.platform === platform)) {
+      catalogs.push({ platform, models: [] })
+    }
+  }
+  for (const platform of Object.keys(healthSecondFallbackModels)) {
     if (!catalogs.some((item) => item.platform === platform)) {
       catalogs.push({ platform, models: [] })
     }
@@ -346,7 +354,8 @@ export function StationConfigDialog({
                 {catalogs.map((catalog) => {
                   const selected = healthModels[catalog.platform] ?? ""
                   const fallbackSelected = healthFallbackModels[catalog.platform] ?? ""
-                  const options = Array.from(new Set([...catalog.models, selected, fallbackSelected].filter(Boolean)))
+                  const secondFallbackSelected = healthSecondFallbackModels[catalog.platform] ?? ""
+                  const options = Array.from(new Set([...catalog.models, selected, fallbackSelected, secondFallbackSelected].filter(Boolean)))
                   return (
                     <div key={catalog.platform} className="space-y-2">
                       <Label>{healthPlatformLabel(catalog.platform)}</Label>
@@ -367,6 +376,18 @@ export function StationConfigDialog({
                                 delete next[catalog.platform]
                                 return next
                               })
+                              setHealthSecondFallbackModels((current) => {
+                                const next = { ...current }
+                                delete next[catalog.platform]
+                                return next
+                              })
+                            }
+                            if (value !== "__none__" && secondFallbackSelected.toLowerCase() === value.toLowerCase()) {
+                              setHealthSecondFallbackModels((current) => {
+                                const next = { ...current }
+                                delete next[catalog.platform]
+                                return next
+                              })
                             }
                           }}
                         >
@@ -382,12 +403,21 @@ export function StationConfigDialog({
                         <Select
                           value={fallbackSelected || "__none__"}
                           disabled={!selected}
-                          onValueChange={(value) => setHealthFallbackModels((current) => {
-                            const next = { ...current }
-                            if (value === "__none__") delete next[catalog.platform]
-                            else next[catalog.platform] = value
-                            return next
-                          })}
+                          onValueChange={(value) => {
+                            setHealthFallbackModels((current) => {
+                              const next = { ...current }
+                              if (value === "__none__") delete next[catalog.platform]
+                              else next[catalog.platform] = value
+                              return next
+                            })
+                            if (value === "__none__" || secondFallbackSelected.toLowerCase() === value.toLowerCase()) {
+                              setHealthSecondFallbackModels((current) => {
+                                const next = { ...current }
+                                delete next[catalog.platform]
+                                return next
+                              })
+                            }
+                          }}
                         >
                           <SelectTrigger><SelectValue placeholder="不启用备用模型" /></SelectTrigger>
                           <SelectContent>
@@ -396,12 +426,31 @@ export function StationConfigDialog({
                           </SelectContent>
                         </Select>
                       </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">第三探测模型（可选）</p>
+                        <Select
+                          value={secondFallbackSelected || "__none__"}
+                          disabled={!fallbackSelected}
+                          onValueChange={(value) => setHealthSecondFallbackModels((current) => {
+                            const next = { ...current }
+                            if (value === "__none__") delete next[catalog.platform]
+                            else next[catalog.platform] = value
+                            return next
+                          })}
+                        >
+                          <SelectTrigger><SelectValue placeholder="不启用第三模型" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">不启用第三模型</SelectItem>
+                            {options.filter((model) => model.toLowerCase() !== selected.toLowerCase() && model.toLowerCase() !== fallbackSelected.toLowerCase()).map((model) => <SelectItem key={`second-fallback-${model}`} value={model}>{model}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       {catalog.error ? <p className="text-xs text-destructive">{catalog.error}</p> : null}
                     </div>
                   )
                 })}
               </div>
-              <p className="text-xs text-muted-foreground">仅当主模型明确不存在、禁用或不支持时才尝试备用模型；余额不足、限流、超时、鉴权失败和服务器错误不会切换。</p>
+              <p className="text-xs text-muted-foreground">仅当当前模型明确不存在、禁用或不支持时才按主模型、第二模型、第三模型依次尝试；余额不足、限流、超时、鉴权失败和服务器错误不会切换。</p>
               <div className="grid gap-3 border-t pt-3 sm:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="main-station-health-interval">探活间隔（秒）</Label>

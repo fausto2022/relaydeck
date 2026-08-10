@@ -17,7 +17,7 @@ import (
 const (
 	maximumMarginBasisPoints     = int64(9900)
 	autoExpansionMaxTestsPerPool = 3
-	autoExpansionFailureCooldown = 6 * time.Hour
+	autoExpansionFailureCooldown = time.Hour
 	autoExpansionErrorCooldown   = time.Hour
 	autoExpansionRateFreshness   = 15 * time.Minute
 )
@@ -194,7 +194,7 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 	if err != nil {
 		return err
 	}
-	modelSelection := effectiveHealthModelSelection(platform, "", s.configuredHealthSettings())
+	modelSelection := effectiveHealthModelSelection(platform, "", false, s.configuredHealthSettings())
 	model := modelSelection.Primary
 	if model == "" {
 		return fmt.Errorf("尚未配置 %s 类型的全局探活模型", platform)
@@ -223,9 +223,9 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 		tested++
 		evidence := autoExpansionEvidence(group, candidate, saleMicros, pool.AutoExpandMinMarginBasisPoints, pool.AutoExpandMinRateMicros, platform, model, category.rule)
 		result, testErr := s.quickTestRate(ctx, candidate.channel.ID, candidate.rate.ID, RateQuickTestInput{
-			Platform:      platform,
-			Model:         model,
-			FallbackModel: modelSelection.Fallback,
+			Platform:       platform,
+			Model:          model,
+			FallbackModels: modelSelection.Fallbacks,
 		}, "scheduler")
 		if testErr != nil {
 			nextAttemptAt := now.Add(autoExpansionErrorCooldown)
@@ -256,10 +256,11 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 		var createErr error
 		if candidate.existingMember != nil {
 			member, createErr = s.SyncMember(ctx, pool.ID, candidate.existingMember.ID)
-			if createErr == nil && result.FallbackUsed && member != nil && (!strings.EqualFold(member.HealthModel, finalModel) || member.HealthAPIMode != finalMode) {
+			if createErr == nil && result.FallbackUsed && member != nil && (!strings.EqualFold(member.HealthModel, finalModel) || member.HealthAPIMode != finalMode || !member.HealthModelAutoSelected) {
 				before := *member
-				if createErr = s.store.UpdateMemberHealth(member.ID, map[string]any{"health_model": finalModel, "health_api_mode": finalMode}); createErr == nil {
+				if createErr = s.store.UpdateMemberHealth(member.ID, map[string]any{"health_model": finalModel, "health_model_auto_selected": true, "health_api_mode": finalMode}); createErr == nil {
 					member.HealthModel = finalModel
+					member.HealthModelAutoSelected = true
 					member.HealthAPIMode = finalMode
 					_ = s.appendAudit(&pool.ID, &member.ID, member.RemoteAccountID, "health_model_fallback", "auto_expand", true,
 						&before, member, map[string]any{"primary_model": result.PrimaryModel, "fallback_model": finalModel}, "自动扩池测试切换备用探测模型", "")
@@ -268,22 +269,23 @@ func (s *Service) expandPoolFromRates(ctx context.Context, pool *storage.MainAcc
 		} else {
 			enabled := true
 			member, createErr = s.CreateMember(ctx, pool.ID, MemberInput{
-				AccountName:       candidate.rate.ModelName,
-				OwnershipMode:     "managed",
-				SourceChannelID:   candidate.channel.ID,
-				SourceGroupID:     candidate.rate.RemoteGroupID,
-				SourceGroupName:   candidate.rate.ModelName,
-				AllowNameConflict: true,
-				Enabled:           &enabled,
-				Preferred:         boolPointer(false),
-				Priority:          1,
-				Concurrency:       0,
-				RateConvertMode:   "raw",
-				RateConvertValue:  1,
-				CostAdjustment:    1,
-				HealthEnabled:     &enabled,
-				HealthModel:       finalModel,
-				HealthAPIMode:     finalMode,
+				AccountName:             candidate.rate.ModelName,
+				OwnershipMode:           "managed",
+				SourceChannelID:         candidate.channel.ID,
+				SourceGroupID:           candidate.rate.RemoteGroupID,
+				SourceGroupName:         candidate.rate.ModelName,
+				AllowNameConflict:       true,
+				Enabled:                 &enabled,
+				Preferred:               boolPointer(false),
+				Priority:                1,
+				Concurrency:             0,
+				RateConvertMode:         "raw",
+				RateConvertValue:        1,
+				CostAdjustment:          1,
+				HealthEnabled:           &enabled,
+				HealthModel:             finalModel,
+				HealthModelAutoSelected: boolPointer(true),
+				HealthAPIMode:           finalMode,
 			})
 		}
 		if createErr != nil {
