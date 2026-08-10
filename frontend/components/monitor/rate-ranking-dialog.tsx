@@ -263,7 +263,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-6xl" aria-describedby="rate-ranking-dialog-description">
+        <DialogContent className="!flex h-[calc(100dvh-1rem)] min-h-0 max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-6xl" aria-describedby="rate-ranking-dialog-description">
           {view === "list" ? (
             <>
               <DialogHeader className="border-b border-border px-4 py-4 pr-12 sm:px-6">
@@ -271,29 +271,31 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                   <DialogTitle>倍率排行榜</DialogTitle>
                   <Badge variant="outline" className="tabular-nums">{visibleRates.length} 个分组</Badge>
                 </div>
-                <DialogDescription id="rate-ranking-dialog-description">
+                <DialogDescription id="rate-ranking-dialog-description" className="text-xs leading-5 sm:text-sm">
                   按换算后倍率从低到高排列 · 上次采集 <span title={dateTime(refreshedAt)}>{relativeTime(refreshedAt)}</span>
                 </DialogDescription>
               </DialogHeader>
               <div className="border-b border-border px-4 py-2 sm:px-6">
-                <Tabs value={provider} onValueChange={changeProvider}>
+                <Tabs value={provider} onValueChange={changeProvider} className="w-full">
                   <TabsList className="grid h-auto w-full grid-cols-3 gap-1 sm:flex sm:w-auto">
-                    {RATE_PROVIDERS.map((item) => <TabsTrigger key={item.value} value={item.value} className="min-w-0 px-2">{item.label}</TabsTrigger>)}
+                    {RATE_PROVIDERS.map((item) => <TabsTrigger key={item.value} value={item.value} className="!min-w-0 px-1 text-xs sm:min-w-max sm:px-2 sm:text-sm">{item.label}</TabsTrigger>)}
                   </TabsList>
                 </Tabs>
               </div>
               <div className="border-b border-border px-4 py-2 sm:px-6">
                 <Tabs value={activeCategory} onValueChange={onCategoryChange}>
-                  <TabsList className="h-auto max-w-full justify-start">
-                    {categoryOptions.map((item) => (
-                      <TabsTrigger key={item.value} value={item.value} className="gap-1.5 px-2.5">
-                        {item.label}<span className="text-[10px] tabular-nums text-muted-foreground">{item.count}</span>
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
+                  <div className="w-full overflow-x-auto overscroll-x-contain">
+                    <TabsList className="h-auto w-max min-w-full !max-w-none justify-start">
+                      {categoryOptions.map((item) => (
+                        <TabsTrigger key={item.value} value={item.value} className="gap-1.5 px-2.5">
+                          {item.label}<span className="text-[10px] tabular-nums text-muted-foreground">{item.count}</span>
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </div>
                 </Tabs>
               </div>
-              <ScrollArea className="h-[min(70dvh,640px)]">
+              <ScrollArea className="min-h-0 flex-1 sm:h-[min(70dvh,640px)] sm:flex-none">
                 {visibleRates.length === 0 ? (
                   <div className="px-6 py-16 text-center text-sm text-muted-foreground">该类型暂无已采集分组</div>
                 ) : (
@@ -310,7 +312,7 @@ export function RateRankingDialog({ open, onOpenChange, provider, onProviderChan
                 </div>
                 <DialogDescription id="rate-ranking-dialog-description">{channelMap.get(selectedRate.channel_id)?.name ?? `渠道 #${selectedRate.channel_id}`} · {selectedRate.model_name}</DialogDescription>
               </DialogHeader>
-              <ScrollArea className="h-[min(72dvh,660px)]">
+              <ScrollArea className="min-h-0 flex-1 sm:h-[min(72dvh,660px)] sm:flex-none">
                 <div className="space-y-5 px-4 py-5 sm:px-6">
                   <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto] sm:items-end">
                     <div className="space-y-2">
