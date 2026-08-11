@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   AlertTriangle,
+  CheckCircle2,
   KeyRound,
   Link2,
   Loader2,
   Plus,
   TestTubeDiagonal,
   Unlink,
+  XCircle,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
@@ -21,7 +23,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -68,9 +69,9 @@ export function ChannelGroupUsageDialog({ open, onOpenChange, channel, rate, onC
   const [targetGroupID, setTargetGroupID] = useState("")
   const [model, setModel] = useState("")
   const [loading, setLoading] = useState(false)
-  const [action, setAction] = useState<"test" | "direct" | null>(null)
+  const [action, setAction] = useState<"test-only" | "test-add" | "direct" | null>(null)
   const [error, setError] = useState("")
-  const [testMessage, setTestMessage] = useState("")
+  const [testResult, setTestResult] = useState<RateQuickTestResult | null>(null)
 
   const platform = normalizeMainStationPlatform(rate?.platform || rate?.ranking_provider)
   const connectedGroupIDs = useMemo(
@@ -85,6 +86,11 @@ export function ChannelGroupUsageDialog({ open, onOpenChange, channel, rate, onC
       && mainStationPlatformsMatch(workspace.group.platform, platform))
     .sort((left, right) => left.group.sort - right.group.sort || left.group.id - right.group.id),
   [connectedGroupIDs, platform, workspaces])
+  const modelOptions = useMemo(() => {
+    const configured = config?.health_models?.[platform] ?? ""
+    const discovered = catalogs.find((item) => normalizeMainStationPlatform(item.platform) === platform)?.models ?? []
+    return Array.from(new Set([configured, ...discovered].map((item) => item.trim()).filter(Boolean)))
+  }, [catalogs, config, platform])
 
   const loadUsage = useCallback(async () => {
     if (!channel || !rate) return
@@ -99,7 +105,7 @@ export function ChannelGroupUsageDialog({ open, onOpenChange, channel, rate, onC
     let cancelled = false
     setLoading(true)
     setError("")
-    setTestMessage("")
+    setTestResult(null)
     setUsage(null)
     setConfig(null)
     setCatalogs([])
@@ -191,19 +197,40 @@ export function ChannelGroupUsageDialog({ open, onOpenChange, channel, rate, onC
     }
   }
 
+  async function runQuickTest() {
+    if (!channel || !rate || !model.trim()) return null
+    const imageMode = isImageQuickTestModel(model) || platform === "image"
+    const result = await apiFetch<RateQuickTestResult>(`/channels/${channel.id}/rates/${rate.id}/test`, {
+      method: "POST",
+      body: JSON.stringify({ platform, model: model.trim(), mode: imageMode ? "image" : "chat" }),
+    })
+    setTestResult(result)
+    return result
+  }
+
+  async function testOnly() {
+    if (!channel || !rate || !model.trim()) return
+    setAction("test-only")
+    setTestResult(null)
+    try {
+      const result = await runQuickTest()
+      if (result?.usable) toast.success("快速测试通过，未加入主站")
+      else if (result) toast.warning(result.message)
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "快速测试失败")
+    } finally {
+      setAction(null)
+    }
+  }
+
   async function testAndAdd() {
     if (!channel || !rate || !targetGroupID || !model.trim()) return
-    setAction("test")
-    setTestMessage("")
+    setAction("test-add")
+    setTestResult(null)
     try {
-      const imageMode = isImageQuickTestModel(model) || platform === "image"
-      const result = await apiFetch<RateQuickTestResult>(`/channels/${channel.id}/rates/${rate.id}/test`, {
-        method: "POST",
-        body: JSON.stringify({ platform, model: model.trim(), mode: imageMode ? "image" : "chat" }),
-      })
-      setTestMessage(result.message)
-      if (!result.usable) {
-        toast.warning(result.message)
+      const result = await runQuickTest()
+      if (!result?.usable) {
+        if (result) toast.warning(result.message)
         return
       }
       await createManagedAccount()
@@ -224,7 +251,7 @@ export function ChannelGroupUsageDialog({ open, onOpenChange, channel, rate, onC
     })
     if (!approved) return
     setAction("direct")
-    setTestMessage("")
+    setTestResult(null)
     try {
       await createManagedAccount()
     } catch (caught) {
@@ -234,12 +261,13 @@ export function ChannelGroupUsageDialog({ open, onOpenChange, channel, rate, onC
     }
   }
 
-  const actionDisabled = loading || action !== null || !targetGroupID
+  const testDisabled = loading || action !== null || !model.trim() || !platform
+  const addDisabled = loading || action !== null || !targetGroupID
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-4xl">
+        <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
               <span>{rate?.model_name || "上游分组"}</span>
@@ -277,7 +305,7 @@ export function ChannelGroupUsageDialog({ open, onOpenChange, channel, rate, onC
                     <span className="text-xs text-muted-foreground">没有未接入的同类型分组</span>
                   ) : null}
                 </div>
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
                   <div className="space-y-1.5">
                     <Label htmlFor="channel-rate-target-group">目标主站分组</Label>
                     <Select value={targetGroupID} onValueChange={setTargetGroupID} disabled={action !== null || availableWorkspaces.length === 0}>
@@ -293,26 +321,34 @@ export function ChannelGroupUsageDialog({ open, onOpenChange, channel, rate, onC
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="channel-rate-health-model">测试及探活模型</Label>
-                    <Input
-                      id="channel-rate-health-model"
-                      value={model}
-                      onChange={(event) => setModel(event.target.value)}
-                      placeholder="输入模型名称"
-                      disabled={action !== null}
-                    />
+                    <Select value={model} onValueChange={(value) => {
+                      setModel(value)
+                      setTestResult(null)
+                    }} disabled={action !== null || modelOptions.length === 0}>
+                      <SelectTrigger id="channel-rate-health-model" className="w-full">
+                        <SelectValue placeholder={loading ? "加载模型中" : "选择测试模型"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {modelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="flex flex-wrap gap-2 md:justify-end">
-                    <Button variant="outline" onClick={() => void directAdd()} disabled={actionDisabled}>
+                  <div className="grid gap-2 sm:grid-cols-3 lg:flex lg:justify-end">
+                    <Button variant="outline" className="w-full lg:w-auto" onClick={() => void testOnly()} disabled={testDisabled}>
+                      {action === "test-only" ? <Loader2 className="animate-spin" /> : <TestTubeDiagonal />}
+                      仅测试
+                    </Button>
+                    <Button variant="outline" className="w-full lg:w-auto" onClick={() => void directAdd()} disabled={addDisabled}>
                       {action === "direct" ? <Loader2 className="animate-spin" /> : <Plus />}
                       直接加入
                     </Button>
-                    <Button onClick={() => void testAndAdd()} disabled={actionDisabled || !model.trim() || !platform}>
-                      {action === "test" ? <Loader2 className="animate-spin" /> : <TestTubeDiagonal />}
+                    <Button className="w-full lg:w-auto" onClick={() => void testAndAdd()} disabled={testDisabled || !targetGroupID}>
+                      {action === "test-add" ? <Loader2 className="animate-spin" /> : <TestTubeDiagonal />}
                       测试并加入
                     </Button>
                   </div>
                 </div>
-                {testMessage ? <p className="mt-3 text-sm text-muted-foreground">{testMessage}</p> : null}
+                {testResult ? <QuickTestResult result={testResult} /> : null}
               </section>
             </div>
           )}
@@ -320,6 +356,55 @@ export function ChannelGroupUsageDialog({ open, onOpenChange, channel, rate, onC
       </Dialog>
       {confirmDialog}
     </>
+  )
+}
+
+function QuickTestResult({ result }: { result: RateQuickTestResult }) {
+  const status = result.usable
+    ? { label: "测试通过", icon: CheckCircle2, className: "text-emerald-700 dark:text-emerald-300" }
+    : result.reachable
+      ? { label: "可连接但不可用", icon: AlertTriangle, className: "text-amber-700 dark:text-amber-300" }
+      : { label: "测试失败", icon: XCircle, className: "text-destructive" }
+  const StatusIcon = status.icon
+  const tokenCount = result.total_tokens ?? ((result.input_tokens ?? 0) + (result.output_tokens ?? 0) || undefined)
+
+  return (
+    <div className="mt-4 space-y-3 border-y border-border py-4">
+      <div className={cn("flex items-start gap-2.5", status.className)}>
+        <StatusIcon className="mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">{status.label}</p>
+          <p className="mt-0.5 break-words text-sm text-foreground">{result.message}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
+        <ResultMetric label="实际模型" value={result.model || "-"} />
+        <ResultMetric label="平均延迟" value={`${result.latency_ms} ms`} />
+        <ResultMetric label="HTTP 状态" value={result.http_status ? String(result.http_status) : "-"} />
+        <ResultMetric label="Token" value={tokenCount == null ? "-" : String(tokenCount)} />
+      </div>
+      {result.image_url ? (
+        <div className="overflow-hidden rounded-md border border-border bg-muted/30">
+          <img src={result.image_url} alt="快速测试生成结果" className="mx-auto max-h-80 w-auto max-w-full object-contain" />
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>临时 Key：{result.temporary_key_name}</span>
+        <Badge variant="outline" className={result.temporary_key_status === "deleted" ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}>
+          {result.temporary_key_status === "deleted" ? "已删除" : "等待后台清理"}
+        </Badge>
+        {result.cleanup_error ? <span className="text-amber-700 dark:text-amber-300">{result.cleanup_error}</span> : null}
+      </div>
+    </div>
+  )
+}
+
+function ResultMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-0.5 truncate font-medium tabular-nums" title={value}>{value}</p>
+    </div>
   )
 }
 
