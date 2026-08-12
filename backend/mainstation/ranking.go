@@ -185,12 +185,12 @@ func rankSchedulingSignals(signals []schedulingRankSignal, rateSortDirection str
 		switch {
 		case left.Enabled != right.Enabled:
 			return left.Enabled
+		case stabilityMode && left.SampleBand != right.SampleBand:
+			return left.SampleBand < right.SampleBand
 		case left.HealthBand != right.HealthBand:
 			return left.HealthBand < right.HealthBand
 		case left.Preferred != right.Preferred:
 			return left.Preferred
-		case stabilityMode && left.SampleBand != right.SampleBand:
-			return left.SampleBand < right.SampleBand
 		case left.CurrentPriority > 0 && right.CurrentPriority > 0 && left.CurrentPriority != right.CurrentPriority:
 			return left.CurrentPriority < right.CurrentPriority
 		case left.Score != right.Score:
@@ -212,7 +212,7 @@ func rankSchedulingSignals(signals []schedulingRankSignal, rateSortDirection str
 	for index := 1; index < len(signals); index++ {
 		for current := index; current > 0; current-- {
 			left, right := signals[current-1], signals[current]
-			if !sameSchedulingRankBand(left, right) || right.Score+hysteresis >= left.Score {
+			if !sameSchedulingRankBand(left, right, stabilityMode) || right.Score+hysteresis >= left.Score {
 				break
 			}
 			signals[current-1], signals[current] = signals[current], signals[current-1]
@@ -257,8 +257,9 @@ func schedulingStabilityScore(signal schedulingRankSignal) int {
 	return score
 }
 
-func sameSchedulingRankBand(left, right schedulingRankSignal) bool {
-	return left.Enabled == right.Enabled && left.HealthBand == right.HealthBand && left.Preferred == right.Preferred
+func sameSchedulingRankBand(left, right schedulingRankSignal, stabilityMode bool) bool {
+	return left.Enabled == right.Enabled && left.HealthBand == right.HealthBand && left.Preferred == right.Preferred &&
+		(!stabilityMode || left.SampleBand == right.SampleBand)
 }
 
 func schedulingCostPenalties(signals []schedulingRankSignal, direction string) map[uint]int {

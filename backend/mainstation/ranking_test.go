@@ -101,7 +101,7 @@ func TestRankSchedulingSignalsStabilityRanksUnknownSamplesLast(t *testing.T) {
 	latency := int64(1_000)
 	priorities := rankSchedulingSignals([]schedulingRankSignal{
 		{MemberID: 1, HealthBand: 0, Priority: 1, SampleBand: 2},
-		{MemberID: 2, HealthBand: 0, Priority: 1, SuccessRate: &rate, P95LatencyMS: &latency},
+		{MemberID: 2, HealthBand: 2, Priority: 1, SuccessRate: &rate, P95LatencyMS: &latency},
 	}, "stability")
 	if priorities[2] >= priorities[1] {
 		t.Fatalf("account with known stability should rank before an unknown account: %#v", priorities)
