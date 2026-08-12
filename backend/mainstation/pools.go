@@ -209,7 +209,8 @@ func groupWorkspaceDTO(group storage.UpstreamSyncTargetGroup, pool *storage.Main
 		LastEvaluatedAt: pool.LastEvaluatedAt, RankingIntervalSeconds: normalizedPoolRankingInterval(pool.RankingIntervalSeconds),
 		RankingDirtyAt: pool.RankingDirtyAt, LastRankingAt: pool.LastRankingAt, LastRankingError: pool.LastRankingError,
 		AutoExpandEnabled: pool.AutoExpandEnabled, AutoExpandMinMarginBasisPoints: pool.AutoExpandMinMarginBasisPoints,
-		AutoExpandMinRateMicros: pool.AutoExpandMinRateMicros, AutoExpandCategoryRuleID: pool.AutoExpandCategoryRuleID,
+		AutoExpandMinRateMicros: pool.AutoExpandMinRateMicros, AutoExpandMaxRateMicros: pool.AutoExpandMaxRateMicros,
+		AutoExpandCategoryRuleID:  pool.AutoExpandCategoryRuleID,
 		AutoExpandBlockedKeywords: pool.AutoExpandBlockedKeywords, DisabledCleanupSeconds: pool.DisabledCleanupSeconds,
 		LastAutoExpandAt: pool.LastAutoExpandAt, LastAutoExpandError: pool.LastAutoExpandError,
 		AccountCount: accountCount, ManagedAccountCount: memberCount,
@@ -444,7 +445,7 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	if err := validateAutoExpandMarginBasisPoints(in.AutoExpandMinMarginBasisPoints); err != nil {
 		return nil, err
 	}
-	if err := validateAutoExpandConditions(in.AutoExpandEnabled, in.AutoExpandMinMarginBasisPoints, in.AutoExpandMinRateMicros); err != nil {
+	if err := validateAutoExpandConditions(in.AutoExpandEnabled, in.AutoExpandMinMarginBasisPoints, in.AutoExpandMinRateMicros, in.AutoExpandMaxRateMicros); err != nil {
 		return nil, err
 	}
 	if err := validateDisabledCleanupSeconds(in.DisabledCleanupSeconds); err != nil {
@@ -467,6 +468,7 @@ func (s *Service) UpdateGroupSettings(ctx context.Context, groupID uint, in Grou
 	pool.AutoExpandEnabled = in.AutoExpandEnabled
 	pool.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
 	pool.AutoExpandMinRateMicros = in.AutoExpandMinRateMicros
+	pool.AutoExpandMaxRateMicros = in.AutoExpandMaxRateMicros
 	pool.AutoExpandCategoryRuleID = copyOptionalUint(in.AutoExpandCategoryRuleID)
 	pool.AutoExpandBlockedKeywords = normalizeAutoExpandBlockedKeywords(in.AutoExpandBlockedKeywords)
 	pool.DisabledCleanupSeconds = in.DisabledCleanupSeconds
@@ -680,7 +682,7 @@ func (s *Service) poolFromInput(existing *storage.MainAccountPool, in PoolInput)
 	if err := validateAutoExpandMarginBasisPoints(in.AutoExpandMinMarginBasisPoints); err != nil {
 		return nil, nil, err
 	}
-	if err := validateAutoExpandConditions(in.AutoExpandEnabled, in.AutoExpandMinMarginBasisPoints, in.AutoExpandMinRateMicros); err != nil {
+	if err := validateAutoExpandConditions(in.AutoExpandEnabled, in.AutoExpandMinMarginBasisPoints, in.AutoExpandMinRateMicros, in.AutoExpandMaxRateMicros); err != nil {
 		return nil, nil, err
 	}
 	if err := validateDisabledCleanupSeconds(in.DisabledCleanupSeconds); err != nil {
@@ -689,6 +691,7 @@ func (s *Service) poolFromInput(existing *storage.MainAccountPool, in PoolInput)
 	item.AutoExpandEnabled = in.AutoExpandEnabled
 	item.AutoExpandMinMarginBasisPoints = in.AutoExpandMinMarginBasisPoints
 	item.AutoExpandMinRateMicros = in.AutoExpandMinRateMicros
+	item.AutoExpandMaxRateMicros = in.AutoExpandMaxRateMicros
 	item.AutoExpandCategoryRuleID = copyOptionalUint(in.AutoExpandCategoryRuleID)
 	item.AutoExpandBlockedKeywords = normalizeAutoExpandBlockedKeywords(in.AutoExpandBlockedKeywords)
 	item.DisabledCleanupSeconds = in.DisabledCleanupSeconds

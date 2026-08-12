@@ -69,6 +69,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
   const [autoExpandEnabled, setAutoExpandEnabled] = useState(false)
   const [autoExpandMinMarginPercent, setAutoExpandMinMarginPercent] = useState("")
   const [autoExpandMinRateMultiplier, setAutoExpandMinRateMultiplier] = useState("")
+  const [autoExpandMaxRateMultiplier, setAutoExpandMaxRateMultiplier] = useState("")
   const [autoExpandCategoryRuleID, setAutoExpandCategoryRuleID] = useState(ALL_PROVIDER_RATES)
   const [autoExpandBlockedKeywords, setAutoExpandBlockedKeywords] = useState("")
   const [disabledCleanupHours, setDisabledCleanupHours] = useState("0")
@@ -90,6 +91,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
     setAutoExpandEnabled(workspace.auto_expand_enabled ?? false)
     setAutoExpandMinMarginPercent(workspace.auto_expand_min_margin_basis_points > 0 ? String(workspace.auto_expand_min_margin_basis_points / 100) : "")
     setAutoExpandMinRateMultiplier(workspace.auto_expand_min_rate_multiplier_micros > 0 ? String(workspace.auto_expand_min_rate_multiplier_micros / 1_000_000) : "")
+    setAutoExpandMaxRateMultiplier(workspace.auto_expand_max_rate_multiplier_micros > 0 ? String(workspace.auto_expand_max_rate_multiplier_micros / 1_000_000) : "")
     setAutoExpandCategoryRuleID(workspace.auto_expand_category_rule_id == null ? ALL_PROVIDER_RATES : String(workspace.auto_expand_category_rule_id))
     setAutoExpandBlockedKeywords(workspace.auto_expand_blocked_keywords ?? "")
     setDisabledCleanupHours(String((workspace.disabled_cleanup_seconds ?? 0) / 3600))
@@ -128,6 +130,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
     }
     const autoExpandMarginValue = autoExpandMinMarginPercent.trim() === "" ? null : Number(autoExpandMinMarginPercent)
     const autoExpandRateValue = autoExpandMinRateMultiplier.trim() === "" ? null : Number(autoExpandMinRateMultiplier)
+    const autoExpandMaxRateValue = autoExpandMaxRateMultiplier.trim() === "" ? null : Number(autoExpandMaxRateMultiplier)
     if (autoExpandMarginValue != null && (!Number.isFinite(autoExpandMarginValue) || autoExpandMarginValue <= 0 || autoExpandMarginValue > 99)) {
       toast.error("自动扩池最低利润率必须大于 0% 且不超过 99%")
       return
@@ -136,8 +139,16 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
       toast.error("自动扩池最低倍率必须大于 0")
       return
     }
-    if (autoExpandEnabled && autoExpandMarginValue == null && autoExpandRateValue == null) {
-      toast.error("开启自动扩池时，最低倍率和最低利润率至少填写一项")
+    if (autoExpandMaxRateValue != null && (!Number.isFinite(autoExpandMaxRateValue) || autoExpandMaxRateValue <= 0)) {
+      toast.error("自动扩池最高倍率必须大于 0")
+      return
+    }
+    if (autoExpandRateValue != null && autoExpandMaxRateValue != null && autoExpandRateValue > autoExpandMaxRateValue) {
+      toast.error("自动扩池最低倍率不能高于最高倍率")
+      return
+    }
+    if (autoExpandEnabled && autoExpandMarginValue == null && autoExpandRateValue == null && autoExpandMaxRateValue == null) {
+      toast.error("开启自动扩池时，至少填写最低倍率、最高倍率或最低利润率一项")
       return
     }
     const disabledCleanupHoursValue = Number(disabledCleanupHours)
@@ -166,6 +177,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
           auto_expand_enabled: autoExpandEnabled,
           auto_expand_min_margin_basis_points: autoExpandMarginValue == null ? 0 : Math.round(autoExpandMarginValue * 100),
           auto_expand_min_rate_multiplier_micros: autoExpandRateValue == null ? 0 : Math.round(autoExpandRateValue * 1_000_000),
+          auto_expand_max_rate_multiplier_micros: autoExpandMaxRateValue == null ? 0 : Math.round(autoExpandMaxRateValue * 1_000_000),
           auto_expand_category_rule_id: autoExpandCategoryRuleID === ALL_PROVIDER_RATES ? null : Number(autoExpandCategoryRuleID),
           auto_expand_blocked_keywords: autoExpandBlockedKeywords,
           disabled_cleanup_seconds: Math.round(disabledCleanupHoursValue * 3600),
@@ -298,6 +310,19 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="group-auto-expand-max-rate">最高有效倍率</Label>
+                <Input
+                  id="group-auto-expand-max-rate"
+                  type="number"
+                  min={0.000001}
+                  step={0.01}
+                  value={autoExpandMaxRateMultiplier}
+                  placeholder="可留空（不限）"
+                  disabled={!autoExpandEnabled}
+                  onChange={(event) => setAutoExpandMaxRateMultiplier(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="group-auto-expand-margin">自动扩池最低利润率（%）</Label>
                 <Input
                   id="group-auto-expand-margin"
@@ -311,7 +336,7 @@ export function GroupSettingsDialog({ open, onOpenChange, workspace, config, onS
                   onChange={(event) => setAutoExpandMinMarginPercent(event.target.value)}
                 />
               </div>
-              <p className="text-xs text-muted-foreground sm:col-span-2">至少填写一项；两项都填时必须同时满足。有效倍率包含渠道充值倍率换算，倍率达到最低值且利润率严格高于最低值才会进入测试。</p>
+              <p className="text-xs text-muted-foreground sm:col-span-2">至少填写一项；填写多项时必须同时满足。有效倍率包含渠道充值倍率换算，范围按最低倍率 ≤ 有效倍率 ≤ 最高倍率判断；利润率严格高于最低值才会进入测试。</p>
               <p className="text-xs text-muted-foreground sm:col-span-2">每轮最多测试 3 个候选，连续 3 次通过后最多新增 1 个账号。</p>
             </div>
             <div className="space-y-2">

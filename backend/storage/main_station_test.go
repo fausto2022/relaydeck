@@ -82,6 +82,7 @@ func TestEmptyDatabaseCreatesMainStationSchemaWithoutConfiguration(t *testing.T)
 	}
 	if !db.Migrator().HasColumn(&MainStationConfig{}, "minimum_margin_basis_points") ||
 		!db.Migrator().HasColumn(&MainAccountPool{}, "minimum_margin_basis_points") ||
+		!db.Migrator().HasColumn(&MainAccountPool{}, "auto_expand_max_rate_multiplier_micros") ||
 		!db.Migrator().HasColumn(&MainAccountPool{}, "auto_expand_category_rule_id") ||
 		!db.Migrator().HasColumn(&MainAccountPool{}, "auto_expand_blocked_keywords") ||
 		!db.Migrator().HasColumn(&MainAccountPool{}, "disabled_cleanup_seconds") ||

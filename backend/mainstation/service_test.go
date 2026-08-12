@@ -421,6 +421,16 @@ func TestMainStationGroupsAreDirectAccountWorkspaces(t *testing.T) {
 	if updated.Enabled || updated.MinimumHealthyAccounts != 2 || updated.MinimumEffectiveConcurrency != 20 || updated.RateSortDirection != "desc" {
 		t.Fatalf("updated workspace = %#v", updated)
 	}
+	updated, err = service.UpdateGroupSettings(context.Background(), workspaces[0].Group.ID, GroupSettingsInput{
+		Enabled: &enabled, MinimumHealthyAccounts: 2, MinimumEffectiveConcurrency: 20, RateSortDirection: "desc",
+		AutoExpandMaxRateMicros: 350000,
+	})
+	if err != nil {
+		t.Fatalf("set automatic expansion maximum rate: %v", err)
+	}
+	if updated.AutoExpandMaxRateMicros != 350000 {
+		t.Fatalf("automatic expansion maximum rate = %d", updated.AutoExpandMaxRateMicros)
+	}
 	groupMinimum := int64(1500)
 	updated, err = service.UpdateGroupSettings(context.Background(), workspaces[0].Group.ID, GroupSettingsInput{
 		Enabled: &enabled, MinimumHealthyAccounts: 2, MinimumEffectiveConcurrency: 20, RateSortDirection: "desc",

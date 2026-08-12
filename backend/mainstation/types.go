@@ -172,6 +172,7 @@ type GroupWorkspaceDTO struct {
 	AutoExpandEnabled              bool                            `json:"auto_expand_enabled"`
 	AutoExpandMinMarginBasisPoints int64                           `json:"auto_expand_min_margin_basis_points"`
 	AutoExpandMinRateMicros        int64                           `json:"auto_expand_min_rate_multiplier_micros"`
+	AutoExpandMaxRateMicros        int64                           `json:"auto_expand_max_rate_multiplier_micros"`
 	AutoExpandCategoryRuleID       *uint                           `json:"auto_expand_category_rule_id,omitempty"`
 	AutoExpandBlockedKeywords      string                          `json:"auto_expand_blocked_keywords"`
 	DisabledCleanupSeconds         int                             `json:"disabled_cleanup_seconds"`
@@ -279,6 +280,7 @@ type GroupSettingsInput struct {
 	AutoExpandEnabled              bool   `json:"auto_expand_enabled"`
 	AutoExpandMinMarginBasisPoints int64  `json:"auto_expand_min_margin_basis_points"`
 	AutoExpandMinRateMicros        int64  `json:"auto_expand_min_rate_multiplier_micros"`
+	AutoExpandMaxRateMicros        int64  `json:"auto_expand_max_rate_multiplier_micros"`
 	AutoExpandCategoryRuleID       *uint  `json:"auto_expand_category_rule_id"`
 	AutoExpandBlockedKeywords      string `json:"auto_expand_blocked_keywords"`
 	DisabledCleanupSeconds         int    `json:"disabled_cleanup_seconds"`
@@ -307,6 +309,7 @@ type PoolInput struct {
 	AutoExpandEnabled              bool   `json:"auto_expand_enabled"`
 	AutoExpandMinMarginBasisPoints int64  `json:"auto_expand_min_margin_basis_points"`
 	AutoExpandMinRateMicros        int64  `json:"auto_expand_min_rate_multiplier_micros"`
+	AutoExpandMaxRateMicros        int64  `json:"auto_expand_max_rate_multiplier_micros"`
 	AutoExpandCategoryRuleID       *uint  `json:"auto_expand_category_rule_id"`
 	AutoExpandBlockedKeywords      string `json:"auto_expand_blocked_keywords"`
 	DisabledCleanupSeconds         int    `json:"disabled_cleanup_seconds"`

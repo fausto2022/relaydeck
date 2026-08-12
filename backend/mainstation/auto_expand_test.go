@@ -206,6 +206,36 @@ func TestAutoExpansionRequiresRateAndMarginWhenBothConfigured(t *testing.T) {
 	}
 }
 
+func TestAutoExpansionSupportsMaximumRateWithoutMarginThreshold(t *testing.T) {
+	fixture := newAutoExpansionTestFixture(t, 1000)
+	fixture.pool.AutoExpandMinMarginBasisPoints = 0
+	fixture.pool.AutoExpandMaxRateMicros = 200000
+	if err := fixture.db.Save(fixture.pool).Error; err != nil {
+		t.Fatalf("save maximum rate condition: %v", err)
+	}
+
+	fixture.service.RunAutoExpansion(context.Background())
+
+	if fixture.chatCalls.Load() == 0 || len(fixture.admin.createRequests) != 1 {
+		t.Fatalf("maximum-rate candidate was not added: chat=%d accounts=%d", fixture.chatCalls.Load(), len(fixture.admin.createRequests))
+	}
+}
+
+func TestAutoExpansionSkipsCandidateAboveMaximumRate(t *testing.T) {
+	fixture := newAutoExpansionTestFixture(t, 1000)
+	fixture.pool.AutoExpandMinMarginBasisPoints = 0
+	fixture.pool.AutoExpandMaxRateMicros = 199999
+	if err := fixture.db.Save(fixture.pool).Error; err != nil {
+		t.Fatalf("save maximum rate condition: %v", err)
+	}
+
+	fixture.service.RunAutoExpansion(context.Background())
+
+	if fixture.chatCalls.Load() != 0 || len(fixture.channels.createdKeys) != 0 || len(fixture.admin.createRequests) != 0 {
+		t.Fatalf("candidate above maximum rate was tested: chat=%d keys=%d accounts=%d", fixture.chatCalls.Load(), len(fixture.channels.createdKeys), len(fixture.admin.createRequests))
+	}
+}
+
 func TestAutoExpansionSkipsBlockedGroupKeywords(t *testing.T) {
 	fixture := newAutoExpansionTestFixture(t, 1000)
 	fixture.rate.ModelName = "OpenAI FREE Tier"
@@ -233,6 +263,7 @@ func TestValidateAutoExpandConditions(t *testing.T) {
 		enabled   bool
 		minMargin int64
 		minRate   int64
+		maxRate   int64
 		wantErr   bool
 	}{
 		{name: "disabled without conditions"},
@@ -241,10 +272,13 @@ func TestValidateAutoExpandConditions(t *testing.T) {
 		{name: "rate only", enabled: true, minRate: 1},
 		{name: "both", enabled: true, minMargin: 1, minRate: 1},
 		{name: "negative rate", minRate: -1, wantErr: true},
+		{name: "maximum rate only", enabled: true, maxRate: 1},
+		{name: "minimum above maximum", minRate: 2, maxRate: 1, wantErr: true},
+		{name: "negative maximum rate", maxRate: -1, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateAutoExpandConditions(tt.enabled, tt.minMargin, tt.minRate)
+			err := validateAutoExpandConditions(tt.enabled, tt.minMargin, tt.minRate, tt.maxRate)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("validateAutoExpandConditions() error = %v, wantErr %v", err, tt.wantErr)
 			}

@@ -1145,6 +1145,12 @@ func applyPoolDefaults(item *MainAccountPool) {
 	if item.AutoExpandMinMarginBasisPoints < 0 {
 		item.AutoExpandMinMarginBasisPoints = 0
 	}
+	if item.AutoExpandMinRateMicros < 0 {
+		item.AutoExpandMinRateMicros = 0
+	}
+	if item.AutoExpandMaxRateMicros < 0 {
+		item.AutoExpandMaxRateMicros = 0
+	}
 	if item.DisabledCleanupSeconds < 0 {
 		item.DisabledCleanupSeconds = 0
 	}

@@ -892,6 +892,7 @@ export interface MainStationGroupWorkspace {
   auto_expand_enabled: boolean
   auto_expand_min_margin_basis_points: number
   auto_expand_min_rate_multiplier_micros: number
+  auto_expand_max_rate_multiplier_micros: number
   auto_expand_category_rule_id?: number | null
   auto_expand_blocked_keywords: string
   disabled_cleanup_seconds: number
