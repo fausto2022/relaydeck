@@ -26,6 +26,9 @@ type schedulingRankSignal struct {
 	CostMicros      int64
 	SuccessBucket   int
 	LatencyBucket   int
+	SuccessRate     *float64
+	P95LatencyMS    *int64
+	SampleBand      int
 	Enabled         bool
 }
 
@@ -122,10 +125,24 @@ func (s *Service) poolSchedulingPrioritiesFor(
 		healthBand := schedulingHealthBand(member)
 		successBucket := schedulingSuccessBucket(stats.Recent20SuccessRate)
 		latencyBucket := schedulingLatencyBucket(stats.P95LatencyMS)
+		successRate := stats.Recent20SuccessRate
+		p95LatencyMS := stats.P95LatencyMS
+		sampleBand := 0
+		if member.HealthEnabled {
+			switch sampleCount := len(recentByMember[member.ID]); {
+			case sampleCount == 0:
+				sampleBand = 2
+			case sampleCount < stabilityMinimumSamples:
+				sampleBand = 1
+			}
+		}
 		if !member.HealthEnabled {
 			healthBand = 0
 			successBucket = 0
 			latencyBucket = 0
+			successRate = nil
+			p95LatencyMS = nil
+			sampleBand = 2
 		}
 		signals = append(signals, schedulingRankSignal{
 			MemberID:        member.ID,
@@ -137,6 +154,9 @@ func (s *Service) poolSchedulingPrioritiesFor(
 			CostMicros:      costMicros,
 			SuccessBucket:   successBucket,
 			LatencyBucket:   latencyBucket,
+			SuccessRate:     successRate,
+			P95LatencyMS:    p95LatencyMS,
+			SampleBand:      sampleBand,
 			Enabled: pool.Enabled && member.Enabled && remoteSchedulable && remoteActive && locksClear &&
 				member.BindingStatus != "invalid" && member.BindingStatus != "orphaned" &&
 				(!member.HealthEnabled || (member.LastHealthStatus != "unhealthy" && member.Status != "quarantined")),
@@ -146,12 +166,17 @@ func (s *Service) poolSchedulingPrioritiesFor(
 }
 
 func rankSchedulingSignals(signals []schedulingRankSignal, rateSortDirection string) map[uint]int {
+	stabilityMode := strings.EqualFold(rateSortDirection, "stability")
 	costPenalties := schedulingCostPenalties(signals, rateSortDirection)
 	hysteresis := schedulingScoreHysteresis
-	if strings.EqualFold(rateSortDirection, "stability") {
+	if stabilityMode {
 		hysteresis = schedulingStabilityScoreHysteresis
 	}
 	for i := range signals {
+		if stabilityMode {
+			signals[i].Score = schedulingStabilityScore(signals[i]) + costPenalties[signals[i].MemberID]
+			continue
+		}
 		signals[i].Score = signals[i].Priority + schedulingSuccessPenalty(signals[i].SuccessBucket) +
 			schedulingLatencyPenalty(signals[i].LatencyBucket) + costPenalties[signals[i].MemberID]
 	}
@@ -164,6 +189,8 @@ func rankSchedulingSignals(signals []schedulingRankSignal, rateSortDirection str
 			return left.HealthBand < right.HealthBand
 		case left.Preferred != right.Preferred:
 			return left.Preferred
+		case stabilityMode && left.SampleBand != right.SampleBand:
+			return left.SampleBand < right.SampleBand
 		case left.CurrentPriority > 0 && right.CurrentPriority > 0 && left.CurrentPriority != right.CurrentPriority:
 			return left.CurrentPriority < right.CurrentPriority
 		case left.Score != right.Score:
@@ -192,6 +219,42 @@ func rankSchedulingSignals(signals []schedulingRankSignal, rateSortDirection str
 		}
 	}
 	return assignSparseSchedulingPriorities(signals)
+}
+
+const (
+	stabilityMinimumSamples            = 5
+	stabilityUnknownPenalty            = 1_000
+	stabilityInsufficientSamplePenalty = 250
+)
+
+func schedulingStabilityScore(signal schedulingRankSignal) int {
+	score := signal.Priority
+	// 连通率每下降 1 个百分点约等于 P95 延迟增加 2 秒，避免速度掩盖明显的失败率。
+	if signal.SuccessRate != nil {
+		failureRate := 100 - *signal.SuccessRate
+		if failureRate < 0 {
+			failureRate = 0
+		}
+		score += int(failureRate*4 + 0.5)
+	} else {
+		score += schedulingSuccessPenalty(signal.SuccessBucket)
+	}
+	if signal.P95LatencyMS != nil {
+		latency := *signal.P95LatencyMS
+		if latency < 0 {
+			latency = 0
+		}
+		score += int(latency / 500)
+	} else {
+		score += schedulingLatencyPenalty(signal.LatencyBucket)
+	}
+	switch signal.SampleBand {
+	case 1:
+		score += stabilityInsufficientSamplePenalty
+	case 2:
+		score += stabilityUnknownPenalty
+	}
+	return score
 }
 
 func sameSchedulingRankBand(left, right schedulingRankSignal) bool {

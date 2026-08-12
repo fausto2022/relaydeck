@@ -48,6 +48,83 @@ func TestRankSchedulingSignalsLatencyCanMoveHigherBasePriorityBehindAnotherAccou
 	}
 }
 
+func TestRankSchedulingSignalsStabilityBalancesConnectivityAndLatency(t *testing.T) {
+	fastRate, slowRate := 98.0, 100.0
+	fastLatency, slowLatency := int64(500), int64(12_000)
+	priorities := rankSchedulingSignals([]schedulingRankSignal{
+		{MemberID: 1, HealthBand: 0, Priority: 1, SuccessRate: &slowRate, P95LatencyMS: &slowLatency},
+		{MemberID: 2, HealthBand: 0, Priority: 1, SuccessRate: &fastRate, P95LatencyMS: &fastLatency},
+	}, "stability")
+	if priorities[2] >= priorities[1] {
+		t.Fatalf("fast account with slightly lower connectivity should rank first: %#v", priorities)
+	}
+}
+
+func TestRankSchedulingSignalsStabilityPrefersConnectivityOverSmallLatencyGain(t *testing.T) {
+	reliableRate, unreliableRate := 100.0, 95.0
+	reliableLatency, fastLatency := int64(4_000), int64(500)
+	priorities := rankSchedulingSignals([]schedulingRankSignal{
+		{MemberID: 1, HealthBand: 0, Priority: 1, SuccessRate: &reliableRate, P95LatencyMS: &reliableLatency},
+		{MemberID: 2, HealthBand: 0, Priority: 1, SuccessRate: &unreliableRate, P95LatencyMS: &fastLatency},
+	}, "stability")
+	if priorities[1] >= priorities[2] {
+		t.Fatalf("reliable account should rank first despite a small latency disadvantage: %#v", priorities)
+	}
+}
+
+func TestRankSchedulingSignalsStabilityPrefersLowerLatencyAtSameConnectivity(t *testing.T) {
+	rate := 99.0
+	fastLatency, slowLatency := int64(700), int64(4_000)
+	priorities := rankSchedulingSignals([]schedulingRankSignal{
+		{MemberID: 1, HealthBand: 0, Priority: 1, SuccessRate: &rate, P95LatencyMS: &slowLatency},
+		{MemberID: 2, HealthBand: 0, Priority: 1, SuccessRate: &rate, P95LatencyMS: &fastLatency},
+	}, "stability")
+	if priorities[2] >= priorities[1] {
+		t.Fatalf("lower-latency account should rank first at equal connectivity: %#v", priorities)
+	}
+}
+
+func TestRankSchedulingSignalsStabilityPenalizesInsufficientSamples(t *testing.T) {
+	rate := 100.0
+	latency := int64(100)
+	priorities := rankSchedulingSignals([]schedulingRankSignal{
+		{MemberID: 1, HealthBand: 0, Priority: 1, SuccessRate: &rate, P95LatencyMS: &latency, SampleBand: 1},
+		{MemberID: 2, HealthBand: 0, Priority: 1, SuccessRate: &rate, P95LatencyMS: &latency},
+	}, "stability")
+	if priorities[2] >= priorities[1] {
+		t.Fatalf("account with sufficient samples should rank first: %#v", priorities)
+	}
+}
+
+func TestRankSchedulingSignalsStabilityRanksUnknownSamplesLast(t *testing.T) {
+	rate := 99.0
+	latency := int64(1_000)
+	priorities := rankSchedulingSignals([]schedulingRankSignal{
+		{MemberID: 1, HealthBand: 0, Priority: 1, SampleBand: 2},
+		{MemberID: 2, HealthBand: 0, Priority: 1, SuccessRate: &rate, P95LatencyMS: &latency},
+	}, "stability")
+	if priorities[2] >= priorities[1] {
+		t.Fatalf("account with known stability should rank before an unknown account: %#v", priorities)
+	}
+}
+
+func TestRankSchedulingSignalsStabilityIsDeterministic(t *testing.T) {
+	rate := 99.0
+	latency := int64(1_000)
+	signals := []schedulingRankSignal{
+		{MemberID: 3, HealthBand: 0, Priority: 1, SuccessRate: &rate, P95LatencyMS: &latency},
+		{MemberID: 1, HealthBand: 0, Priority: 1, SuccessRate: &rate, P95LatencyMS: &latency},
+		{MemberID: 2, HealthBand: 0, Priority: 1, SuccessRate: &rate, P95LatencyMS: &latency},
+	}
+	first := rankSchedulingSignals(signals, "stability")
+	second := rankSchedulingSignals(signals, "stability")
+	for memberID := uint(1); memberID <= 3; memberID++ {
+		if first[memberID] != second[memberID] {
+			t.Fatalf("stability ranking changed between runs: first=%#v second=%#v", first, second)
+		}
+	}
+}
+
 func TestSchedulingCostPenaltiesKeepEqualCostsInSameBucket(t *testing.T) {
 	penalties := schedulingCostPenalties([]schedulingRankSignal{
 		{MemberID: 1, CostKnown: true, CostMicros: 100_000},

@@ -131,6 +131,19 @@ export default function MainStationPage() {
     [selectedGroupID, workspaces],
   )
 
+  const loadGroups = useCallback(async (silent = false) => {
+    try {
+      const result = await apiFetch<{ items: MainStationGroupWorkspace[] }>("/main-station/groups")
+      setWorkspaces(result.items)
+      setSelectedGroupID((current) => {
+        if (current != null && result.items.some((workspace) => workspace.group.id === current)) return current
+        return result.items[0]?.group.id ?? null
+      })
+    } catch (loadError) {
+      if (!silent) toast.error(loadError instanceof Error ? loadError.message : "加载分组失败")
+    }
+  }, [])
+
   const loadBase = useCallback(async () => {
     setLoading(true)
     setError("")
@@ -224,10 +237,13 @@ export default function MainStationPage() {
   useEffect(() => {
     if (!config?.configured) return
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void loadAccounts(selectedGroupID, true)
+      if (document.visibilityState === "visible") {
+        void loadGroups(true)
+        void loadAccounts(selectedGroupID, true)
+      }
     }, 30_000)
     return () => window.clearInterval(timer)
-  }, [config?.configured, loadAccounts, selectedGroupID])
+  }, [config?.configured, loadAccounts, loadGroups, selectedGroupID])
 
   const filteredAccounts = useMemo(() => {
     const keyword = search.trim().toLowerCase()
