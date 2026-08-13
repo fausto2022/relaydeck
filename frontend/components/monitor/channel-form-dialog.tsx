@@ -27,7 +27,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import type { Channel, ChannelType, CredentialMode, RechargeMultiplierMode } from "@/lib/api-types"
+import type { Channel, ChannelType, CredentialMode, RechargeEntryMode, RechargeMultiplierMode } from "@/lib/api-types"
 import { apiFetch } from "@/lib/api"
 import { useTriggerRefresh } from "@/lib/refresh-context"
 import { useCaptchaConfigs } from "@/lib/queries"
@@ -70,6 +70,8 @@ interface FormState {
   balance_threshold: string
   recharge_multiplier: string
   recharge_multiplier_mode: RechargeMultiplierMode
+  recharge_entry_mode: RechargeEntryMode
+  card_purchase_url: string
   monitor_enabled: boolean
   turnstile_enabled: boolean
   ignore_announcements: boolean
@@ -98,6 +100,8 @@ function initialState(c?: Channel | null): FormState {
     balance_threshold: c?.balance_threshold != null ? String(c.balance_threshold) : "0",
     recharge_multiplier: c?.recharge_multiplier != null ? String(c.recharge_multiplier) : "",
     recharge_multiplier_mode: rechargeMultiplierMode,
+    recharge_entry_mode: c?.recharge_entry_mode === "card" ? "card" : "direct",
+    card_purchase_url: c?.card_purchase_url ?? "",
     monitor_enabled: c?.monitor_enabled ?? true,
     turnstile_enabled: c?.turnstile_enabled ?? false,
     ignore_announcements: c?.ignore_announcements ?? false,
@@ -172,6 +176,18 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
         rechargeMultiplier = Number(rechargeMultiplierText)
         if (!Number.isFinite(rechargeMultiplier) || rechargeMultiplier <= 0) {
           throw new Error("充值倍率必须大于 0，或留空跟随上游")
+        }
+      }
+      const cardPurchaseURL = form.card_purchase_url.trim()
+      if (form.recharge_entry_mode === "card") {
+        let parsedURL: URL
+        try {
+          parsedURL = new URL(cardPurchaseURL)
+        } catch {
+          throw new Error("卡网购买地址必须是完整的 HTTP(S) 地址")
+        }
+        if ((parsedURL.protocol !== "http:" && parsedURL.protocol !== "https:") || !parsedURL.host) {
+          throw new Error("卡网购买地址必须是完整的 HTTP(S) 地址")
         }
       }
       const loginExtraParams = isTokenMode ? "" : form.login_extra_params.trim()
@@ -257,6 +273,8 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
           balance_threshold: threshold,
           recharge_multiplier: rechargeMultiplier,
           recharge_multiplier_mode: form.recharge_multiplier_mode,
+          recharge_entry_mode: form.recharge_entry_mode,
+          card_purchase_url: form.recharge_entry_mode === "card" ? cardPurchaseURL : "",
           monitor_enabled: form.monitor_enabled,
           turnstile_enabled: !isTokenMode && form.turnstile_enabled,
           ignore_announcements: form.ignore_announcements,
@@ -286,6 +304,8 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
             balance_threshold: threshold,
             recharge_multiplier: rechargeMultiplier,
             recharge_multiplier_mode: form.recharge_multiplier_mode,
+            recharge_entry_mode: form.recharge_entry_mode,
+            card_purchase_url: form.recharge_entry_mode === "card" ? cardPurchaseURL : "",
             monitor_enabled: form.monitor_enabled,
             turnstile_enabled: !isTokenMode && form.turnstile_enabled,
             ignore_announcements: form.ignore_announcements,
@@ -666,6 +686,51 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="recharge-entry-mode">充值方式</Label>
+              <Select
+                value={form.recharge_entry_mode}
+                onValueChange={(v) =>
+                  setForm({ ...form, recharge_entry_mode: v as RechargeEntryMode })
+                }
+                disabled={submitting}
+              >
+                <SelectTrigger id="recharge-entry-mode" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="direct">在线直充</SelectItem>
+                  <SelectItem value="card">卡密充值</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {form.recharge_entry_mode === "card" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="card-purchase-url">卡网购买地址</Label>
+                <Input
+                  id="card-purchase-url"
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://cards.example.com/buy"
+                  value={form.card_purchase_url}
+                  onChange={(e) => setForm({ ...form, card_purchase_url: e.target.value })}
+                  required
+                  disabled={submitting}
+                />
+              </div>
+            ) : (
+              <div className="flex items-end pb-2 text-xs text-muted-foreground">
+                使用渠道自身提供的在线支付能力。
+              </div>
+            )}
+            {form.recharge_entry_mode === "card" ? (
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                首页会在新标签页打开购买地址，并保留卡密兑换窗口。
+              </p>
+            ) : null}
           </div>
 
           <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">

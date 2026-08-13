@@ -23,6 +23,7 @@ import {
   Tags,
   Trash2,
   Gift,
+  ShoppingCart,
   ChevronsLeft,
   ChevronsRight,
   XCircle,
@@ -806,6 +807,11 @@ export function ChannelCards() {
     return `${result.message || "兑换成功"}${extra}`
   }
 
+  function startCardRecharge(channel: Channel) {
+    window.open(channel.card_purchase_url, "_blank", "noopener,noreferrer")
+    setRedeeming(channel)
+  }
+
   return (
     <section>
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1048,10 +1054,10 @@ export function ChannelCards() {
                       variant="outline"
                       size="sm"
                       className="gap-1 text-xs"
-                      onClick={() => setRecharging(c)}
+                      onClick={() => c.recharge_entry_mode === "card" ? startCardRecharge(c) : setRecharging(c)}
                     >
-                      <CreditCard className="size-3" />
-                      {"充值"}
+                      {c.recharge_entry_mode === "card" ? <ShoppingCart className="size-3" /> : <CreditCard className="size-3" />}
+                      {c.recharge_entry_mode === "card" ? "购买卡密" : "在线充值"}
                     </Button>
                     <Button
                       variant="outline"
@@ -1060,7 +1066,7 @@ export function ChannelCards() {
                       onClick={() => setRedeeming(c)}
                     >
                       <Gift className="size-3" />
-                      {"兑换"}
+                      {c.recharge_entry_mode === "card" ? "兑换卡密" : "兑换码"}
                     </Button>
                     <Button
                       variant="outline"

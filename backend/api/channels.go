@@ -56,46 +56,50 @@ func registerChannels(g *gin.RouterGroup, d *Deps) {
 }
 
 type channelInput struct {
-	Name                   string                 `json:"name" binding:"required"`
-	Type                   storage.ChannelType    `json:"type" binding:"required"`
-	SiteURL                string                 `json:"site_url" binding:"required"`
-	Username               string                 `json:"username"`
-	SortOrder              int                    `json:"sort_order"`
-	Starred                bool                   `json:"starred"`
-	Password               string                 `json:"password"`
-	CredentialMode         storage.CredentialMode `json:"credential_mode"`
-	TokenCredential        string                 `json:"token_credential"` // JSON：token 模式时填写
-	LoginExtraParams       string                 `json:"login_extra_params"`
-	TurnstileEnabled       bool                   `json:"turnstile_enabled"`
-	IgnoreAnnouncements    bool                   `json:"ignore_announcements"`
-	SubscriptionEnabled    bool                   `json:"subscription_enabled"`
-	ProxyEnabled           bool                   `json:"proxy_enabled"`
-	CaptchaConfigID        *uint                  `json:"captcha_config_id"`
-	BalanceThreshold       float64                `json:"balance_threshold"`
-	RechargeMultiplier     *float64               `json:"recharge_multiplier"`
-	RechargeMultiplierMode string                 `json:"recharge_multiplier_mode"`
-	MonitorEnabled         bool                   `json:"monitor_enabled"`
+	Name                   string                    `json:"name" binding:"required"`
+	Type                   storage.ChannelType       `json:"type" binding:"required"`
+	SiteURL                string                    `json:"site_url" binding:"required"`
+	Username               string                    `json:"username"`
+	SortOrder              int                       `json:"sort_order"`
+	Starred                bool                      `json:"starred"`
+	Password               string                    `json:"password"`
+	CredentialMode         storage.CredentialMode    `json:"credential_mode"`
+	TokenCredential        string                    `json:"token_credential"` // JSON：token 模式时填写
+	LoginExtraParams       string                    `json:"login_extra_params"`
+	TurnstileEnabled       bool                      `json:"turnstile_enabled"`
+	IgnoreAnnouncements    bool                      `json:"ignore_announcements"`
+	SubscriptionEnabled    bool                      `json:"subscription_enabled"`
+	ProxyEnabled           bool                      `json:"proxy_enabled"`
+	CaptchaConfigID        *uint                     `json:"captcha_config_id"`
+	BalanceThreshold       float64                   `json:"balance_threshold"`
+	RechargeMultiplier     *float64                  `json:"recharge_multiplier"`
+	RechargeMultiplierMode string                    `json:"recharge_multiplier_mode"`
+	RechargeEntryMode      storage.RechargeEntryMode `json:"recharge_entry_mode"`
+	CardPurchaseURL        string                    `json:"card_purchase_url"`
+	MonitorEnabled         bool                      `json:"monitor_enabled"`
 }
 
 type channelUpdateInput struct {
-	Name                   *string                 `json:"name"`
-	SiteURL                *string                 `json:"site_url"`
-	Username               *string                 `json:"username"`
-	SortOrder              *int                    `json:"sort_order"`
-	Starred                *bool                   `json:"starred"`
-	Password               *string                 `json:"password"`
-	CredentialMode         *storage.CredentialMode `json:"credential_mode"`
-	TokenCredential        *string                 `json:"token_credential"`
-	LoginExtraParams       *string                 `json:"login_extra_params"`
-	TurnstileEnabled       *bool                   `json:"turnstile_enabled"`
-	IgnoreAnnouncements    *bool                   `json:"ignore_announcements"`
-	SubscriptionEnabled    *bool                   `json:"subscription_enabled"`
-	ProxyEnabled           *bool                   `json:"proxy_enabled"`
-	CaptchaConfigID        *uint                   `json:"captcha_config_id"`
-	BalanceThreshold       *float64                `json:"balance_threshold"`
-	RechargeMultiplier     *float64                `json:"recharge_multiplier"`
-	RechargeMultiplierMode *string                 `json:"recharge_multiplier_mode"`
-	MonitorEnabled         *bool                   `json:"monitor_enabled"`
+	Name                   *string                    `json:"name"`
+	SiteURL                *string                    `json:"site_url"`
+	Username               *string                    `json:"username"`
+	SortOrder              *int                       `json:"sort_order"`
+	Starred                *bool                      `json:"starred"`
+	Password               *string                    `json:"password"`
+	CredentialMode         *storage.CredentialMode    `json:"credential_mode"`
+	TokenCredential        *string                    `json:"token_credential"`
+	LoginExtraParams       *string                    `json:"login_extra_params"`
+	TurnstileEnabled       *bool                      `json:"turnstile_enabled"`
+	IgnoreAnnouncements    *bool                      `json:"ignore_announcements"`
+	SubscriptionEnabled    *bool                      `json:"subscription_enabled"`
+	ProxyEnabled           *bool                      `json:"proxy_enabled"`
+	CaptchaConfigID        *uint                      `json:"captcha_config_id"`
+	BalanceThreshold       *float64                   `json:"balance_threshold"`
+	RechargeMultiplier     *float64                   `json:"recharge_multiplier"`
+	RechargeMultiplierMode *string                    `json:"recharge_multiplier_mode"`
+	RechargeEntryMode      *storage.RechargeEntryMode `json:"recharge_entry_mode"`
+	CardPurchaseURL        *string                    `json:"card_purchase_url"`
+	MonitorEnabled         *bool                      `json:"monitor_enabled"`
 }
 
 type channelOutput struct {
@@ -181,6 +185,8 @@ func createChannel(c *gin.Context, d *Deps) {
 		BalanceThreshold:       in.BalanceThreshold,
 		RechargeMultiplier:     in.RechargeMultiplier,
 		RechargeMultiplierMode: in.RechargeMultiplierMode,
+		RechargeEntryMode:      in.RechargeEntryMode,
+		CardPurchaseURL:        in.CardPurchaseURL,
 		MonitorEnabled:         in.MonitorEnabled,
 	})
 	if err != nil {
@@ -281,6 +287,8 @@ func updateChannel(c *gin.Context, d *Deps) {
 		BalanceThreshold:       in.BalanceThreshold,
 		RechargeMultiplier:     in.RechargeMultiplier,
 		RechargeMultiplierMode: in.RechargeMultiplierMode,
+		RechargeEntryMode:      in.RechargeEntryMode,
+		CardPurchaseURL:        in.CardPurchaseURL,
 		MonitorEnabled:         in.MonitorEnabled,
 	})
 	if err != nil {

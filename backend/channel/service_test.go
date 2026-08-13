@@ -127,6 +127,72 @@ func TestUpdateChannelStarredOnly(t *testing.T) {
 	}
 }
 
+func TestCreateChannelRechargeEntryDefaultsToDirect(t *testing.T) {
+	svc, _ := testService(t)
+	created, err := svc.Create(CreateInput{
+		Name: "direct", Type: storage.ChannelTypeSub2API, SiteURL: "https://example.com",
+		Username: "user", Password: "password", CredentialMode: storage.CredentialModePassword,
+		MonitorEnabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	if created.RechargeEntryMode != storage.RechargeEntryModeDirect || created.CardPurchaseURL != "" {
+		t.Fatalf("recharge entry = %q %q", created.RechargeEntryMode, created.CardPurchaseURL)
+	}
+}
+
+func TestUpdateChannelCardRechargeEntry(t *testing.T) {
+	svc, cipher := testService(t)
+	encrypted, err := cipher.Encrypt("password")
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	item := &storage.Channel{
+		Name: "source", Type: storage.ChannelTypeSub2API, SiteURL: "https://example.com", Username: "user",
+		PasswordCipher: encrypted, CredentialMode: storage.CredentialModePassword, MonitorEnabled: true,
+	}
+	if err := svc.Channels.Create(item); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	mode := storage.RechargeEntryModeCard
+	purchaseURL := " https://cards.example.com/buy?product=1 "
+	updated, err := svc.Update(item.ID, UpdateInput{RechargeEntryMode: &mode, CardPurchaseURL: &purchaseURL})
+	if err != nil {
+		t.Fatalf("update card recharge entry: %v", err)
+	}
+	if updated.RechargeEntryMode != mode || updated.CardPurchaseURL != strings.TrimSpace(purchaseURL) {
+		t.Fatalf("recharge entry = %q %q", updated.RechargeEntryMode, updated.CardPurchaseURL)
+	}
+
+	direct := storage.RechargeEntryModeDirect
+	updated, err = svc.Update(item.ID, UpdateInput{RechargeEntryMode: &direct})
+	if err != nil {
+		t.Fatalf("update direct recharge entry: %v", err)
+	}
+	if updated.RechargeEntryMode != direct || updated.CardPurchaseURL != "" {
+		t.Fatalf("direct recharge entry = %q %q", updated.RechargeEntryMode, updated.CardPurchaseURL)
+	}
+}
+
+func TestCreateChannelRejectsInvalidCardPurchaseURL(t *testing.T) {
+	tests := []string{"", "javascript:alert(1)", "https:///buy", "/buy"}
+	for _, purchaseURL := range tests {
+		t.Run(purchaseURL, func(t *testing.T) {
+			svc, _ := testService(t)
+			_, err := svc.Create(CreateInput{
+				Name: "card", Type: storage.ChannelTypeSub2API, SiteURL: "https://example.com",
+				Username: "user", Password: "password", CredentialMode: storage.CredentialModePassword,
+				RechargeEntryMode: storage.RechargeEntryModeCard, CardPurchaseURL: purchaseURL,
+				MonitorEnabled: true,
+			})
+			if err == nil {
+				t.Fatalf("expected invalid card purchase URL %q to fail", purchaseURL)
+			}
+		})
+	}
+}
+
 func TestResolveAppliesGlobalProxyToAllChannels(t *testing.T) {
 	svc, cipher := testService(t)
 	svc.UpdateProxyConfig(config.ProxyConfig{

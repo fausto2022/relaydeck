@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -178,6 +179,8 @@ type CreateInput struct {
 	BalanceThreshold       float64
 	RechargeMultiplier     *float64
 	RechargeMultiplierMode string
+	RechargeEntryMode      storage.RechargeEntryMode
+	CardPurchaseURL        string
 	MonitorEnabled         bool
 }
 
@@ -194,6 +197,10 @@ func (s *Service) Create(in CreateInput) (*storage.Channel, error) {
 		return nil, err
 	}
 	loginExtraParams, err := normalizeLoginExtraParams(in.LoginExtraParams)
+	if err != nil {
+		return nil, err
+	}
+	rechargeEntryMode, cardPurchaseURL, err := normalizeRechargeEntry(in.RechargeEntryMode, in.CardPurchaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +227,8 @@ func (s *Service) Create(in CreateInput) (*storage.Channel, error) {
 		BalanceThreshold:       in.BalanceThreshold,
 		RechargeMultiplier:     normalizeRechargeMultiplier(in.RechargeMultiplier),
 		RechargeMultiplierMode: connector.NormalizeRechargeMultiplierMode(in.RechargeMultiplierMode),
+		RechargeEntryMode:      rechargeEntryMode,
+		CardPurchaseURL:        cardPurchaseURL,
 		MonitorEnabled:         in.MonitorEnabled,
 	}
 	if mode == storage.CredentialModeToken {
@@ -251,6 +260,8 @@ type UpdateInput struct {
 	BalanceThreshold       *float64
 	RechargeMultiplier     *float64
 	RechargeMultiplierMode *string
+	RechargeEntryMode      *storage.RechargeEntryMode
+	CardPurchaseURL        *string
 	MonitorEnabled         *bool
 }
 
@@ -363,6 +374,22 @@ func (s *Service) Update(id uint, in UpdateInput) (*storage.Channel, error) {
 	if in.RechargeMultiplierMode != nil {
 		c.RechargeMultiplierMode = connector.NormalizeRechargeMultiplierMode(*in.RechargeMultiplierMode)
 	}
+	if in.RechargeEntryMode != nil || in.CardPurchaseURL != nil {
+		mode := c.RechargeEntryMode
+		if in.RechargeEntryMode != nil {
+			mode = *in.RechargeEntryMode
+		}
+		purchaseURL := c.CardPurchaseURL
+		if in.CardPurchaseURL != nil {
+			purchaseURL = *in.CardPurchaseURL
+		}
+		normalizedMode, normalizedURL, err := normalizeRechargeEntry(mode, purchaseURL)
+		if err != nil {
+			return nil, err
+		}
+		c.RechargeEntryMode = normalizedMode
+		c.CardPurchaseURL = normalizedURL
+	}
 	if in.MonitorEnabled != nil {
 		c.MonitorEnabled = *in.MonitorEnabled
 	}
@@ -377,6 +404,27 @@ func normalizeRechargeMultiplier(v *float64) *float64 {
 		return nil
 	}
 	return v
+}
+
+func normalizeRechargeEntry(mode storage.RechargeEntryMode, rawURL string) (storage.RechargeEntryMode, string, error) {
+	if mode == "" {
+		mode = storage.RechargeEntryModeDirect
+	}
+	if mode != storage.RechargeEntryModeDirect && mode != storage.RechargeEntryModeCard {
+		return "", "", errors.New("充值方式仅支持在线直充或卡密充值")
+	}
+	cardPurchaseURL := strings.TrimSpace(rawURL)
+	if mode == storage.RechargeEntryModeDirect {
+		return mode, "", nil
+	}
+	if cardPurchaseURL == "" {
+		return "", "", errors.New("卡密充值必须填写卡网购买地址")
+	}
+	parsed, err := url.ParseRequestURI(cardPurchaseURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", "", errors.New("卡网购买地址必须是完整的 HTTP(S) 地址")
+	}
+	return mode, cardPurchaseURL, nil
 }
 
 func normalizeSortOrder(v int) int {

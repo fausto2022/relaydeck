@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, type FormEvent } from "react"
+import { ExternalLink } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -34,6 +35,7 @@ export function ChannelRedeemDialog({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const refresh = useTriggerRefresh()
+  const cardRecharge = channel?.recharge_entry_mode === "card" && !!channel.card_purchase_url
 
   useEffect(() => {
     if (open) {
@@ -67,9 +69,13 @@ export function ChannelRedeemDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>兑换码</DialogTitle>
+          <DialogTitle>{cardRecharge ? "卡密充值" : "兑换码"}</DialogTitle>
           <DialogDescription>
-            {channel ? `${channel.name} · ${channelTypeLabel(channel.type)}` : "输入兑换码后立即在线兑换。"}
+            {channel
+              ? cardRecharge
+                ? `${channel.name} · 购买后返回此处粘贴卡密`
+                : `${channel.name} · ${channelTypeLabel(channel.type)}`
+              : "输入兑换码后立即在线兑换。"}
           </DialogDescription>
         </DialogHeader>
 
@@ -86,6 +92,15 @@ export function ChannelRedeemDialog({
             />
             <p className="text-[11px] text-muted-foreground">区分大小写，提交后会直接调用上游在线兑换接口。</p>
           </div>
+
+          {cardRecharge ? (
+            <Button asChild type="button" variant="outline" className="w-full gap-2">
+              <a href={channel.card_purchase_url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-4" />
+                打开卡网购买页面
+              </a>
+            </Button>
+          ) : null}
 
           {error ? (
             <p className="text-sm text-destructive" role="alert">

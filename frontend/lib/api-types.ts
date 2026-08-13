@@ -9,6 +9,8 @@ export type CredentialMode = "password" | "token"
 
 export type RechargeMultiplierMode = "divide" | "multiply"
 
+export type RechargeEntryMode = "direct" | "card"
+
 export type NotificationChannelType =
   | "telegram"
   | "webhook"
@@ -75,6 +77,8 @@ export interface Channel {
   balance_threshold: number
   recharge_multiplier?: number | null
   recharge_multiplier_mode: RechargeMultiplierMode
+  recharge_entry_mode: RechargeEntryMode
+  card_purchase_url: string
   monitor_enabled: boolean
   last_balance?: number | null
   last_balance_at?: string | null

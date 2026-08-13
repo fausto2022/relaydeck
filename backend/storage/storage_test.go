@@ -259,6 +259,15 @@ func TestAutoMigrateCreatesSQLiteIndexes(t *testing.T) {
 	}
 }
 
+func TestAutoMigrateCreatesChannelRechargeEntryColumns(t *testing.T) {
+	db := openTestDB(t)
+	for _, column := range []string{"recharge_entry_mode", "card_purchase_url"} {
+		if !db.Migrator().HasColumn(&Channel{}, column) {
+			t.Fatalf("channels.%s was not created", column)
+		}
+	}
+}
+
 func TestAggregateBalanceTrend(t *testing.T) {
 	db := openTestDB(t)
 	rates := NewRates(db)

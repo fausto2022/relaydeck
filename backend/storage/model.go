@@ -22,6 +22,14 @@ const (
 	CredentialModeToken    CredentialMode = "token"
 )
 
+// RechargeEntryMode 渠道在首页使用的充值入口。
+type RechargeEntryMode string
+
+const (
+	RechargeEntryModeDirect RechargeEntryMode = "direct"
+	RechargeEntryModeCard   RechargeEntryMode = "card"
+)
+
 // Channel 上游渠道账号。Password / Turnstile API key 等敏感字段都加密保存。
 //
 // 注意：会话凭据（access_token / refresh_token / cookie / csrf）单独存放在 AuthSession 表。
@@ -34,25 +42,27 @@ const (
 //
 // 复用 PasswordCipher 而不新增 TokenCipher 是为了让现有的 GORM 行 / 加密路径 / 迁移流程零变动。
 type Channel struct {
-	ID                     uint           `gorm:"primaryKey" json:"id"`
-	Name                   string         `gorm:"size:128;not null;uniqueIndex" json:"name"`
-	Type                   ChannelType    `gorm:"size:32;not null;index" json:"type"`
-	SiteURL                string         `gorm:"size:512;not null" json:"site_url"`
-	Username               string         `gorm:"size:256;not null" json:"username"`
-	SortOrder              int            `gorm:"not null;default:1" json:"sort_order"`
-	Starred                bool           `gorm:"not null;default:false;index" json:"starred"`
-	PasswordCipher         string         `gorm:"size:4096;not null" json:"-"`
-	CredentialMode         CredentialMode `gorm:"size:16;not null;default:'password'" json:"credential_mode"`
-	LoginExtraParams       string         `gorm:"type:text" json:"login_extra_params"`
-	TurnstileEnabled       bool           `gorm:"default:false" json:"turnstile_enabled"`
-	IgnoreAnnouncements    bool           `gorm:"default:false" json:"ignore_announcements"`
-	SubscriptionEnabled    bool           `gorm:"default:false" json:"subscription_enabled"`
-	ProxyEnabled           bool           `gorm:"default:false" json:"proxy_enabled"`
-	CaptchaConfigID        *uint          `json:"captcha_config_id,omitempty"`
-	BalanceThreshold       float64        `gorm:"default:0" json:"balance_threshold"`
-	RechargeMultiplier     *float64       `json:"recharge_multiplier,omitempty"`
-	RechargeMultiplierMode string         `gorm:"size:16;not null;default:'divide'" json:"recharge_multiplier_mode"`
-	MonitorEnabled         bool           `gorm:"default:true" json:"monitor_enabled"`
+	ID                     uint              `gorm:"primaryKey" json:"id"`
+	Name                   string            `gorm:"size:128;not null;uniqueIndex" json:"name"`
+	Type                   ChannelType       `gorm:"size:32;not null;index" json:"type"`
+	SiteURL                string            `gorm:"size:512;not null" json:"site_url"`
+	Username               string            `gorm:"size:256;not null" json:"username"`
+	SortOrder              int               `gorm:"not null;default:1" json:"sort_order"`
+	Starred                bool              `gorm:"not null;default:false;index" json:"starred"`
+	PasswordCipher         string            `gorm:"size:4096;not null" json:"-"`
+	CredentialMode         CredentialMode    `gorm:"size:16;not null;default:'password'" json:"credential_mode"`
+	LoginExtraParams       string            `gorm:"type:text" json:"login_extra_params"`
+	TurnstileEnabled       bool              `gorm:"default:false" json:"turnstile_enabled"`
+	IgnoreAnnouncements    bool              `gorm:"default:false" json:"ignore_announcements"`
+	SubscriptionEnabled    bool              `gorm:"default:false" json:"subscription_enabled"`
+	ProxyEnabled           bool              `gorm:"default:false" json:"proxy_enabled"`
+	CaptchaConfigID        *uint             `json:"captcha_config_id,omitempty"`
+	BalanceThreshold       float64           `gorm:"default:0" json:"balance_threshold"`
+	RechargeMultiplier     *float64          `json:"recharge_multiplier,omitempty"`
+	RechargeMultiplierMode string            `gorm:"size:16;not null;default:'divide'" json:"recharge_multiplier_mode"`
+	RechargeEntryMode      RechargeEntryMode `gorm:"size:16;not null;default:'direct'" json:"recharge_entry_mode"`
+	CardPurchaseURL        string            `gorm:"size:1024;not null;default:''" json:"card_purchase_url"`
+	MonitorEnabled         bool              `gorm:"default:true" json:"monitor_enabled"`
 
 	// 最近一次采集结果（聚合视图，便于列表页直接展示）
 	LastBalance   *float64   `json:"last_balance,omitempty"`
