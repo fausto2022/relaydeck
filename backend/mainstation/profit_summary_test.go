@@ -17,6 +17,31 @@ type profitAdminClient struct {
 	calls []string
 }
 
+func TestTodayGroupUsageReturnsCurrentDayStats(t *testing.T) {
+	service, _, baseAdmin, _ := newTestService(t)
+	now := time.Date(2026, 7, 18, 12, 0, 0, 0, shanghaiLocation())
+	service.now = func() time.Time { return now }
+	admin := &profitAdminClient{
+		fakeAdminClient: baseAdmin,
+		stats: map[string][]sub2api.AdminGroupUsageStat{
+			"2026-07-18": {{GroupID: 3, GroupName: "高用量", Requests: 12, TotalTokens: 3456, ActualCost: profitFloat64(4.5)}},
+		},
+	}
+	service.adminFactory = func() adminClient { return admin }
+	configureTestStation(t, service)
+
+	items, err := service.TodayGroupUsage(context.Background())
+	if err != nil {
+		t.Fatalf("today group usage: %v", err)
+	}
+	if len(items) != 1 || items[0].GroupID != 3 || items[0].GroupName != "高用量" || items[0].Requests != 12 || items[0].TotalTokens != 3456 || items[0].ActualCost == nil || *items[0].ActualCost != 4.5 {
+		t.Fatalf("today group usage = %#v", items)
+	}
+	if len(admin.calls) != 1 || admin.calls[0] != "2026-07-18:2026-07-18" {
+		t.Fatalf("group usage calls = %#v", admin.calls)
+	}
+}
+
 func (f *profitAdminClient) ListGroupUsageStats(_ context.Context, _ sub2api.AdminTarget, startDate, endDate string) ([]sub2api.AdminGroupUsageStat, error) {
 	f.calls = append(f.calls, startDate+":"+endDate)
 	return append([]sub2api.AdminGroupUsageStat(nil), f.stats[startDate]...), nil

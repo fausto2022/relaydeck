@@ -3,6 +3,7 @@ package mainstation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/fausto2022/relaydeck/backend/connector/sub2api"
@@ -29,8 +30,53 @@ type ProfitSummary struct {
 	LastSampledAt             *time.Time `json:"last_sampled_at,omitempty"`
 }
 
+// GroupUsageStat 是主站分组在指定自然日的用量汇总。
+type GroupUsageStat struct {
+	GroupID     int64    `json:"group_id"`
+	GroupName   string   `json:"group_name"`
+	Requests    int64    `json:"requests"`
+	TotalTokens int64    `json:"total_tokens"`
+	ActualCost  *float64 `json:"actual_cost,omitempty"`
+	AccountCost *float64 `json:"account_cost,omitempty"`
+}
+
 type groupUsageStatsClient interface {
 	ListGroupUsageStats(ctx context.Context, target sub2api.AdminTarget, startDate, endDate string) ([]sub2api.AdminGroupUsageStat, error)
+}
+
+// TodayGroupUsage 返回主站当天的分组用量，供首页监控展示。
+func (s *Service) TodayGroupUsage(ctx context.Context) ([]GroupUsageStat, error) {
+	_, target, apiKey, err := s.loadAdminTarget()
+	if err != nil {
+		if errors.Is(err, ErrNotConfigured) {
+			return []GroupUsageStat{}, nil
+		}
+		return nil, err
+	}
+	client, ok := s.adminFactory().(groupUsageStatsClient)
+	if !ok {
+		return nil, errors.New("main station client does not support group usage stats")
+	}
+	day := s.now().In(shanghaiLocation()).Format("2006-01-02")
+	items, err := client.ListGroupUsageStats(ctx, sub2api.AdminTarget{
+		BaseURL: target.BaseURL,
+		APIKey:  apiKey,
+	}, day, day)
+	if err != nil {
+		return nil, fmt.Errorf("fetch today's main station group usage: %w", err)
+	}
+	stats := make([]GroupUsageStat, 0, len(items))
+	for _, item := range items {
+		stats = append(stats, GroupUsageStat{
+			GroupID:     item.GroupID,
+			GroupName:   item.GroupName,
+			Requests:    item.Requests,
+			TotalTokens: item.TotalTokens,
+			ActualCost:  item.ActualCost,
+			AccountCost: item.AccountCost,
+		})
+	}
+	return stats, nil
 }
 
 func (s *Service) syncProfitSnapshots(ctx context.Context, client adminClient, target sub2api.AdminTarget, sampledAt time.Time) {

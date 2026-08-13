@@ -100,6 +100,7 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 		return
 	}
 	var profit any
+	var mainStationGroups any = []any{}
 	if d.MainStation != nil {
 		profitSummary, profitErr := d.MainStation.ProfitSummary(7)
 		if profitErr != nil {
@@ -108,6 +109,14 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 			}
 		} else {
 			profit = profitSummary
+		}
+		groups, groupsErr := d.MainStation.TodayGroupUsage(c.Request.Context())
+		if groupsErr != nil {
+			if d.Log != nil {
+				d.Log.Warn("load main station group usage", "err", groupsErr)
+			}
+		} else {
+			mainStationGroups = groups
 		}
 	}
 
@@ -123,6 +132,7 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 			"channels":            stats,
 			"recent_rate_changes": rateChangeOutputs(recentChanges, channels),
 			"profit":              profit,
+			"main_station_groups": mainStationGroups,
 		},
 	})
 }

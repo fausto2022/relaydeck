@@ -340,6 +340,15 @@ export interface DashboardChannelStat {
   last_error?: string
 }
 
+export interface DashboardMainStationGroup {
+  group_id: number
+  group_name: string
+  requests: number
+  total_tokens: number
+  actual_cost?: number | null
+  account_cost?: number | null
+}
+
 export interface AlertEvent {
   id: number
   upstream_channel_id?: number
@@ -377,6 +386,7 @@ export interface DashboardSummary {
   lowest_balance: DashboardLowest | null
   channels: DashboardChannelStat[]
   recent_rate_changes: RateChangeLog[]
+  main_station_groups: DashboardMainStationGroup[]
   profit?: DashboardProfitSummary | null
 }
 
