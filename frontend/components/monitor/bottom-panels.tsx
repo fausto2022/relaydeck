@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
   Bell,
+  ChevronRight,
   Clock3,
   RefreshCw,
   KeyRound,
@@ -144,30 +145,35 @@ export function AlertFeed() {
 
   return (
     <>
-      <Card className="border border-border shadow-none lg:h-100">
-        <CardHeader className="flex shrink-0 flex-col gap-2 px-4 pb-2 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <CardTitle className="text-base font-semibold">{"告警动态"}</CardTitle>
-          <div className="flex items-center gap-3 self-start sm:self-auto">
+      <Card className="dashboard-panel gap-0 overflow-hidden border-border py-0 lg:h-96">
+        <CardHeader className="dashboard-panel-header flex shrink-0 flex-row items-center justify-between gap-3 px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-danger/10 text-danger">
+              <AlertTriangle className="size-4" />
+            </span>
+            <CardTitle className="truncate text-sm font-semibold sm:text-base">{"告警动态"}</CardTitle>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
             <span className="text-xs text-muted-foreground">
               {preview.data?.total ? `共 ${preview.data.total} 条` : ""}
             </span>
-            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={openDetail}>
-              {"查看更多"}
+            <Button size="sm" variant="ghost" className="h-10 gap-1 px-2 text-xs sm:h-8" onClick={openDetail}>
+              {"更多"}<ChevronRight className="size-3.5" />
             </Button>
           </div>
         </CardHeader>
         <CardContent className="min-h-0 flex-1 px-0">
           {preview.loading ? (
-            <p className="px-6 py-4 text-xs text-muted-foreground">{"加载中…"}</p>
+            <p className="flex min-h-32 items-center justify-center px-5 text-xs text-muted-foreground">{"加载中…"}</p>
           ) : items.length === 0 ? (
-            <p className="px-6 py-4 text-xs text-muted-foreground">{"暂无告警记录"}</p>
+            <p className="flex min-h-32 items-center justify-center px-5 text-xs text-muted-foreground">{"暂无告警记录"}</p>
           ) : (
             <div className="max-h-80 overflow-y-auto overscroll-contain lg:h-full lg:max-h-none">
               <ul className="divide-y divide-border">
                 {items.map((a) => {
                   const meta = eventMeta[a.event] ?? { icon: AlertTriangle, cls: "text-muted-foreground" }
                   return (
-                    <li key={a.id} className="px-4 py-3 sm:px-6">
+                    <li key={a.id} className="px-4 py-3 transition-colors hover:bg-muted/30 sm:px-5">
                       <div className="flex min-w-0 items-start gap-2.5">
                         <meta.icon className={cn("size-4 shrink-0", meta.cls)} />
                         <div className="min-w-0 flex-1">
@@ -327,25 +333,30 @@ export function UpstreamAnnouncements() {
 
   return (
     <>
-      <Card className="border border-border shadow-none lg:h-100">
-        <CardHeader className="flex shrink-0 flex-col gap-2 px-4 pb-2 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <CardTitle className="text-base font-semibold">{"上游公告"}</CardTitle>
-          <div className="flex items-center gap-3 self-start sm:self-auto">
+      <Card className="dashboard-panel gap-0 overflow-hidden border-border py-0 lg:h-96">
+        <CardHeader className="dashboard-panel-header flex shrink-0 flex-row items-center justify-between gap-3 px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <Bell className="size-4" />
+            </span>
+            <CardTitle className="truncate text-sm font-semibold sm:text-base">{"上游公告"}</CardTitle>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
             <span className="text-xs text-muted-foreground">
               {preview.data?.total ? `共 ${preview.data.total} 条` : ""}
             </span>
             {preview.data?.total && preview.data.total > items.length ? (
-              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={openDetail}>
-                {"查看更多"}
+              <Button size="sm" variant="ghost" className="h-10 gap-1 px-2 text-xs sm:h-8" onClick={openDetail}>
+                {"更多"}<ChevronRight className="size-3.5" />
               </Button>
             ) : null}
           </div>
         </CardHeader>
         <CardContent className="min-h-0 flex-1 px-0">
           {preview.loading ? (
-            <p className="px-6 py-4 text-xs text-muted-foreground">{"加载中…"}</p>
+            <p className="flex min-h-32 items-center justify-center px-5 text-xs text-muted-foreground">{"加载中…"}</p>
           ) : items.length === 0 ? (
-            <p className="px-6 py-4 text-xs text-muted-foreground">{"暂无上游公告"}</p>
+            <p className="flex min-h-32 items-center justify-center px-5 text-xs text-muted-foreground">{"暂无上游公告"}</p>
           ) : (
             <div className="max-h-80 overflow-y-auto overscroll-contain lg:h-full lg:max-h-none">
               <ul className="divide-y divide-border">
@@ -1038,7 +1049,7 @@ function renderInlineMarkdown(text: string) {
 
 export function BottomPanels() {
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <AlertFeed />
       <UpstreamAnnouncements />
     </div>

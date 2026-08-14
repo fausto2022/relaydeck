@@ -13,6 +13,7 @@ import {
   Link2,
   LogIn,
   MoreHorizontal,
+  Network,
   Pause,
   Pencil,
   Play,
@@ -91,16 +92,16 @@ function statusOf(c: Channel): Status {
   return "healthy"
 }
 
-const statusMap: Record<Status, { label: string; cls: string }> = {
-  healthy: { label: "健康", cls: "text-success bg-success/10" },
-  low: { label: "低余额", cls: "text-warning bg-warning/10" },
-  failed: { label: "登录失败", cls: "text-danger bg-danger/10" },
-  idle: { label: "尚未采集", cls: "text-muted-foreground bg-muted/40" },
+const statusMap: Record<Status, { label: string; cls: string; accent: string }> = {
+  healthy: { label: "健康", cls: "text-success bg-success/10", accent: "bg-success" },
+  low: { label: "低余额", cls: "text-warning bg-warning/10", accent: "bg-warning" },
+  failed: { label: "登录失败", cls: "text-danger bg-danger/10", accent: "bg-danger" },
+  idle: { label: "尚未采集", cls: "text-muted-foreground bg-muted/40", accent: "bg-muted-foreground/35" },
 }
 
 function StatTile({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex h-16 min-w-0 flex-col justify-between rounded-md border border-border bg-muted/20 px-2.5 py-2">
+    <div className="flex h-16 min-w-0 flex-col justify-between rounded-md border border-border/70 bg-muted/30 px-2.5 py-2">
       <span className="text-[10px] leading-none text-muted-foreground">{label}</span>
       <div className="min-w-0 overflow-hidden text-[13px] font-semibold leading-tight text-foreground">
         {typeof children === "string" ? <span className="block truncate">{children}</span> : children}
@@ -813,11 +814,16 @@ export function ChannelCards() {
   }
 
   return (
-    <section>
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-baseline gap-3">
-          <h2 className="text-base font-semibold text-foreground">{"渠道"}</h2>
-          <p className="text-xs text-muted-foreground">{"实时健康、余额与同步状态"}</p>
+    <section className="space-y-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <Network className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-foreground">{"渠道管理"}</h2>
+            <p className="truncate text-xs text-muted-foreground">{"实时健康、余额与同步状态"}</p>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <span className="text-xs text-muted-foreground">
@@ -872,11 +878,11 @@ export function ChannelCards() {
       </div>
 
       {pageQuery.loading && !channelPage ? (
-        <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+        <p className="rounded-lg border border-dashed border-border bg-card/60 px-4 py-8 text-center text-sm text-muted-foreground">
           {"加载中…"}
         </p>
       ) : totalChannels === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">
+        <div className="rounded-lg border border-dashed border-border bg-card/60 px-4 py-10 text-center">
           <p className="text-sm text-muted-foreground">
             {balanceFilterActive ? `没有${balanceFilterLabel}的渠道。` : "还没有任何渠道。"}
           </p>
@@ -905,7 +911,8 @@ export function ChannelCards() {
               const status = statusOf(c)
               const meta = statusMap[status]
               return (
-                <Card key={c.id} className="flex flex-col gap-0 border border-border p-3 shadow-none sm:p-4">
+                <Card key={c.id} className="dashboard-panel relative flex flex-col gap-0 overflow-hidden border-border p-3 sm:p-4">
+                  <span className={cn("absolute inset-x-0 top-0 h-0.5", meta.accent)} />
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="truncate text-sm font-semibold text-foreground">{c.name}</span>
@@ -1176,7 +1183,7 @@ export function ChannelCards() {
             })}
           </div>
 
-          <div className="mt-3 flex flex-col gap-2 rounded-lg border border-border bg-muted/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card/70 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs text-muted-foreground">
               {pageSizeAll
                 ? `${balanceFilterActive ? `${balanceFilterLabel}：` : ""}显示全部 ${totalChannels} 个渠道`

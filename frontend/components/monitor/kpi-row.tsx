@@ -76,22 +76,22 @@ export function KpiRow() {
   ]
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <Card className="dashboard-panel grid gap-0 overflow-hidden py-0 sm:grid-cols-3">
       {kpis.map((k) => (
-        <Card
+        <div
           key={k.label}
-          className="flex flex-row items-start justify-between gap-3 border-border/80 bg-card p-3.5 sm:p-4"
+          className="flex min-h-22 min-w-0 items-center gap-3 border-b border-border/70 px-4 py-3 last:border-b-0 sm:min-h-28 sm:border-b-0 sm:border-r sm:px-5 sm:last:border-r-0"
         >
-          <div className="flex min-w-0 flex-col">
-            <span className="text-xs font-medium text-muted-foreground">{k.label}</span>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground sm:text-2xl">{k.value}</p>
-            <p className="mt-1.5 min-w-0 text-xs leading-4">{k.footer}</p>
-          </div>
-          <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-md ring-1 ring-inset ring-current/10 sm:size-10", k.iconBg, k.iconColor)}>
+          <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-md ring-1 ring-inset ring-current/10", k.iconBg, k.iconColor)}>
             <k.icon className="size-5" />
           </span>
-        </Card>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="text-xs font-medium text-muted-foreground">{k.label}</span>
+            <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground sm:text-2xl">{k.value}</p>
+            <p className="mt-1 min-w-0 text-[11px] leading-4 sm:text-xs">{k.footer}</p>
+          </div>
+        </div>
       ))}
-    </div>
+    </Card>
   )
 }

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { ChevronRight, Link2, TestTubeDiagonal, Unlink } from "lucide-react"
+import { ChevronRight, Link2, TestTubeDiagonal, Trophy, Unlink } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -72,27 +72,32 @@ export function RateRanking() {
   }
 
   return (
-    <Card className="overflow-hidden border border-border shadow-none">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold">倍率排行</h2>
-            <Badge variant="outline" className="tabular-nums">{ranked.length} 个分组</Badge>
+    <Card className="dashboard-panel gap-0 overflow-hidden border-border py-0">
+      <div className="dashboard-panel-header flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-warning/10 text-warning">
+            <Trophy className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold sm:text-base">倍率排行</h2>
+              <Badge variant="outline" className="tabular-nums">{ranked.length} 个分组</Badge>
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              按换算后倍率从低到高 · 采集于 <span className="font-medium text-foreground" title={dateTime(refreshedAt)}>{relativeTime(refreshedAt)}</span>
+            </p>
           </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            按换算后倍率从低到高排列 · 上次采集 <span className="font-medium text-foreground" title={dateTime(refreshedAt)}>{relativeTime(refreshedAt)}</span>
-          </p>
         </div>
         {ranked.length > DEFAULT_VISIBLE_COUNT ? (
           <Button variant="ghost" size="sm" onClick={openRanking}>
-            查看更多<ChevronRight />
+            查看更多<ChevronRight className="size-4" />
           </Button>
         ) : (
           <span className="text-xs text-muted-foreground">默认展示前 {DEFAULT_VISIBLE_COUNT} 个分组</span>
         )}
       </div>
 
-      <div className="border-b border-border px-4 py-2 sm:px-5">
+      <div className="border-b border-border/70 bg-card px-4 py-2 sm:px-5">
         <Tabs value={provider} onValueChange={handleProviderChange}>
           <TabsList className="grid h-auto w-full grid-cols-3 gap-1 sm:flex sm:w-auto">
             {RATE_PROVIDERS.map((item) => <TabsTrigger key={item.value} value={item.value} className="min-w-0 px-2">{item.label}</TabsTrigger>)}
@@ -100,7 +105,7 @@ export function RateRanking() {
         </Tabs>
       </div>
 
-      <div className="border-b border-border px-4 py-2 sm:px-5">
+      <div className="border-b border-border/70 bg-card px-4 py-2 sm:px-5">
         <Tabs value={activeCategory} onValueChange={setCategory}>
           <TabsList className="h-auto max-w-full justify-start">
             {categoryOptions.map((item) => (
@@ -122,7 +127,7 @@ export function RateRanking() {
             {visible.map((rate, index) => {
               const channel = channelMap.get(rate.channel_id)
               return (
-                <div key={`${rate.channel_id}-${rate.id}`} className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 px-4 py-3">
+                <div key={`${rate.channel_id}-${rate.id}`} className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 px-4 py-3 transition-colors hover:bg-muted/30">
                   <span className={cn("inline-flex size-6 items-center justify-center rounded-md bg-muted text-xs tabular-nums", index === 0 && "bg-foreground text-background")}>{index + 1}</span>
                   <div className="min-w-0">
                     <div className="truncate text-xs text-muted-foreground" title={channel?.name}>{channel?.name ?? `渠道 #${rate.channel_id}`}</div>
@@ -143,7 +148,7 @@ export function RateRanking() {
           </div>
           <div className="hidden lg:block">
             <table className="w-full table-fixed text-sm">
-              <thead className="sticky top-0 bg-background text-left text-xs text-muted-foreground">
+              <thead className="sticky top-0 bg-muted/30 text-left text-xs text-muted-foreground">
                 <tr className="border-b border-border">
                   <th className="w-16 px-4 py-2 font-medium">排名</th>
                   <th className="w-40 px-3 py-2 font-medium">渠道</th>

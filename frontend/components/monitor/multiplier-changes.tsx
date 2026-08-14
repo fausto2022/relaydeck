@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ArrowDownRight, ArrowUpRight } from "lucide-react"
+import { ArrowDownRight, ArrowUpRight, ChevronRight, History } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -83,21 +83,31 @@ export function MultiplierChanges() {
 
   return (
     <>
-      <Card className="min-h-0 overflow-hidden border border-border shadow-none lg:h-100">
-        <CardHeader className="flex shrink-0 flex-row items-center justify-between px-4 pb-2 sm:px-6">
-          <CardTitle className="text-base font-semibold">{"最近倍率变动"}</CardTitle>
+      <Card className="dashboard-panel min-h-72 overflow-hidden border-border py-0 lg:h-96">
+        <CardHeader className="dashboard-panel-header flex shrink-0 flex-row items-center justify-between gap-3 px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-warning/10 text-warning">
+              <History className="size-4" />
+            </span>
+            <CardTitle className="truncate text-sm font-semibold sm:text-base">{"最近倍率变动"}</CardTitle>
+          </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-muted-foreground">{items.length > 0 ? `${items.length} 条` : ""}</span>
-            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={openDetail}>
-              {"查看更多"}
+            <Button size="sm" variant="ghost" className="h-10 gap-1 px-2 text-xs sm:h-8" onClick={openDetail}>
+              {"更多"}<ChevronRight className="size-3.5" />
             </Button>
           </div>
         </CardHeader>
         <CardContent className="min-h-0 flex-1 px-0">
           {summary.loading ? (
-            <p className="px-6 py-6 text-xs text-muted-foreground">{"加载中…"}</p>
+            <p className="flex min-h-44 items-center justify-center px-5 text-xs text-muted-foreground">{"加载中…"}</p>
           ) : items.length === 0 ? (
-            <p className="px-6 py-6 text-xs text-muted-foreground">{"暂无倍率变动记录"}</p>
+            <div className="flex min-h-44 flex-col items-center justify-center gap-2 px-5 text-xs text-muted-foreground">
+              <span className="flex size-10 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <History className="size-4" />
+              </span>
+              <p>{"暂无倍率变动记录"}</p>
+            </div>
           ) : (
             <ScrollArea type="hover" className="max-h-80 lg:h-full lg:max-h-none">
               <ul className="divide-y divide-border">
@@ -175,7 +185,7 @@ function MultiplierChangeRow({
   const rechargeRule = item.recharge_multiplier_mode === "multiply" ? "乘以" : "除以"
 
   return (
-    <li className={cn("flex w-full min-w-0 items-start gap-2.5 sm:gap-3", compact ? "px-4 py-3" : "px-4 py-3.5 sm:px-6")}>
+    <li className={cn("flex w-full min-w-0 items-start gap-2.5 transition-colors hover:bg-muted/30 sm:gap-3", compact ? "px-4 py-3" : "px-4 py-3 sm:px-5")}>
       <div className="flex flex-col items-center gap-0.5 pt-1">
         <span className={cn("size-2 rounded-full", isUp ? "bg-danger" : "bg-success")} />
       </div>

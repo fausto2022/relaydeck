@@ -85,7 +85,7 @@ export function MonitorHeader() {
   }
 
   const navItems = [
-    { to: "/", label: "主页", icon: Home },
+    { to: "/", label: "首页", icon: Home },
     { to: "/main-station", label: "主站", icon: ServerCog },
     { to: "/settings", label: "设置", icon: Settings },
   ]
@@ -99,14 +99,14 @@ export function MonitorHeader() {
         to={item.to}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "inline-flex items-center justify-center gap-1.5 rounded-sm font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/35",
-          mobile ? "h-10 text-xs" : "h-8 px-3 text-sm",
+          "inline-flex items-center justify-center gap-1.5 rounded-md font-medium outline-none transition-[background-color,color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-ring/35",
+          mobile ? "h-9 text-xs" : "h-8 px-3 text-sm",
           active
-            ? "bg-card text-primary ring-1 ring-border/80"
-            : "text-muted-foreground hover:bg-card/70 hover:text-foreground",
+            ? "bg-card text-foreground shadow-sm ring-1 ring-border/80"
+            : "text-muted-foreground hover:bg-card/65 hover:text-foreground",
         )}
       >
-        <Icon className="size-4" />
+        <Icon className={cn("size-4", active && "text-primary")} />
         <span>{item.label}</span>
       </Link>
     )
@@ -115,14 +115,14 @@ export function MonitorHeader() {
   const darkMode = mounted && resolvedTheme === "dark"
 
   return (
-    <header className="sticky top-0 z-20 border-b border-border/80 bg-card/92 backdrop-blur-md">
-      <div className="mx-auto flex min-h-14 max-w-360 flex-wrap items-center gap-x-3 px-3 py-2 sm:px-5 md:h-16 md:flex-nowrap md:gap-4 md:py-0 lg:px-6">
+    <header className="sticky top-0 z-20 border-b border-border/80 bg-background/94 backdrop-blur-md">
+      <div className="mx-auto flex min-h-14 max-w-360 flex-wrap items-center gap-x-3 px-3 py-2 sm:px-5 md:h-15 md:flex-nowrap md:gap-4 md:py-0 lg:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-foreground text-background shadow-sm">
             <Activity className="size-4.5" strokeWidth={2.5} />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold text-foreground">{appTitle}</h1>
+            <h1 className="truncate text-sm font-semibold text-foreground sm:text-base">{appTitle}</h1>
             {version ? (
               <p className="truncate text-xs leading-4 text-muted-foreground">
                 <button
@@ -149,12 +149,13 @@ export function MonitorHeader() {
           </div>
         </div>
 
-        <nav aria-label="主导航" className="hidden items-center gap-1 rounded-md border border-border/70 bg-muted/60 p-1 md:flex">
+        <nav aria-label="主导航" className="hidden items-center gap-1 rounded-lg bg-secondary/80 p-1 ring-1 ring-border/70 md:flex">
           {navigation(false)}
         </nav>
 
         <div className="flex flex-1 items-center justify-end gap-1.5">
-          <span className="mr-1 hidden text-xs text-muted-foreground xl:inline">
+          <span className="mr-1 hidden items-center gap-1.5 text-xs text-muted-foreground xl:inline-flex">
+            <span className="size-1.5 rounded-full bg-success" />
             上次采集 <span className="font-medium text-foreground">{relativeTime(lastCollectedAt)}</span>
           </span>
           <Tooltip delayDuration={200}>
@@ -164,7 +165,7 @@ export function MonitorHeader() {
                 size="icon"
                 onClick={handleRefresh}
                 disabled={syncing}
-                className="size-10 md:size-9"
+                className="size-10 bg-card shadow-sm md:size-9"
                 aria-label="刷新视图"
               >
                 <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
@@ -182,7 +183,7 @@ export function MonitorHeader() {
                 variant="outline"
                 size="icon"
                 onClick={() => setTheme(darkMode ? "light" : "dark")}
-                className="size-10 md:size-9"
+                className="size-10 bg-card shadow-sm md:size-9"
                 aria-label="切换主题"
               >
                 {darkMode ? <Moon className="size-4" /> : <Sun className="size-4" />}
@@ -200,7 +201,7 @@ export function MonitorHeader() {
                   variant="outline"
                   size="icon"
                   onClick={logout}
-                  className="size-10 md:size-9"
+                  className="size-10 bg-card shadow-sm md:size-9"
                   aria-label="退出登录"
                 >
                   <LogOut className="size-4" />
@@ -213,7 +214,7 @@ export function MonitorHeader() {
           )}
         </div>
 
-        <nav aria-label="移动端主导航" className="grid basis-full grid-cols-3 gap-1 rounded-md border border-border/70 bg-muted/60 p-1 md:hidden">
+        <nav aria-label="移动端主导航" className="grid basis-full grid-cols-3 gap-1 rounded-lg bg-secondary/80 p-1 ring-1 ring-border/70 md:hidden">
           {navigation(true)}
         </nav>
       </div>
