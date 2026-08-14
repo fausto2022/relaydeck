@@ -22,14 +22,15 @@ type dashboardLowest struct {
 }
 
 type dashboardChannelStat struct {
-	ID             uint     `json:"id"`
-	Name           string   `json:"name"`
-	Type           string   `json:"type"`
-	MonitorEnabled bool     `json:"monitor_enabled"`
-	LastBalance    *float64 `json:"last_balance,omitempty"`
-	TodayCost      *float64 `json:"today_cost,omitempty"`
-	TotalCost      *float64 `json:"total_cost,omitempty"`
-	LastError      string   `json:"last_error,omitempty"`
+	ID               uint     `json:"id"`
+	Name             string   `json:"name"`
+	Type             string   `json:"type"`
+	MonitorEnabled   bool     `json:"monitor_enabled"`
+	BalanceThreshold float64  `json:"balance_threshold"`
+	LastBalance      *float64 `json:"last_balance,omitempty"`
+	TodayCost        *float64 `json:"today_cost,omitempty"`
+	TotalCost        *float64 `json:"total_cost,omitempty"`
+	LastError        string   `json:"last_error,omitempty"`
 }
 
 func dashboardSummary(c *gin.Context, d *Deps) {
@@ -64,14 +65,15 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 			todayCost = &value
 		}
 		stat := dashboardChannelStat{
-			ID:             ch.ID,
-			Name:           ch.Name,
-			Type:           string(ch.Type),
-			MonitorEnabled: ch.MonitorEnabled,
-			LastBalance:    ch.LastBalance,
-			TodayCost:      todayCost,
-			TotalCost:      ch.TotalCost,
-			LastError:      ch.LastError,
+			ID:               ch.ID,
+			Name:             ch.Name,
+			Type:             string(ch.Type),
+			MonitorEnabled:   ch.MonitorEnabled,
+			BalanceThreshold: ch.BalanceThreshold,
+			LastBalance:      ch.LastBalance,
+			TodayCost:        todayCost,
+			TotalCost:        ch.TotalCost,
+			LastError:        ch.LastError,
 		}
 		stats = append(stats, stat)
 		if ch.LastError != "" {

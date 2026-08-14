@@ -334,6 +334,7 @@ export interface DashboardChannelStat {
   name: string
   type: string
   monitor_enabled: boolean
+  balance_threshold: number
   last_balance?: number | null
   today_cost?: number | null
   total_cost?: number | null

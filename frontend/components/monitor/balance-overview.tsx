@@ -1,10 +1,65 @@
 "use client"
 
-import { ListOrdered } from "lucide-react"
+import { AlertCircle, CircleCheck, Clock3, ListOrdered, PauseCircle, TriangleAlert } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useDashboardSummary } from "@/lib/queries"
 import { money } from "@/lib/format"
+import { isBalanceLow } from "@/lib/channel-balance"
 import { cn } from "@/lib/utils"
+import type { LucideIcon } from "lucide-react"
+
+interface MonitorStatus {
+  label: string
+  icon: LucideIcon
+  textClass: string
+  rowClass: string
+}
+
+function monitorStatus(channel: {
+  last_error?: string
+  monitor_enabled: boolean
+  last_balance?: number | null
+  balance_threshold: number
+}): MonitorStatus {
+  if (channel.last_error) {
+    return {
+      label: "失败",
+      icon: AlertCircle,
+      textClass: "text-danger",
+      rowClass: "border-l-2 border-danger/70 bg-danger/5",
+    }
+  }
+  if (!channel.monitor_enabled) {
+    return {
+      label: "已暂停",
+      icon: PauseCircle,
+      textClass: "text-muted-foreground",
+      rowClass: "border-l-2 border-muted-foreground/35 bg-muted/20",
+    }
+  }
+  if (channel.last_balance == null) {
+    return {
+      label: "未采集",
+      icon: Clock3,
+      textClass: "text-muted-foreground",
+      rowClass: "border-l-2 border-muted-foreground/35 bg-muted/20",
+    }
+  }
+  if (isBalanceLow(channel.last_balance, channel.balance_threshold)) {
+    return {
+      label: "低余额",
+      icon: TriangleAlert,
+      textClass: "text-warning",
+      rowClass: "border-l-2 border-warning/70 bg-warning/5",
+    }
+  }
+  return {
+    label: "健康",
+    icon: CircleCheck,
+    textClass: "text-success",
+    rowClass: "border-l-2 border-success/40",
+  }
+}
 
 export function BalanceOverview() {
   const summary = useDashboardSummary()
@@ -46,8 +101,10 @@ export function BalanceOverview() {
             <div className="divide-y divide-border/70">
               {channels.map((channel, index) => {
                 const cost = channel.today_cost ?? 0
+                const status = monitorStatus(channel)
+                const StatusIcon = status.icon
                 return (
-                  <div key={channel.id} className="grid grid-cols-[minmax(4.5rem,1fr)_5.5rem_5.5rem] items-center gap-2 py-2.5 transition-colors hover:bg-muted/30 sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:gap-3">
+                  <div key={channel.id} className={cn("grid grid-cols-[minmax(4.5rem,1fr)_5.5rem_5.5rem] items-center gap-2 py-2.5 pl-2 transition-colors hover:bg-muted/30 sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:gap-3", status.rowClass)}>
                     <div className="flex min-w-0 items-center gap-2">
                       <span
                         aria-label={`第 ${index + 1} 名`}
@@ -62,7 +119,13 @@ export function BalanceOverview() {
                       >
                         {index + 1}
                       </span>
-                      <span className="truncate text-sm font-medium text-foreground" title={channel.name}>{channel.name}</span>
+                      <div className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-foreground" title={channel.name}>{channel.name}</span>
+                        <span className={cn("mt-0.5 flex items-center gap-1 text-[10px] font-medium", status.textClass)} title={channel.last_error || status.label}>
+                          <StatusIcon className="size-3" aria-hidden="true" />
+                          {status.label}
+                        </span>
+                      </div>
                     </div>
                     <span className="truncate text-right font-mono text-[11px] font-semibold tabular-nums text-primary sm:text-sm" title={money(cost)}>{money(cost)}</span>
                     <span className="truncate text-right font-mono text-[11px] tabular-nums text-foreground sm:text-sm" title={money(channel.last_balance)}>{money(channel.last_balance)}</span>
