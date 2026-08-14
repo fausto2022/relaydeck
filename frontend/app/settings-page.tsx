@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -333,24 +332,23 @@ export default function SettingsPage() {
       </header>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="h-auto w-full justify-start rounded-2xl border border-border bg-muted/40 p-1">
-          <TabsTrigger value="system" className="px-4 py-2">
+        <TabsList className="grid h-auto w-full grid-cols-2 justify-stretch overflow-visible p-1 sm:inline-flex sm:grid-cols-none sm:justify-start sm:overflow-x-auto">
+          <TabsTrigger value="system" className="min-h-10 px-3 py-2 sm:px-4">
             系统设置
           </TabsTrigger>
-          <TabsTrigger value="notifications" className="px-4 py-2">
+          <TabsTrigger value="notifications" className="min-h-10 px-3 py-2 sm:px-4">
             通知渠道
           </TabsTrigger>
-          <TabsTrigger value="captcha" className="px-4 py-2">
+          <TabsTrigger value="captcha" className="min-h-10 px-3 py-2 sm:px-4">
             验证码服务
           </TabsTrigger>
-          <TabsTrigger value="rate-ranking" className="px-4 py-2">
+          <TabsTrigger value="rate-ranking" className="min-h-10 px-3 py-2 sm:px-4">
             倍率分类
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="system">
-          <Card className="overflow-hidden border-border shadow-none">
-            <CardContent className="space-y-8 p-4 sm:p-6">
+          <div className="space-y-8">
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_1fr]">
             <SectionCard
               icon={<ShieldCheck className="size-4 text-emerald-600" />}
@@ -1149,13 +1147,12 @@ export default function SettingsPage() {
                 : "保存写入配置文件，应用让鉴权、调度、通知策略、代理和上游请求配置立即更新。"}
             </span>
           </div>
-            </CardContent>
-          </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="notifications">
           <SectionCard
-            icon={<Send className="size-4 text-violet-600" />}
+            icon={<Send className="size-4 text-primary" />}
             title="通知渠道"
             description="管理 Telegram、Webhook、邮件、企业微信、钉钉、飞书等通知出口。"
             action={
@@ -1203,15 +1200,15 @@ export default function SettingsPage() {
                   return (
                     <div
                       key={channel.id}
-                      className="rounded-2xl border border-border bg-background/80 p-4"
+                      className="rounded-lg border border-border/80 bg-card p-4"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="flex min-w-0 items-start gap-3">
                           <div
                             className={cn(
-                              "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border",
+                              "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md border",
                               channel.enabled
-                                ? "border-violet-200 bg-violet-50 text-violet-700"
+                                ? "border-primary/25 bg-primary/10 text-primary"
                                 : "border-border bg-muted/40 text-muted-foreground",
                             )}
                           >
@@ -1233,8 +1230,8 @@ export default function SettingsPage() {
                                 className={cn(
                                   "border-transparent",
                                   channel.enabled
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : "bg-slate-100 text-slate-500",
+                                    ? "bg-success/12 text-success"
+                                    : "bg-muted text-muted-foreground",
                                 )}
                               >
                                 {channel.enabled ? "启用中" : "已禁用"}
@@ -1242,7 +1239,7 @@ export default function SettingsPage() {
                               {channel.proxy_enabled ? (
                                 <Badge
                                   variant="outline"
-                                  className="border-transparent bg-cyan-50 text-cyan-700"
+                                  className="border-transparent bg-primary/10 text-primary"
                                 >
                                   代理 IP
                                 </Badge>
@@ -1336,7 +1333,7 @@ export default function SettingsPage() {
                 {captchas.data.map((item) => (
                   <div
                     key={item.id}
-                    className="rounded-2xl border border-border bg-background/80 p-4"
+                    className="rounded-lg border border-border/80 bg-card p-4"
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="space-y-1">
@@ -1355,8 +1352,8 @@ export default function SettingsPage() {
                             className={cn(
                               "border-transparent",
                               item.enabled
-                                ? "bg-emerald-50 text-emerald-700"
-                                : "bg-slate-100 text-slate-500",
+                                ? "bg-success/12 text-success"
+                                : "bg-muted text-muted-foreground",
                             )}
                           >
                             {item.enabled ? "启用中" : "已禁用"}
@@ -1364,7 +1361,7 @@ export default function SettingsPage() {
                           {item.proxy_enabled ? (
                             <Badge
                               variant="outline"
-                              className="border-transparent bg-cyan-50 text-cyan-700"
+                              className="border-transparent bg-primary/10 text-primary"
                             >
                               代理 IP
                             </Badge>
@@ -1476,7 +1473,7 @@ function Field({
       <div className="space-y-1">
         <Label className="text-xs font-medium text-foreground">{label}</Label>
         {description ? (
-          <p className="text-[11px] leading-5 text-muted-foreground">
+          <p className="text-xs leading-5 text-muted-foreground">
             {description}
           </p>
         ) : null}
@@ -1593,7 +1590,7 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-3xl border border-border/80 bg-muted/20 p-5">
+    <section className="border-t border-border/80 pt-5">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -1625,12 +1622,12 @@ function InlineSwitch({
   onCheckedChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-background/90 px-4 py-3">
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-border/80 bg-muted/35 px-4 py-3">
       <div className="space-y-1">
         <Label htmlFor={id} className="text-sm font-medium text-foreground">
           {label}
         </Label>
-        <p className="text-[11px] leading-5 text-muted-foreground">
+        <p className="text-xs leading-5 text-muted-foreground">
           {description}
         </p>
       </div>
@@ -1647,8 +1644,8 @@ function NoteBox({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-900">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+    <div className="rounded-lg border border-success/25 bg-success/10 px-4 py-3 text-sm text-foreground">
+      <p className="text-xs font-semibold text-success">
         {title}
       </p>
       <p className="mt-1 leading-6">{children}</p>
@@ -1668,8 +1665,8 @@ function MiniMetric({
   danger?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-background/80 px-4 py-3">
-      <p className="text-[11px] text-muted-foreground">{title}</p>
+    <div className="rounded-lg border border-border/80 bg-muted/30 px-4 py-3">
+      <p className="text-xs text-muted-foreground">{title}</p>
       <p
         className={cn(
           "mt-1 text-sm font-semibold",
@@ -1679,7 +1676,7 @@ function MiniMetric({
         {value}
       </p>
       {hint ? (
-        <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
       ) : null}
     </div>
   );
@@ -1693,7 +1690,7 @@ function EmptyPanel({
   description: string;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-background/70 px-4 py-6">
+    <div className="rounded-lg border border-dashed border-border bg-muted/25 px-4 py-6">
       <p className="text-sm font-medium text-foreground">{title}</p>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">
         {description}

@@ -14,13 +14,21 @@ const SHOW_DOCK = false
 
 export function AppShell() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh bg-background">
+      <a
+        href="#main-content"
+        className="fixed left-3 top-3 z-50 -translate-y-20 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-transform focus:translate-y-0"
+      >
+        跳到主要内容
+      </a>
       <MonitorHeader />
       <main
+        id="main-content"
+        tabIndex={-1}
         className={
           SHOW_DOCK
-            ? "mx-auto max-w-360 space-y-4 px-3 py-3 pb-24 sm:space-y-5 sm:px-5 sm:py-5"
-            : "mx-auto max-w-360 space-y-4 px-3 py-3 sm:space-y-5 sm:px-5 sm:py-5"
+            ? "mx-auto max-w-360 space-y-4 px-3 py-4 pb-24 sm:space-y-5 sm:px-5 sm:py-5 lg:px-6 lg:py-6"
+            : "mx-auto max-w-360 space-y-4 px-3 py-4 sm:space-y-5 sm:px-5 sm:py-5 lg:px-6 lg:py-6"
         }
       >
         <Outlet />

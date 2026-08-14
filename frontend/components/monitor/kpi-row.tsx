@@ -80,15 +80,15 @@ export function KpiRow() {
       {kpis.map((k) => (
         <Card
           key={k.label}
-          className="flex flex-row items-start justify-between gap-2 border border-border p-3 shadow-none sm:p-4"
+          className="flex flex-row items-start justify-between gap-3 border-border/80 bg-card p-3.5 sm:p-4"
         >
           <div className="flex min-w-0 flex-col">
-            <span className="text-xs text-muted-foreground">{k.label}</span>
-            <p className="mt-1 text-xl font-bold tracking-tight text-foreground sm:text-2xl">{k.value}</p>
-            <p className="mt-1 min-w-0 text-xs">{k.footer}</p>
+            <span className="text-xs font-medium text-muted-foreground">{k.label}</span>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground sm:text-2xl">{k.value}</p>
+            <p className="mt-1.5 min-w-0 text-xs leading-4">{k.footer}</p>
           </div>
-          <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl sm:size-10", k.iconBg)}>
-            <k.icon className={cn("size-5", k.iconColor)} />
+          <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-md ring-1 ring-inset ring-current/10 sm:size-10", k.iconBg, k.iconColor)}>
+            <k.icon className="size-5" />
           </span>
         </Card>
       ))}

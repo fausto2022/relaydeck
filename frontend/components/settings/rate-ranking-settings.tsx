@@ -188,10 +188,10 @@ export function RateRankingSettings() {
   }
 
   return (
-    <section className="space-y-5 rounded-3xl border border-border/80 bg-muted/20 p-5">
+    <section className="space-y-5 border-t border-border/80 pt-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1.5">
-          <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Tags className="size-4 text-sky-600" />倍率排行分类</div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Tags className="size-4 text-primary" />倍率排行分类</div>
           <p className="max-w-3xl text-sm leading-6 text-muted-foreground">先按上游分组类型归入主分类，再按分组名称匹配关键词，忽略大小写。例如可在 OpenAI 下新增“生图”分类。</p>
         </div>
         <Button size="sm" variant="outline" onClick={openNewRule}><Plus className="size-3.5" />新增分类</Button>
@@ -203,27 +203,27 @@ export function RateRankingSettings() {
         </TabsList>
       </Tabs>
 
-      <div className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-background/90 px-4 py-3">
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-border/80 bg-muted/35 px-4 py-3">
         <div className="space-y-1">
           <Label htmlFor="rate-ranking-include-unmatched" className="text-sm font-medium">未命中归入“通用”</Label>
-          <p className="text-[11px] leading-5 text-muted-foreground">关闭后，本类型没有命中自定义规则的分组不会出现在首页排行和查看更多中。</p>
+          <p className="text-xs leading-5 text-muted-foreground">关闭后，本类型没有命中自定义规则的分组不会出现在首页排行和查看更多中。</p>
         </div>
         <Switch id="rate-ranking-include-unmatched" checked={providerSetting?.include_unmatched ?? true} onCheckedChange={toggleFallback} />
       </div>
 
       {providerRules.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border px-5 py-10 text-center text-sm text-muted-foreground">当前类型还没有自定义分类，所有分组会归入“通用”。</div>
+        <div className="rounded-lg border border-dashed border-border bg-muted/25 px-5 py-10 text-center text-sm text-muted-foreground">当前类型还没有自定义分类，所有分组会归入“通用”。</div>
       ) : (
         <div className="space-y-3">
           {providerRules.map((rule, index) => (
-            <div key={rule.clientKey} className={cn("rounded-2xl border border-border bg-background/90 p-4", !rule.enabled && "opacity-60")}>
+            <div key={rule.clientKey} className={cn("rounded-lg border border-border/80 bg-card p-4", !rule.enabled && "opacity-60")}>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline" className="tabular-nums">优先级 {index + 1}</Badge>
                     <span className="text-sm font-semibold">{rule.category_name}</span>
                     <Badge variant="outline">{rule.match_mode === "word" ? "完整词" : "包含"}</Badge>
-                    <Badge variant="outline" className={rule.enabled ? "text-emerald-700" : "text-muted-foreground"}>{rule.enabled ? "启用" : "停用"}</Badge>
+                    <Badge variant="outline" className={rule.enabled ? "text-success" : "text-muted-foreground"}>{rule.enabled ? "启用" : "停用"}</Badge>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {rule.keywords.map((keyword) => <Badge key={`${rule.clientKey}-${keyword}`} variant="secondary" className="font-normal">{keyword}</Badge>)}
@@ -261,7 +261,7 @@ export function RateRankingSettings() {
               <div className="space-y-2"><Label>匹配方式</Label><Select value={form.match_mode} onValueChange={(value) => setForm((current) => ({ ...current, match_mode: value as RuleForm["match_mode"] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="contains">包含匹配</SelectItem><SelectItem value="word">完整词匹配</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label htmlFor="rate-category-order">优先级顺序</Label><Input id="rate-category-order" type="number" min={1} value={form.sort_order} onChange={(event) => setForm((current) => ({ ...current, sort_order: Number(event.target.value) }))} /></div>
             </div>
-            <div className="flex items-center justify-between rounded-xl border border-border px-3 py-2"><Label htmlFor="rate-category-enabled">启用规则</Label><Switch id="rate-category-enabled" checked={form.enabled} onCheckedChange={(enabled) => setForm((current) => ({ ...current, enabled }))} /></div>
+            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2"><Label htmlFor="rate-category-enabled">启用规则</Label><Switch id="rate-category-enabled" checked={form.enabled} onCheckedChange={(enabled) => setForm((current) => ({ ...current, enabled }))} /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button><Button onClick={submitRule}>确定</Button></DialogFooter>
         </DialogContent>

@@ -19,7 +19,7 @@ import { toast } from "sonner"
 
 export function MonitorHeader() {
   const location = useLocation()
-  const { theme, setTheme } = useTheme()
+  const { resolvedTheme, setTheme } = useTheme()
   const { username, authDisabled, logout } = useAuth()
   const refresh = useTriggerRefresh()
   const channels = useChannels()
@@ -84,21 +84,50 @@ export function MonitorHeader() {
     }
   }
 
+  const navItems = [
+    { to: "/", label: "主页", icon: Home },
+    { to: "/main-station", label: "主站", icon: ServerCog },
+    { to: "/settings", label: "设置", icon: Settings },
+  ]
+
+  const navigation = (mobile: boolean) => navItems.map((item) => {
+    const active = location.pathname === item.to
+    const Icon = item.icon
+    return (
+      <Link
+        key={item.to}
+        to={item.to}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "inline-flex items-center justify-center gap-1.5 rounded-sm font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/35",
+          mobile ? "h-10 text-xs" : "h-8 px-3 text-sm",
+          active
+            ? "bg-card text-primary ring-1 ring-border/80"
+            : "text-muted-foreground hover:bg-card/70 hover:text-foreground",
+        )}
+      >
+        <Icon className="size-4" />
+        <span>{item.label}</span>
+      </Link>
+    )
+  })
+
+  const darkMode = mounted && resolvedTheme === "dark"
+
   return (
-    <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur-sm">
-      <div className="mx-auto flex h-14 max-w-360 items-center justify-between gap-2 px-3 sm:gap-4 sm:px-5">
-        {/* left: logo + title */}
-        <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-foreground text-background">
-            <Activity className="size-4" strokeWidth={2.5} />
+    <header className="sticky top-0 z-20 border-b border-border/80 bg-card/92 backdrop-blur-md">
+      <div className="mx-auto flex min-h-14 max-w-360 flex-wrap items-center gap-x-3 px-3 py-2 sm:px-5 md:h-16 md:flex-nowrap md:gap-4 md:py-0 lg:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Activity className="size-4.5" strokeWidth={2.5} />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold tracking-tight text-foreground">{appTitle}</h1>
+            <h1 className="truncate text-base font-semibold text-foreground">{appTitle}</h1>
             {version ? (
-              <p className="truncate text-[11px] leading-3 text-muted-foreground">
+              <p className="truncate text-xs leading-4 text-muted-foreground">
                 <button
                   type="button"
-                  className="font-medium underline-offset-2 hover:text-foreground hover:underline"
+                  className="font-medium underline-offset-2 hover:text-foreground hover:underline disabled:opacity-60"
                   onClick={handleCheckVersion}
                   disabled={checkingVersion}
                   title="点击检测更新"
@@ -110,7 +139,7 @@ export function MonitorHeader() {
                     href={updateURL || "https://github.com/fausto2022/relaydeck"}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ml-2 font-medium text-emerald-600 underline-offset-2 hover:text-emerald-700 hover:underline"
+                    className="ml-2 font-medium text-success underline-offset-2 hover:underline"
                   >
                     有新版本 {latestVersion}
                   </a>
@@ -120,132 +149,50 @@ export function MonitorHeader() {
           </div>
         </div>
 
-        {/* right: actions */}
-        <div className="flex shrink-0 items-center gap-1 sm:gap-3">
-          {/* last collected + refresh */}
-          <div className="hidden items-center gap-2 sm:flex">
-            <span className="text-xs text-muted-foreground">
-              {"上次采集 "}
-              <span className="font-medium text-foreground">{relativeTime(lastCollectedAt)}</span>
-            </span>
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRefresh}
-                  disabled={syncing}
-                  className="gap-1.5 border-border bg-background text-foreground hover:bg-muted"
-                  aria-label="刷新视图"
-                >
-                  <RefreshCw className={cn("size-3.5", syncing && "animate-spin")} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-xs text-xs">
-                <p>{"重新拉取最新的快照数据。"}</p>
-                <p className="mt-1 text-muted-foreground">
-                  {"提示：实际采集由后台定时任务执行，如需立即采集请到具体渠道点 \"同步\"。"}
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
+        <nav aria-label="主导航" className="hidden items-center gap-1 rounded-md border border-border/70 bg-muted/60 p-1 md:flex">
+          {navigation(false)}
+        </nav>
 
-          {/* mobile-only refresh (no tooltip / no timestamp to save space) */}
-
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={syncing}
-            className="gap-1.5 border-border bg-background px-2 text-foreground hover:bg-muted sm:hidden"
-            aria-label="刷新视图"
-          >
-            <RefreshCw className={cn("size-3.5", syncing && "animate-spin")} />
-          </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {"刷新视图"}
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <Button
-                asChild
-                variant={location.pathname === "/" ? "default" : "outline"}
-                size="sm"
-                className={cn("h-8 gap-1.5 px-2", location.pathname !== "/" && "border-border bg-background text-foreground hover:bg-muted")}
-                aria-label="主页"
-              >
-                <Link to="/"><Home className="size-3.5" /><span className="hidden lg:inline">主页</span></Link>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">{"主页"}</TooltipContent>
-          </Tooltip>
-
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <Button
-                asChild
-                variant={location.pathname === "/main-station" ? "default" : "outline"}
-                size="sm"
-                className={cn("h-8 gap-1.5 px-2", location.pathname === "/main-station" ? "" : "border-border bg-background text-foreground hover:bg-muted")}
-                aria-label="主站"
-              >
-                <Link to="/main-station">
-                  <ServerCog className="size-3.5" />
-                  <span className="hidden lg:inline">主站</span>
-                </Link>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {"主站账号"}
-            </TooltipContent>
-          </Tooltip>
-
-          {/* settings */}
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <Button
-                asChild
-                variant={location.pathname === "/settings" ? "default" : "outline"}
-                size="icon"
-                className={cn("size-8", location.pathname === "/settings" ? "" : "border-border bg-background text-foreground hover:bg-muted")}
-                aria-label="系统设置"
-              >
-                <Link to="/settings"><Settings className="size-3.5" /></Link>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {"系统设置"}
-            </TooltipContent>
-          </Tooltip>
-
-          {/* theme toggle */}
+        <div className="flex flex-1 items-center justify-end gap-1.5">
+          <span className="mr-1 hidden text-xs text-muted-foreground xl:inline">
+            上次采集 <span className="font-medium text-foreground">{relativeTime(lastCollectedAt)}</span>
+          </span>
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                className="size-8 border-border bg-background text-foreground hover:bg-muted"
-                aria-label="切换主题"
+                onClick={handleRefresh}
+                disabled={syncing}
+                className="size-10 md:size-9"
+                aria-label="刷新视图"
               >
-                {mounted && theme === "dark" ? (
-                  <Moon className="size-3.5" />
-                ) : (
-                  <Sun className="size-3.5" />
-                )}
+                <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {mounted && theme === "dark" ? "深色模式 · 点击切换浅色" : "浅色模式 · 点击切换深色"}
+            <TooltipContent side="bottom" className="max-w-xs text-xs">
+              <p>重新拉取最新的快照数据。</p>
+              <p className="mt-1 text-muted-foreground">实际采集由后台定时任务执行，如需立即采集请到具体渠道点“同步”。</p>
             </TooltipContent>
           </Tooltip>
 
-          {/* logout — 鉴权关闭时整个按钮不显示 */}
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setTheme(darkMode ? "light" : "dark")}
+                className="size-10 md:size-9"
+                aria-label="切换主题"
+              >
+                {darkMode ? <Moon className="size-4" /> : <Sun className="size-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              {darkMode ? "深色模式 · 点击切换浅色" : "浅色模式 · 点击切换深色"}
+            </TooltipContent>
+          </Tooltip>
+
           {authDisabled ? null : (
             <Tooltip delayDuration={200}>
               <TooltipTrigger asChild>
@@ -253,10 +200,10 @@ export function MonitorHeader() {
                   variant="outline"
                   size="icon"
                   onClick={logout}
-                  className="size-8 border-border bg-background text-foreground hover:bg-muted"
+                  className="size-10 md:size-9"
                   aria-label="退出登录"
                 >
-                  <LogOut className="size-3.5" />
+                  <LogOut className="size-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
@@ -265,6 +212,10 @@ export function MonitorHeader() {
             </Tooltip>
           )}
         </div>
+
+        <nav aria-label="移动端主导航" className="grid basis-full grid-cols-3 gap-1 rounded-md border border-border/70 bg-muted/60 p-1 md:hidden">
+          {navigation(true)}
+        </nav>
       </div>
     </header>
   )
