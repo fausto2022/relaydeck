@@ -347,7 +347,6 @@ export interface DashboardMainStationGroup {
   total_tokens: number
   actual_cost?: number | null
   account_cost?: number | null
-  channel_ids?: number[]
 }
 
 export interface AlertEvent {

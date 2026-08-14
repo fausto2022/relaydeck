@@ -18,7 +18,7 @@ type profitAdminClient struct {
 }
 
 func TestTodayGroupUsageReturnsCurrentDayStats(t *testing.T) {
-	service, db, baseAdmin, _ := newTestService(t)
+	service, _, baseAdmin, _ := newTestService(t)
 	now := time.Date(2026, 7, 18, 12, 0, 0, 0, shanghaiLocation())
 	service.now = func() time.Time { return now }
 	admin := &profitAdminClient{
@@ -29,32 +29,6 @@ func TestTodayGroupUsageReturnsCurrentDayStats(t *testing.T) {
 	}
 	service.adminFactory = func() adminClient { return admin }
 	configureTestStation(t, service)
-	config, err := service.store.GetConfig()
-	if err != nil {
-		t.Fatalf("get main station config: %v", err)
-	}
-	targetGroup := &storage.UpstreamSyncTargetGroup{
-		TargetID: config.TargetID, RemoteGroupID: 3, Name: "高用量", Status: "active",
-	}
-	if err := db.Create(targetGroup).Error; err != nil {
-		t.Fatalf("create target group: %v", err)
-	}
-	pool := &storage.MainAccountPool{Name: "高用量池", Enabled: true}
-	if err := service.store.CreatePool(pool, []uint{targetGroup.ID}); err != nil {
-		t.Fatalf("create account pool: %v", err)
-	}
-	for _, channelID := range []uint{7, 7, 9} {
-		if err := service.store.CreateMember(&storage.MainAccountPoolMember{
-			PoolID: pool.ID, SourceChannelID: channelID, BindingStatus: "verified", Status: "active", Enabled: true,
-		}); err != nil {
-			t.Fatalf("create account pool member: %v", err)
-		}
-	}
-	if err := service.store.CreateMember(&storage.MainAccountPoolMember{
-		PoolID: pool.ID, SourceChannelID: 11, BindingStatus: "invalid", Status: "error", Enabled: false,
-	}); err != nil {
-		t.Fatalf("create invalid account pool member: %v", err)
-	}
 
 	items, err := service.TodayGroupUsage(context.Background())
 	if err != nil {
@@ -62,9 +36,6 @@ func TestTodayGroupUsageReturnsCurrentDayStats(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].GroupID != 3 || items[0].GroupName != "高用量" || items[0].Requests != 12 || items[0].TotalTokens != 3456 || items[0].ActualCost == nil || *items[0].ActualCost != 4.5 {
 		t.Fatalf("today group usage = %#v", items)
-	}
-	if len(items[0].ChannelIDs) != 2 || items[0].ChannelIDs[0] != 7 || items[0].ChannelIDs[1] != 9 {
-		t.Fatalf("today group usage channel ids = %#v", items[0].ChannelIDs)
 	}
 	if len(admin.calls) != 1 || admin.calls[0] != "2026-07-18:2026-07-18" {
 		t.Fatalf("group usage calls = %#v", admin.calls)

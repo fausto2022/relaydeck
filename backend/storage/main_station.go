@@ -425,40 +425,6 @@ func (r *MainStationStore) ListAllPoolGroups() ([]MainAccountPoolGroup, error) {
 	return list, nil
 }
 
-// ListSourceChannelIDsByRemoteGroupIDs 返回主站分组当前绑定的上游渠道。
-func (r *MainStationStore) ListSourceChannelIDsByRemoteGroupIDs(targetID uint, remoteGroupIDs []int64) (map[int64][]uint, error) {
-	result := make(map[int64][]uint, len(remoteGroupIDs))
-	if targetID == 0 || len(remoteGroupIDs) == 0 {
-		return result, nil
-	}
-	type groupChannelRow struct {
-		RemoteGroupID   int64
-		SourceChannelID uint
-	}
-	var rows []groupChannelRow
-	err := r.db.Table("upstream_sync_target_groups AS target_groups").
-		Select("target_groups.remote_group_id, members.source_channel_id").
-		Joins("JOIN main_account_pool_groups AS pool_groups ON pool_groups.target_group_id = target_groups.id").
-		Joins("JOIN main_account_pool_members AS members ON members.pool_id = pool_groups.pool_id").
-		Where("target_groups.target_id = ?", targetID).
-		Where("target_groups.remote_group_id IN ?", remoteGroupIDs).
-		Where("members.source_channel_id > 0").
-		Where("members.binding_status NOT IN ?", []string{"invalid", "orphaned"}).
-		Where("members.status <> ?", "orphaned").
-		Order("target_groups.remote_group_id ASC, members.source_channel_id ASC").
-		Scan(&rows).Error
-	if err != nil {
-		return nil, err
-	}
-	for _, row := range rows {
-		channelIDs := result[row.RemoteGroupID]
-		if len(channelIDs) == 0 || channelIDs[len(channelIDs)-1] != row.SourceChannelID {
-			result[row.RemoteGroupID] = append(channelIDs, row.SourceChannelID)
-		}
-	}
-	return result, nil
-}
-
 func (r *MainStationStore) ListMembers(poolID uint) ([]MainAccountPoolMember, error) {
 	var list []MainAccountPoolMember
 	if err := r.db.Where("pool_id = ?", poolID).Order("priority ASC, id ASC").Find(&list).Error; err != nil {
