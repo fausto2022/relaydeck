@@ -38,6 +38,7 @@ type GroupUsageStat struct {
 	TotalTokens int64    `json:"total_tokens"`
 	ActualCost  *float64 `json:"actual_cost,omitempty"`
 	AccountCost *float64 `json:"account_cost,omitempty"`
+	ChannelIDs  []uint   `json:"channel_ids,omitempty"`
 }
 
 type groupUsageStatsClient interface {
@@ -46,7 +47,7 @@ type groupUsageStatsClient interface {
 
 // TodayGroupUsage 返回主站当天的分组用量，供首页监控展示。
 func (s *Service) TodayGroupUsage(ctx context.Context) ([]GroupUsageStat, error) {
-	_, target, apiKey, err := s.loadAdminTarget()
+	config, target, apiKey, err := s.loadAdminTarget()
 	if err != nil {
 		if errors.Is(err, ErrNotConfigured) {
 			return []GroupUsageStat{}, nil
@@ -65,6 +66,14 @@ func (s *Service) TodayGroupUsage(ctx context.Context) ([]GroupUsageStat, error)
 	if err != nil {
 		return nil, fmt.Errorf("fetch today's main station group usage: %w", err)
 	}
+	remoteGroupIDs := make([]int64, 0, len(items))
+	for _, item := range items {
+		remoteGroupIDs = append(remoteGroupIDs, item.GroupID)
+	}
+	channelIDsByGroup, err := s.store.ListSourceChannelIDsByRemoteGroupIDs(config.TargetID, remoteGroupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load main station group channel bindings: %w", err)
+	}
 	stats := make([]GroupUsageStat, 0, len(items))
 	for _, item := range items {
 		stats = append(stats, GroupUsageStat{
@@ -74,6 +83,7 @@ func (s *Service) TodayGroupUsage(ctx context.Context) ([]GroupUsageStat, error)
 			TotalTokens: item.TotalTokens,
 			ActualCost:  item.ActualCost,
 			AccountCost: item.AccountCost,
+			ChannelIDs:  channelIDsByGroup[item.GroupID],
 		})
 	}
 	return stats, nil
