@@ -26,7 +26,7 @@ import type { RateProviderType, RateSnapshot } from "@/lib/api-types"
 
 const DEFAULT_VISIBLE_COUNT = 5
 
-export function RateRanking() {
+export function RateRanking({ standalone = false }: { standalone?: boolean }) {
   const channels = useChannels()
   const channelIDs = useMemo(() => (channels.data ?? []).map((channel) => channel.id), [channels.data])
   const rates = useMultiChannelRates(channelIDs)
@@ -53,7 +53,7 @@ export function RateRanking() {
     () => categoryRankingRates(providerRates, activeCategory),
     [activeCategory, providerRates],
   )
-  const visible = ranked.slice(0, DEFAULT_VISIBLE_COUNT)
+  const visible = standalone ? ranked : ranked.slice(0, DEFAULT_VISIBLE_COUNT)
   const refreshedAt = useMemo(() => latestRateSeenAt(rates.data ?? []), [rates.data])
 
   function handleProviderChange(value: string) {
@@ -88,13 +88,13 @@ export function RateRanking() {
             </p>
           </div>
         </div>
-        {ranked.length > DEFAULT_VISIBLE_COUNT ? (
+        {!standalone && ranked.length > DEFAULT_VISIBLE_COUNT ? (
           <Button variant="ghost" size="sm" onClick={openRanking}>
             查看更多<ChevronRight className="size-4" />
           </Button>
-        ) : (
+        ) : !standalone ? (
           <span className="text-xs text-muted-foreground">默认展示前 {DEFAULT_VISIBLE_COUNT} 个分组</span>
-        )}
+        ) : <span className="text-xs text-muted-foreground">共 {ranked.length} 个分组</span>}
       </div>
 
       <div className="border-b border-border/70 bg-card px-4 py-2 sm:px-5">

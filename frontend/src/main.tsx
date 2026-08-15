@@ -1,6 +1,6 @@
 import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -15,10 +15,10 @@ import { Spinner } from '@/components/ui/spinner'
 import '@/app/globals.css'
 
 const DashboardPage = lazy(() => import('@/app/page'))
-const CaptchaPage = lazy(() => import('@/app/captcha-page'))
-const NotificationsPage = lazy(() => import('@/app/notifications-page'))
 const SettingsPage = lazy(() => import('@/app/settings-page'))
 const MainStationPage = lazy(() => import('@/app/main-station-page'))
+const ChannelsPage = lazy(() => import('@/app/channels-page'))
+const RatesPage = lazy(() => import('@/app/rates-page'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -33,10 +33,13 @@ createRoot(document.getElementById('root')!).render(
                     <Routes>
                       <Route element={<AppShell />}>
                         <Route index element={<DashboardPage />} />
-                        <Route path="captcha" element={<CaptchaPage />} />
-                        <Route path="notifications" element={<NotificationsPage />} />
+                        <Route path="channels" element={<ChannelsPage />} />
+                        <Route path="rates" element={<RatesPage />} />
+                        <Route path="captcha" element={<Navigate to="/settings?tab=captcha" replace />} />
+                        <Route path="notifications" element={<Navigate to="/settings?tab=notifications" replace />} />
                         <Route path="main-station" element={<MainStationPage />} />
                         <Route path="settings" element={<SettingsPage />} />
+                        <Route path="*" element={<Navigate to="/" replace />} />
                       </Route>
                     </Routes>
                   </Suspense>

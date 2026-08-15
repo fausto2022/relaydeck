@@ -1,18 +1,24 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Outlet } from "react-router-dom"
+import { AppSidebar } from "@/components/app-sidebar"
 import { MonitorHeader } from "@/components/monitor/monitor-header"
-import { DockBar } from "@/components/monitor/dock-bar"
-
-/**
- * AppShell 是所有路由共享的外壳：顶部 header + 中间 Outlet（+ 可选底部 dock）。
- *
- * 当前 Dock 暂时隐藏 —— 单用户 / 少量数据下单页布局比拆页好。
- * 把 SHOW_DOCK 改成 true 即可恢复底部导航 + 路由跳转。
- */
-const SHOW_DOCK = false
+import { cn } from "@/lib/utils"
 
 export function AppShell() {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+
+  useEffect(() => {
+    setSidebarCollapsed(window.localStorage.getItem("relaydeck-sidebar-collapsed") === "true")
+  }, [])
+
+  function handleCollapsedChange(collapsed: boolean) {
+    setSidebarCollapsed(collapsed)
+    window.localStorage.setItem("relaydeck-sidebar-collapsed", String(collapsed))
+  }
+
   return (
     <div className="min-h-dvh min-w-0 bg-background">
       <a
@@ -21,19 +27,27 @@ export function AppShell() {
       >
         跳到主要内容
       </a>
-      <MonitorHeader />
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className={
-          SHOW_DOCK
-            ? "mx-auto max-w-360 space-y-4 px-3 py-4 pb-24 sm:px-5 sm:py-5 lg:space-y-5 lg:px-6"
-            : "mx-auto max-w-360 space-y-4 px-3 py-4 sm:px-5 sm:py-5 lg:space-y-5 lg:px-6"
-        }
+      <AppSidebar
+        collapsed={sidebarCollapsed}
+        mobileOpen={mobileSidebarOpen}
+        onCollapsedChange={handleCollapsedChange}
+        onMobileOpenChange={setMobileSidebarOpen}
+      />
+      <div
+        className={cn(
+          "min-h-dvh min-w-0 overflow-x-hidden transition-[padding] duration-200",
+          sidebarCollapsed ? "lg:pl-17" : "lg:pl-58",
+        )}
       >
-        <Outlet />
-      </main>
-      {SHOW_DOCK ? <DockBar /> : null}
+        <MonitorHeader onOpenNavigation={() => setMobileSidebarOpen(true)} />
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="mx-auto min-w-0 max-w-400 space-y-4 px-3 py-4 sm:px-5 sm:py-5 lg:space-y-5 lg:px-6"
+        >
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }

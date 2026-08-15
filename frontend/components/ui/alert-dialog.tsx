@@ -52,7 +52,7 @@ function AlertDialogContent({
       <AlertDialogPrimitive.Content
         data-slot="alert-dialog-content"
         className={cn(
-          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-[51] grid max-h-[calc(100dvh-1rem)] w-full max-w-[calc(100%-1rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-lg border p-4 shadow-lg duration-200 sm:max-h-[calc(100dvh-2rem)] sm:max-w-lg sm:p-6',
+          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:slide-out-to-bottom-4 data-[state=open]:slide-in-from-bottom-4 fixed bottom-0 left-[50%] z-[51] grid max-h-[calc(100dvh-0.5rem)] min-w-0 w-full max-w-full translate-x-[-50%] gap-4 overflow-y-auto overscroll-contain rounded-t-xl border border-x-0 border-b-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-lg duration-200 sm:top-[50%] sm:bottom-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-lg sm:translate-y-[-50%] sm:rounded-lg sm:border sm:p-6 sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95',
           className,
         )}
         {...props}
@@ -68,7 +68,7 @@ function AlertDialogHeader({
   return (
     <div
       data-slot="alert-dialog-header"
-      className={cn('flex flex-col gap-2 text-center sm:text-left', className)}
+      className={cn('flex min-w-0 flex-col gap-2 text-left', className)}
       {...props}
     />
   )
@@ -122,7 +122,7 @@ function AlertDialogAction({
 }: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
   return (
     <AlertDialogPrimitive.Action
-      className={cn(buttonVariants(), className)}
+      className={cn(buttonVariants(), 'w-full sm:w-auto', className)}
       {...props}
     />
   )
@@ -134,7 +134,7 @@ function AlertDialogCancel({
 }: React.ComponentProps<typeof AlertDialogPrimitive.Cancel>) {
   return (
     <AlertDialogPrimitive.Cancel
-      className={cn(buttonVariants({ variant: 'outline' }), className)}
+      className={cn(buttonVariants({ variant: 'outline' }), 'w-full sm:w-auto', className)}
       {...props}
     />
   )

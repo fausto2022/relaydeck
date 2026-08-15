@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   Bell,
@@ -84,6 +85,7 @@ const RETENTION_CRON_PRESETS: CronPreset[] = [
 
 const RETENTION_DAY_PRESETS = [7, 15, 30, 60, 90, 180, 365];
 const LOG_RETENTION_DAY_PRESETS = [3, ...RETENTION_DAY_PRESETS];
+const SETTINGS_TABS = new Set(["system", "notifications", "captcha", "rate-ranking"]);
 
 interface ProxyTestResult {
   ok: boolean;
@@ -94,6 +96,7 @@ interface ProxyTestResult {
 }
 
 export default function SettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const query = useSystemConfig();
   const notifications = useNotificationChannels();
   const captchas = useCaptchaConfigs();
@@ -118,7 +121,15 @@ export default function SettingsPage() {
     null,
   );
   const [busyCaptchaID, setBusyCaptchaID] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState("system");
+  const requestedTab = searchParams.get("tab") || "system";
+  const activeTab = SETTINGS_TABS.has(requestedTab) ? requestedTab : "system";
+
+  function handleTabChange(tab: string) {
+    const next = new URLSearchParams(searchParams);
+    if (tab === "system") next.delete("tab");
+    else next.set("tab", tab);
+    setSearchParams(next, { replace: true });
+  }
 
   useEffect(() => {
     if (!query.data?.config || formDirtyRef.current) return;
@@ -331,8 +342,8 @@ export default function SettingsPage() {
         </p>
       </header>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-2 justify-stretch overflow-visible p-1 sm:inline-flex sm:grid-cols-none sm:justify-start sm:overflow-x-auto">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
+        <TabsList className="grid h-auto w-full grid-cols-2 justify-stretch overflow-visible p-1 sm:inline-flex sm:grid-cols-none sm:justify-start sm:overflow-x-auto lg:hidden">
           <TabsTrigger value="system" className="min-h-10 px-3 py-2 sm:px-4">
             系统设置
           </TabsTrigger>

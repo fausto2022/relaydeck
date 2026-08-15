@@ -1,13 +1,12 @@
 import { KpiRow } from "@/components/monitor/kpi-row"
 import { BalanceOverview } from "@/components/monitor/balance-overview"
 import { MultiplierChanges } from "@/components/monitor/multiplier-changes"
-import { RateRanking } from "@/components/monitor/rate-ranking"
-import { ChannelCards } from "@/components/monitor/channel-cards"
 import { BottomPanels } from "@/components/monitor/bottom-panels"
 
 export default function Page() {
   return (
     <>
+      <h1 className="sr-only">首页看板</h1>
       <KpiRow />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -18,10 +17,6 @@ export default function Page() {
           <MultiplierChanges />
         </div>
       </div>
-
-      <ChannelCards />
-
-      <RateRanking />
 
       <BottomPanels />
     </>
