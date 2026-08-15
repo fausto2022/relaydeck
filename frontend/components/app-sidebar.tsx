@@ -6,7 +6,6 @@ import {
   Captions,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
   LayoutDashboard,
   ListOrdered,
   LogOut,
@@ -19,14 +18,10 @@ import {
   X,
 } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { apiFetch } from "@/lib/api"
-import type { AppVersion } from "@/lib/api-types"
 import { useAuth } from "@/lib/auth-context"
-import { useAppVersion } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 
 interface NavigationItem {
@@ -127,35 +122,9 @@ function SidebarContent({
   const location = useLocation()
   const { resolvedTheme, setTheme } = useTheme()
   const { username, authDisabled, logout } = useAuth()
-  const appVersion = useAppVersion()
   const [mounted, setMounted] = useState(false)
-  const [checkingVersion, setCheckingVersion] = useState(false)
-  const appTitle = appVersion.data?.title?.trim() || "RelayDeck"
-  const version = appVersion.data?.version?.trim()
-  const latestVersion = appVersion.data?.latest_version?.trim()
-  const updateAvailable = Boolean(appVersion.data?.update_available && latestVersion)
-  const updateURL = appVersion.data?.release_url?.trim() || appVersion.data?.repo_url?.trim()
 
   useEffect(() => setMounted(true), [])
-
-  useEffect(() => {
-    document.title = appTitle
-  }, [appTitle])
-
-  async function handleCheckVersion() {
-    setCheckingVersion(true)
-    try {
-      const result = await apiFetch<AppVersion>("/version?force=1")
-      appVersion.setData(result)
-      if (result.update_error) toast.error(result.update_error)
-      else if (result.update_available && result.latest_version) toast.warning(`发现新版本 ${result.latest_version}`)
-      else toast.success("当前已是最新版本")
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "检测更新失败")
-    } finally {
-      setCheckingVersion(false)
-    }
-  }
 
   const activeTab = new URLSearchParams(location.search).get("tab") || "system"
   const darkMode = mounted && resolvedTheme === "dark"
@@ -168,16 +137,8 @@ function SidebarContent({
         </span>
         {!collapsed ? (
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold">{appTitle}</div>
-            <button
-              type="button"
-              onClick={() => void handleCheckVersion()}
-              disabled={checkingVersion}
-              className="mt-0.5 flex max-w-full items-center gap-1.5 truncate text-xs text-muted-foreground hover:text-sidebar-foreground disabled:opacity-60"
-            >
-              {checkingVersion ? "检测更新中" : version ? `v${version}` : "检测版本"}
-              {updateAvailable ? <span className="size-1.5 shrink-0 rounded-full bg-success" aria-label="有新版本" /> : null}
-            </button>
+            <div className="truncate text-sm font-semibold">管理后台</div>
+            <div className="mt-0.5 truncate text-xs text-muted-foreground">工作台</div>
           </div>
         ) : null}
       </div>
@@ -226,17 +187,6 @@ function SidebarContent({
       </nav>
 
       <div className="shrink-0 border-t border-sidebar-border p-2">
-        {updateAvailable && !collapsed ? (
-          <a
-            href={updateURL || "https://github.com/fausto2022/relaydeck"}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mb-2 flex min-h-10 items-center gap-2 rounded-md bg-success/10 px-3 text-xs font-medium text-success hover:bg-success/15"
-          >
-            <ExternalLink className="size-4" />
-            <span className="truncate">发现新版本 {latestVersion}</span>
-          </a>
-        ) : null}
         <SidebarAction
           collapsed={collapsed}
           label={darkMode ? "切换浅色模式" : "切换深色模式"}

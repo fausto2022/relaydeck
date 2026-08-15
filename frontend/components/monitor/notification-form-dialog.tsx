@@ -771,7 +771,7 @@ function ConfigFields({ type, cfg, updateCfg, disabled, isEdit }: ConfigFieldsPr
                 required
                 disabled={disabled}
               />
-              <p className="text-[11px] text-muted-foreground">卡片底部“打开 RelayDeck”按钮跳转到此地址。</p>
+              <p className="text-[11px] text-muted-foreground">卡片底部“打开管理后台”按钮跳转到此地址。</p>
             </div>
           ) : null}
         </>

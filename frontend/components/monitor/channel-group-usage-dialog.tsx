@@ -428,7 +428,7 @@ function UsageSummary({ usage }: { usage: MainStationRateUsage | null }) {
 
 function UsageTable({ usage }: { usage: MainStationRateUsage | null }) {
   if (!usage || usage.groups.length === 0) {
-    return <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">未被 RelayDeck 主站绑定</div>
+    return <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">尚未绑定主站</div>
   }
   return (
     <div className="overflow-x-auto rounded-md border border-border">

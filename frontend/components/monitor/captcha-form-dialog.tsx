@@ -120,7 +120,7 @@ export function CaptchaFormDialog({ open, onOpenChange, config }: CaptchaFormDia
         <DialogHeader>
           <DialogTitle>{isEdit ? "编辑打码平台" : "新增打码平台"}</DialogTitle>
           <DialogDescription>
-            用于自动处理上游登录时的 Turnstile 或字符图片验证码，RelayDeck 会按站点公开配置自动判断类型。
+            用于自动处理上游登录时的 Turnstile 或字符图片验证码，系统会按站点公开配置自动判断类型。
           </DialogDescription>
         </DialogHeader>
 

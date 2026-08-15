@@ -963,10 +963,10 @@ export default function SettingsPage() {
                   }
                 />
               </Field>
-              <Field label="User-Agent" description="为空时使用 relaydeck/0.1。">
+              <Field label="User-Agent" description="为空时使用默认标识。">
                 <Input
                   value={form.upstream.userAgent}
-                  placeholder="relaydeck/0.1"
+                  placeholder="默认标识"
                   onChange={(e) =>
                     setForm((prev) =>
                       prev

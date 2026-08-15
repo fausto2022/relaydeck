@@ -12,6 +12,7 @@ export function AppShell() {
 
   useEffect(() => {
     setSidebarCollapsed(window.localStorage.getItem("relaydeck-sidebar-collapsed") === "true")
+    document.title = "管理后台"
   }, [])
 
   function handleCollapsedChange(collapsed: boolean) {

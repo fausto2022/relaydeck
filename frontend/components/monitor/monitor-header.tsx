@@ -58,7 +58,7 @@ export function MonitorHeader({ onOpenNavigation }: { onOpenNavigation: () => vo
     setTimeout(() => setSyncing(false), 800)
   }
 
-  const meta = pageMeta[location.pathname] ?? { section: "RelayDeck", title: "管理后台" }
+  const meta = pageMeta[location.pathname] ?? { section: "工作台", title: "管理后台" }
   const activeSettingsTab = new URLSearchParams(location.search).get("tab") || "system"
   const title = location.pathname === "/settings" ? settingsTitle[activeSettingsTab] || meta.title : meta.title
 

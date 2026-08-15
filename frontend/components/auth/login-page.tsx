@@ -7,23 +7,19 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth-context"
-import { useAppVersion } from "@/lib/queries"
 import type { ApiError } from "@/lib/api"
 
 export function LoginPage() {
   const { login } = useAuth()
-  const appVersion = useAppVersion()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   const passwordRef = useRef<HTMLInputElement>(null)
-  const appTitle = appVersion.data?.title?.trim() || "RelayDeck"
-
   useEffect(() => {
-    document.title = appTitle
-  }, [appTitle])
+    document.title = "登录"
+  }, [])
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -53,14 +49,14 @@ export function LoginPage() {
               <Activity className="size-5" strokeWidth={2.5} />
             </span>
             <div>
-              <p className="text-lg font-semibold text-foreground">{appTitle}</p>
-              <p className="text-xs text-muted-foreground">运营控制台 · 管理入口</p>
+              <p className="text-lg font-semibold text-foreground">安全入口</p>
+              <p className="text-xs text-muted-foreground">身份验证 · 管理入口</p>
             </div>
           </div>
           <div className="mt-14 max-w-md border-l-2 border-primary/30 pl-5">
             <p className="text-sm font-medium text-primary">安全登录</p>
-            <p className="mt-2 text-3xl font-semibold leading-tight tracking-normal text-foreground">继续管理你的上游渠道</p>
-            <p className="mt-4 text-sm leading-6 text-muted-foreground">使用管理员账号进入控制台。</p>
+            <p className="mt-2 text-3xl font-semibold leading-tight tracking-normal text-foreground">欢迎进入管理后台</p>
+            <p className="mt-4 text-sm leading-6 text-muted-foreground">请输入管理员账号和密码。</p>
           </div>
         </div>
 
@@ -72,7 +68,7 @@ export function LoginPage() {
               </span>
               <div>
                 <h1 className="text-lg font-semibold leading-none">欢迎回来</h1>
-                <p className="mt-1 text-xs text-muted-foreground">登录以继续使用 {appTitle}</p>
+                <p className="mt-1 text-xs text-muted-foreground">请输入登录信息</p>
               </div>
             </div>
           </CardHeader>
@@ -134,9 +130,6 @@ export function LoginPage() {
                 {submitting ? "登录中…" : "登录控制台"}
               </Button>
             </form>
-            {appVersion.data?.version ? (
-              <p className="mt-5 text-center text-[11px] text-muted-foreground">{appTitle} · v{appVersion.data.version}</p>
-            ) : null}
           </CardContent>
         </Card>
       </div>
