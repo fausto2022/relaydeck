@@ -30,8 +30,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { CaptchaFormDialog } from "@/components/monitor/captcha-form-dialog";
 import { NotificationFormDialog } from "@/components/monitor/notification-form-dialog";
+import { ChangeAdminCredentialsDialog } from "@/components/settings/change-admin-credentials-dialog";
 import { RateRankingSettings } from "@/components/settings/rate-ranking-settings";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { useTriggerRefresh } from "@/lib/refresh-context";
 import type {
   ApplyConfigResult,
@@ -98,6 +100,7 @@ interface ProxyTestResult {
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const query = useSystemConfig();
+  const { authDisabled, logout } = useAuth();
   const notifications = useNotificationChannels();
   const captchas = useCaptchaConfigs();
   const notificationLogs = useNotificationLogs(1, 10);
@@ -117,6 +120,7 @@ export default function SettingsPage() {
     null,
   );
   const [captchaOpen, setCaptchaOpen] = useState(false);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [busyNotificationID, setBusyNotificationID] = useState<number | null>(
     null,
   );
@@ -365,6 +369,18 @@ export default function SettingsPage() {
               icon={<ShieldCheck className="size-4 text-emerald-600" />}
               title="登录鉴权"
               description="控制后台是否需要登录，以及登录令牌的签发方式。"
+              action={
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  onClick={() => setCredentialsOpen(true)}
+                  disabled={authDisabled || !form.auth.enabled}
+                >
+                  <KeyRound className="size-4" />
+                  修改账号密码
+                </Button>
+              }
             >
               <div className="grid gap-4 md:grid-cols-2">
                 <InlineSwitch
@@ -386,21 +402,12 @@ export default function SettingsPage() {
               </div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <Field
-                  label="管理员账号"
-                  description="用于后台登录的固定账号。"
+                  label="当前管理员账号"
+                  description="如需修改账号或密码，请使用修改账号密码功能。"
                 >
                   <Input
                     value={form.auth.username}
-                    onChange={(e) =>
-                      setForm((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              auth: { ...prev.auth, username: e.target.value },
-                            }
-                          : prev,
-                      )
-                    }
+                    readOnly
                   />
                 </Field>
                 <Field
@@ -419,24 +426,6 @@ export default function SettingsPage() {
                                 ...prev.auth,
                                 sessionTTLHours: num(e.target.value),
                               },
-                            }
-                          : prev,
-                      )
-                    }
-                  />
-                </Field>
-                <Field
-                  label="管理员密码"
-                  description="保存后写入配置文件，应用后用于新登录。"
-                >
-                  <Input
-                    value={form.auth.password}
-                    onChange={(e) =>
-                      setForm((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              auth: { ...prev.auth, password: e.target.value },
                             }
                           : prev,
                       )
@@ -1463,6 +1452,16 @@ export default function SettingsPage() {
           if (!open) setEditingCaptcha(null);
         }}
         config={editingCaptcha}
+      />
+
+      <ChangeAdminCredentialsDialog
+        open={credentialsOpen}
+        onOpenChange={setCredentialsOpen}
+        currentUsername={form.auth.username}
+        onSuccess={() => {
+          toast.success("账号密码已更新，请重新登录")
+          logout()
+        }}
       />
 
       {confirmDialog}

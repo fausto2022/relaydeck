@@ -16,7 +16,11 @@ func TestSaveSettingsConfig(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	cfg := &config.Config{}
+	cfg := &config.Config{Auth: config.AuthConfig{
+		Enabled:  true,
+		Username: "saved-admin",
+		Password: "saved-password",
+	}}
 	if err := config.Save(path, cfg); err != nil {
 		t.Fatalf("save config: %v", err)
 	}
@@ -52,6 +56,9 @@ func TestSaveSettingsConfig(t *testing.T) {
 	if got.Upstream.TimeoutSeconds != 45 || got.Upstream.UserAgent != "custom-agent" {
 		t.Fatalf("upstream = %#v", got.Upstream)
 	}
+	if got.Auth.Username != "saved-admin" || got.Auth.Password != "saved-password" {
+		t.Fatalf("settings save changed credentials = %#v", got.Auth)
+	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/settings/config", nil)
 	getRec := httptest.NewRecorder()
@@ -61,5 +68,8 @@ func TestSaveSettingsConfig(t *testing.T) {
 	}
 	if strings.Contains(getRec.Body.String(), `"app"`) {
 		t.Fatalf("settings response still contains app config: %s", getRec.Body.String())
+	}
+	if strings.Contains(getRec.Body.String(), "saved-password") {
+		t.Fatalf("settings response exposes admin password: %s", getRec.Body.String())
 	}
 }

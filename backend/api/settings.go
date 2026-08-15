@@ -72,11 +72,13 @@ func getSettingsConfig(c *gin.Context, d *Deps) {
 		fail(c, http.StatusInternalServerError, err)
 		return
 	}
+	authView := cfg.Auth
+	authView.Password = ""
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"config_path": d.Runtime.ConfigPath(),
 			"config": settingsConfigView{
-				Auth:          cfg.Auth,
+				Auth:          authView,
 				Scheduler:     cfg.Scheduler,
 				Notifications: cfg.Notifications,
 				Proxy:         cfg.Proxy,
@@ -100,6 +102,10 @@ func saveSettingsConfig(c *gin.Context, d *Deps) {
 		return
 	}
 
+	// 管理员账号和密码只能通过专用凭据接口修改，避免普通配置保存绕过当前密码校验。
+	in.Auth.Username = cfg.Auth.Username
+	in.Auth.Password = cfg.Auth.Password
+	in.Auth.SessionVersion = cfg.Auth.SessionVersion
 	cfg.Auth = in.Auth
 	cfg.Scheduler = in.Scheduler
 	cfg.Notifications = in.Notifications

@@ -202,11 +202,12 @@ func buildAuth(cfg config.AuthConfig, securitySecret string) (*auth.Service, err
 	if tokenSecret == "" {
 		tokenSecret = securitySecret
 	}
-	svc, err := auth.New(
+	svc, err := auth.NewWithSessionVersion(
 		cfg.Username,
 		cfg.Password,
 		tokenSecret,
 		time.Duration(cfg.SessionTTLHours)*time.Hour,
+		cfg.SessionVersion,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("init auth: %w", err)

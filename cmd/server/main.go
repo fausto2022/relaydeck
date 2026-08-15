@@ -75,11 +75,12 @@ func main() {
 		if tokenSecret == "" {
 			tokenSecret = cfg.Security.AppSecret
 		}
-		authSvc, err = auth.New(
+		authSvc, err = auth.NewWithSessionVersion(
 			cfg.Auth.Username,
 			cfg.Auth.Password,
 			tokenSecret,
 			time.Duration(cfg.Auth.SessionTTLHours)*time.Hour,
+			cfg.Auth.SessionVersion,
 		)
 		if err != nil {
 			log.Error("init auth failed (set ADMIN_USERNAME / ADMIN_PASSWORD or AUTH_ENABLED=false)", "err", err)

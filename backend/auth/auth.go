@@ -1,6 +1,6 @@
 // Package auth 提供单管理员登录：账号密码写在 config 里，登录后下发 HMAC-SHA256 签名的短 token。
 //
-// Token 格式："<base64url(payload)>.<base64url(hmac)>"，payload 是 {"sub":"<user>","exp":<unix>}。
+// Token 格式："<base64url(payload)>.<base64url(hmac)>"，payload 包含账号、过期时间和会话版本。
 // 服务端无状态，AppSecret 不变的情况下重启 token 仍有效。
 package auth
 
@@ -25,11 +25,18 @@ type Service struct {
 	password string
 	secret   []byte
 	tokenTTL time.Duration
+	version  int
 }
 
 // New 构造 Service。secret 推荐 32 字节以上；若为空报错。
 // 调用方应在 secret 为空时回退到 APP_SECRET。
 func New(username, password, secret string, ttl time.Duration) (*Service, error) {
+	return NewWithSessionVersion(username, password, secret, ttl, 0)
+}
+
+// NewWithSessionVersion 构造带会话版本的 Service。修改管理员凭据时递增版本，
+// 可让旧 token 立即失效，同时保持 token secret 不变。
+func NewWithSessionVersion(username, password, secret string, ttl time.Duration, version int) (*Service, error) {
 	if username == "" || password == "" {
 		return nil, errors.New("auth username / password are required")
 	}
@@ -44,13 +51,15 @@ func New(username, password, secret string, ttl time.Duration) (*Service, error)
 		password: password,
 		secret:   []byte(secret),
 		tokenTTL: ttl,
+		version:  maxSessionVersion(version),
 	}, nil
 }
 
 // claims 是签发到 token payload 里的最小必要字段。
 type claims struct {
-	Sub string `json:"sub"`
-	Exp int64  `json:"exp"`
+	Sub     string `json:"sub"`
+	Exp     int64  `json:"exp"`
+	Version int    `json:"ver,omitempty"`
 }
 
 // Login 校验账号密码，返回新的 token 与过期时间。
@@ -60,7 +69,7 @@ func (s *Service) Login(username, password string) (string, time.Time, error) {
 		return "", time.Time{}, errors.New("invalid username or password")
 	}
 	expiresAt := time.Now().Add(s.tokenTTL)
-	c := claims{Sub: s.username, Exp: expiresAt.Unix()}
+	c := claims{Sub: s.username, Exp: expiresAt.Unix(), Version: s.version}
 	tok, err := s.sign(c)
 	if err != nil {
 		return "", time.Time{}, err
@@ -93,10 +102,18 @@ func (s *Service) Verify(token string) (string, error) {
 	if time.Now().Unix() > c.Exp {
 		return "", errors.New("token expired")
 	}
+	if c.Version != s.version {
+		return "", errors.New("token revoked")
+	}
 	if c.Sub != s.username {
 		return "", errors.New("unknown subject")
 	}
 	return c.Sub, nil
+}
+
+// VerifyPassword 使用常量时间比较校验当前管理员密码。
+func (s *Service) VerifyPassword(password string) bool {
+	return subtle.ConstantTimeCompare([]byte(password), []byte(s.password)) == 1
 }
 
 func (s *Service) sign(c claims) (string, error) {
@@ -119,6 +136,13 @@ func (s *Service) Username() string { return s.username }
 
 // TokenTTL 返回登录 token 的有效期。
 func (s *Service) TokenTTL() time.Duration { return s.tokenTTL }
+
+func maxSessionVersion(version int) int {
+	if version < 0 {
+		return 0
+	}
+	return version
+}
 
 // Middleware 校验 Authorization 头。不通过返回 401。
 //

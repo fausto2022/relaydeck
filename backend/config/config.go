@@ -74,6 +74,7 @@ type AuthConfig struct {
 	Password        string `mapstructure:"password" yaml:"password" json:"password"`
 	TokenSecret     string `mapstructure:"tokenSecret" yaml:"tokenSecret" json:"tokenSecret"`
 	SessionTTLHours int    `mapstructure:"sessionTTLHours" yaml:"sessionTTLHours" json:"sessionTTLHours"`
+	SessionVersion  int    `mapstructure:"sessionVersion" yaml:"sessionVersion" json:"sessionVersion"`
 }
 
 type SchedulerConfig struct {

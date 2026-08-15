@@ -407,6 +407,7 @@ export interface SystemAuthConfig {
   password: string
   tokenSecret: string
   sessionTTLHours: number
+  sessionVersion?: number
 }
 
 export interface SystemSchedulerRetentionConfig {
