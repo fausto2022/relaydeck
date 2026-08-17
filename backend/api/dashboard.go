@@ -11,6 +11,7 @@ import (
 // registerDashboard 提供首页所需聚合视图。
 func registerDashboard(g *gin.RouterGroup, d *Deps) {
 	g.GET("/dashboard/summary", func(c *gin.Context) { dashboardSummary(c, d) })
+	g.GET("/dashboard/profit", func(c *gin.Context) { dashboardProfit(c, d) })
 	g.GET("/dashboard/balance-trend", func(c *gin.Context) { dashboardBalanceTrend(c, d) })
 	g.GET("/dashboard/cost-trend", func(c *gin.Context) { dashboardCostTrend(c, d) })
 }
@@ -101,27 +102,6 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 		fail(c, http.StatusInternalServerError, err)
 		return
 	}
-	var profit any
-	var mainStationGroups any = []any{}
-	if d.MainStation != nil {
-		profitSummary, profitErr := d.MainStation.ProfitSummary(7)
-		if profitErr != nil {
-			if d.Log != nil {
-				d.Log.Warn("load main station profit summary", "err", profitErr)
-			}
-		} else {
-			profit = profitSummary
-		}
-		groups, groupsErr := d.MainStation.TodayGroupUsage(c.Request.Context())
-		if groupsErr != nil {
-			if d.Log != nil {
-				d.Log.Warn("load main station group usage", "err", groupsErr)
-			}
-		} else {
-			mainStationGroups = groups
-		}
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"total_channels":      len(channels),
@@ -133,10 +113,26 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 			"lowest_balance":      lowest,
 			"channels":            stats,
 			"recent_rate_changes": rateChangeOutputs(recentChanges, channels),
-			"profit":              profit,
-			"main_station_groups": mainStationGroups,
+			"profit":              nil,
+			"main_station_groups": []any{},
 		},
 	})
+}
+
+func dashboardProfit(c *gin.Context, d *Deps) {
+	if d.MainStation == nil {
+		c.JSON(http.StatusOK, gin.H{"data": nil})
+		return
+	}
+	profit, err := d.MainStation.ProfitSummary(7)
+	if err != nil {
+		if d.Log != nil {
+			d.Log.Warn("load main station profit summary", "err", err)
+		}
+		c.JSON(http.StatusOK, gin.H{"data": nil})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": profit})
 }
 
 func dashboardBalanceTrend(c *gin.Context, d *Deps) {

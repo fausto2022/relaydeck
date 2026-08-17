@@ -3,7 +3,7 @@
 import { DollarSign, HandCoins, Wallet } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { useDashboardSummary } from "@/lib/queries"
+import { useDashboardProfit, useDashboardSummary } from "@/lib/queries"
 import { money } from "@/lib/format"
 import type { LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
@@ -19,12 +19,13 @@ interface Kpi {
 
 export function KpiRow() {
   const summary = useDashboardSummary()
+  const profitSummary = useDashboardProfit()
 
   const data = summary.data
   const totalBalance = data?.total_balance ?? 0
   const todayTotalCost = data?.today_total_cost ?? 0
   const lowest = data?.lowest_balance ?? null
-  const profit = data?.profit ?? null
+  const profit = profitSummary.data
 
   const kpis: Kpi[] = [
     {

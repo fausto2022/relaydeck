@@ -47,7 +47,7 @@ func openTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestDashboardSummaryIncludesCosts(t *testing.T) {
+func TestDashboardSummaryAndProfitIncludeCosts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	db := openTestDB(t)
@@ -175,13 +175,14 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 				TotalCost float64 `json:"total_cost"`
 			} `json:"channels"`
 			RecentRateChanges []rateChangeOutput `json:"recent_rate_changes"`
-			Profit            struct {
+			Profit            *struct {
 				TodayProfit              float64 `json:"today_profit"`
 				TodayGuaranteedRevenue   float64 `json:"today_guaranteed_revenue"`
 				GuaranteedRevenueRatioBP int64   `json:"guaranteed_revenue_ratio_basis_points"`
 				SevenDayProfit           float64 `json:"seven_day_profit"`
 				SampledDays              int     `json:"sampled_days"`
 			} `json:"profit"`
+			MainStationGroups []any `json:"main_station_groups"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -199,11 +200,8 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 	if len(resp.Data.RecentRateChanges) != 1 {
 		t.Fatalf("recent rate changes = %#v", resp.Data.RecentRateChanges)
 	}
-	if resp.Data.Profit.TodayProfit != 6 || resp.Data.Profit.SevenDayProfit != 13 || resp.Data.Profit.SampledDays != 2 {
-		t.Fatalf("profit summary = %#v", resp.Data.Profit)
-	}
-	if resp.Data.Profit.TodayGuaranteedRevenue != 6 || resp.Data.Profit.GuaranteedRevenueRatioBP != 10000 {
-		t.Fatalf("default guaranteed revenue = %#v", resp.Data.Profit)
+	if resp.Data.Profit != nil || len(resp.Data.MainStationGroups) != 0 {
+		t.Fatalf("summary should not wait for main station data: profit=%#v groups=%#v", resp.Data.Profit, resp.Data.MainStationGroups)
 	}
 	change := resp.Data.RecentRateChanges[0]
 	if change.OldRatio == nil || *change.OldRatio != 0.0692 || change.NewRatio != 0.04 {
@@ -211,6 +209,31 @@ func TestDashboardSummaryIncludesCosts(t *testing.T) {
 	}
 	if change.RawOldRatio == nil || *change.RawOldRatio != 0.45 || change.RawNewRatio != 0.26 || !change.RechargeAdjusted {
 		t.Fatalf("raw rate change = %#v", change)
+	}
+
+	profitReq := httptest.NewRequest(http.MethodGet, "/api/dashboard/profit", nil)
+	profitRec := httptest.NewRecorder()
+	r.ServeHTTP(profitRec, profitReq)
+	if profitRec.Code != http.StatusOK {
+		t.Fatalf("profit status = %d, body = %s", profitRec.Code, profitRec.Body.String())
+	}
+	var profitResp struct {
+		Data struct {
+			TodayProfit              float64 `json:"today_profit"`
+			TodayGuaranteedRevenue   float64 `json:"today_guaranteed_revenue"`
+			GuaranteedRevenueRatioBP int64   `json:"guaranteed_revenue_ratio_basis_points"`
+			SevenDayProfit           float64 `json:"seven_day_profit"`
+			SampledDays              int     `json:"sampled_days"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(profitRec.Body.Bytes(), &profitResp); err != nil {
+		t.Fatalf("decode profit response: %v", err)
+	}
+	if profitResp.Data.TodayProfit != 6 || profitResp.Data.SevenDayProfit != 13 || profitResp.Data.SampledDays != 2 {
+		t.Fatalf("profit summary = %#v", profitResp.Data)
+	}
+	if profitResp.Data.TodayGuaranteedRevenue != 6 || profitResp.Data.GuaranteedRevenueRatioBP != 10000 {
+		t.Fatalf("default guaranteed revenue = %#v", profitResp.Data)
 	}
 }
 

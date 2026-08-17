@@ -11,6 +11,7 @@ import type {
   Channel,
   ChannelPage,
   CostTrendPoint,
+  DashboardProfitSummary,
   DashboardSummary,
   NotificationChannel,
   NotificationLogPage,
@@ -137,6 +138,10 @@ function useApi<T>(path: string | null, watchRefresh = true): QueryState<T> {
 
 export function useDashboardSummary() {
   return useApi<DashboardSummary>("/dashboard/summary")
+}
+
+export function useDashboardProfit() {
+  return useApi<DashboardProfitSummary | null>("/dashboard/profit")
 }
 
 export function useAppVersion() {
