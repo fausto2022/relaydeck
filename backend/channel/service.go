@@ -29,7 +29,13 @@ const SessionRefreshThreshold = 5 * time.Minute
 // 真正失效检测靠 connector.CheckAuth；若凭据里有 refresh_token，会优先尝试刷新并回写。
 const tokenSessionTTL = 365 * 24 * time.Hour
 
-const loginRateLimitBackoff = 30 * time.Second
+const (
+	loginFailureBackoff       = time.Minute
+	loginRateLimitBackoff     = 5 * time.Minute
+	loginPermanentBackoff     = 30 * time.Minute
+	loginMaximumBackoff       = 30 * time.Minute
+	loginBackoffResetInterval = time.Hour
+)
 
 // sessionValidationTTL 只覆盖一次用户操作中的连续上游调用；超过该时间仍会重新验权。
 const sessionValidationTTL = 30 * time.Second
@@ -51,12 +57,18 @@ type Service struct {
 	sessionLocks sync.Map
 	validated    sync.Map
 	backoffMu    sync.Mutex
-	backoffUntil map[uint]time.Time
+	loginBackoff map[uint]loginBackoffState
 }
 
 type sessionValidation struct {
 	fingerprint [sha256.Size]byte
 	checkedAt   time.Time
+}
+
+type loginBackoffState struct {
+	until       time.Time
+	failures    int
+	rateLimited bool
 }
 
 func NewService(
@@ -74,7 +86,7 @@ func NewService(
 		Rates:        rates,
 		MonitorLogs:  monitorLogs,
 		Cipher:       cipher,
-		backoffUntil: make(map[uint]time.Time),
+		loginBackoff: make(map[uint]loginBackoffState),
 	}
 }
 
@@ -396,6 +408,7 @@ func (s *Service) Update(id uint, in UpdateInput) (*storage.Channel, error) {
 	if err := s.Channels.Update(c); err != nil {
 		return nil, err
 	}
+	s.resetLoginBackoff(c.ID)
 	return c, nil
 }
 
@@ -522,6 +535,7 @@ func validateCredential(channelType storage.ChannelType, mode storage.Credential
 }
 
 func (s *Service) Delete(id uint) error {
+	s.resetLoginBackoff(id)
 	return s.Channels.Delete(id)
 }
 
@@ -537,6 +551,7 @@ func (s *Service) ClearLoginInfo(id uint) (*storage.Channel, error) {
 	if err := s.AuthSessions.Delete(c.ID); err != nil {
 		return nil, err
 	}
+	s.resetLoginBackoff(c.ID)
 	if c.CredentialMode == storage.CredentialModeToken {
 		c.PasswordCipher = ""
 		c.LastError = ""
@@ -866,28 +881,78 @@ func (s *Service) sessionMutex(channelID uint) *sync.Mutex {
 func (s *Service) loginBackoffError(channelID uint) error {
 	s.backoffMu.Lock()
 	defer s.backoffMu.Unlock()
-	until, ok := s.backoffUntil[channelID]
+	state, ok := s.loginBackoff[channelID]
 	if !ok {
 		return nil
 	}
-	remaining := time.Until(until)
+	remaining := time.Until(state.until)
 	if remaining <= 0 {
-		delete(s.backoffUntil, channelID)
 		return nil
 	}
-	return fmt.Errorf("上游登录触发限流，请等待 %s 后重试", remaining.Round(time.Second))
+	if state.rateLimited {
+		return fmt.Errorf("上游登录触发限流，请等待 %s 后重试", remaining.Round(time.Second))
+	}
+	return fmt.Errorf("上游登录连续失败，请等待 %s 后重试", remaining.Round(time.Second))
 }
 
 func (s *Service) updateLoginBackoff(channelID uint, err error) {
 	s.backoffMu.Lock()
 	defer s.backoffMu.Unlock()
-	if connector.HTTPStatusCode(err) == http.StatusTooManyRequests {
-		s.backoffUntil[channelID] = time.Now().Add(loginRateLimitBackoff)
+	if err == nil {
+		delete(s.loginBackoff, channelID)
 		return
 	}
-	if err == nil {
-		delete(s.backoffUntil, channelID)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
 	}
+	now := time.Now()
+	previous := s.loginBackoff[channelID]
+	failures := previous.failures
+	if previous.until.IsZero() || now.Sub(previous.until) > loginBackoffResetInterval {
+		failures = 0
+	}
+	failures++
+	base, rateLimited := loginBackoffBase(err)
+	duration := base
+	for attempt := 1; attempt < failures && duration < loginMaximumBackoff; attempt++ {
+		if duration >= loginMaximumBackoff/2 {
+			duration = loginMaximumBackoff
+			break
+		}
+		duration *= 2
+	}
+	s.loginBackoff[channelID] = loginBackoffState{
+		until:       now.Add(duration),
+		failures:    failures,
+		rateLimited: rateLimited,
+	}
+}
+
+func (s *Service) resetLoginBackoff(channelID uint) {
+	s.backoffMu.Lock()
+	delete(s.loginBackoff, channelID)
+	s.backoffMu.Unlock()
+}
+
+func loginBackoffBase(err error) (time.Duration, bool) {
+	status := connector.HTTPStatusCode(err)
+	if status == http.StatusTooManyRequests {
+		return loginRateLimitBackoff, true
+	}
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return loginPermanentBackoff, false
+	}
+	message := strings.ToLower(err.Error())
+	permanentMarkers := []string{
+		"missing user id", "certificate", "x509", "tls handshake",
+		"invalid password", "incorrect password", "密码错误", "账号或密码",
+	}
+	for _, marker := range permanentMarkers {
+		if strings.Contains(message, marker) {
+			return loginPermanentBackoff, false
+		}
+	}
+	return loginFailureBackoff, false
 }
 
 func (s *Service) refreshStoredSession(

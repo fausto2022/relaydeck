@@ -1,8 +1,10 @@
 package mainstation
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,26 @@ import (
 	"github.com/fausto2022/relaydeck/backend/storage"
 	"gorm.io/gorm"
 )
+
+func TestSourceRefreshWarningsAreThrottledPerChannel(t *testing.T) {
+	service, _, _, _ := newTestService(t)
+	var output bytes.Buffer
+	service.log = slog.New(slog.NewTextHandler(&output, nil))
+	now := time.Now()
+	service.now = func() time.Time { return now }
+
+	service.logSourceRefreshWarning("refresh source account concurrency", 7, errors.New("first"))
+	service.logSourceRefreshWarning("refresh source account concurrency", 7, errors.New("second"))
+	if count := strings.Count(output.String(), "refresh source account concurrency"); count != 1 {
+		t.Fatalf("warning count = %d, want 1; output=%q", count, output.String())
+	}
+
+	now = now.Add(sourceRefreshWarningWindow)
+	service.logSourceRefreshWarning("refresh source account concurrency", 7, errors.New("third"))
+	if count := strings.Count(output.String(), "refresh source account concurrency"); count != 2 {
+		t.Fatalf("warning count after window = %d, want 2; output=%q", count, output.String())
+	}
+}
 
 func TestSyncRefreshesSourceAPIKeyGroup(t *testing.T) {
 	service, db, admin, channels, member := createSourceBindingSyncFixture(t)

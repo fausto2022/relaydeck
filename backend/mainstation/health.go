@@ -30,7 +30,7 @@ const (
 	probeResponseBodyLimit      int64 = 64 << 10
 	imageProbeResponseBodyLimit int64 = 16 << 20
 	healthSchedulerBatchLimit         = 20
-	healthFailureRetryInterval        = time.Second
+	healthFailureRetryInterval        = 30 * time.Second
 )
 
 type healthPolicy struct {

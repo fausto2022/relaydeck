@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -653,5 +654,33 @@ func TestLogin429UsesShortBackoff(t *testing.T) {
 	}
 	if calls := loginCalls.Load(); calls != 1 {
 		t.Fatalf("rate-limited login calls = %d, want 1", calls)
+	}
+}
+
+func TestLoginFailuresUseClassifiedBackoff(t *testing.T) {
+	svc, _ := testService(t)
+	channelID := uint(7)
+
+	svc.updateLoginBackoff(channelID, errors.New("newapi login: missing user id in response"))
+	state := svc.loginBackoff[channelID]
+	if state.failures != 1 || state.rateLimited {
+		t.Fatalf("permanent backoff state = %#v", state)
+	}
+	if remaining := time.Until(state.until); remaining < loginPermanentBackoff-time.Second || remaining > loginPermanentBackoff {
+		t.Fatalf("permanent backoff remaining = %s", remaining)
+	}
+
+	svc.resetLoginBackoff(channelID)
+	svc.updateLoginBackoff(channelID, errors.New("temporary network failure"))
+	first := svc.loginBackoff[channelID]
+	first.until = time.Now().Add(-time.Second)
+	svc.loginBackoff[channelID] = first
+	svc.updateLoginBackoff(channelID, errors.New("temporary network failure"))
+	second := svc.loginBackoff[channelID]
+	if second.failures != 2 {
+		t.Fatalf("temporary backoff failures = %d, want 2", second.failures)
+	}
+	if remaining := time.Until(second.until); remaining < 2*loginFailureBackoff-time.Second || remaining > 2*loginFailureBackoff {
+		t.Fatalf("second temporary backoff remaining = %s", remaining)
 	}
 }

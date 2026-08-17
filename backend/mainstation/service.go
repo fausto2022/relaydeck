@@ -100,6 +100,8 @@ type Service struct {
 	tempCleanupAt     time.Time
 	disabledCleanupMu sync.Mutex
 	disabledCleanupAt time.Time
+	sourceWarningMu   sync.Mutex
+	sourceWarningAt   map[string]time.Time
 	probeConfigMu     sync.RWMutex
 	proxyConfig       config.ProxyConfig
 	probeTimeout      time.Duration
@@ -145,13 +147,14 @@ func New(
 		adminFactory: func() adminClient {
 			return sub2api.NewAdminClient()
 		},
-		healthRunning:  make(map[string]struct{}),
-		healthGlobal:   make(chan struct{}, 4),
-		healthChannels: make(map[uint]chan struct{}),
-		rateTests:      make(map[string]struct{}),
-		probeTimeout:   15 * time.Second,
-		probeUserAgent: "RelayDeck/main-station-health",
-		now:            time.Now,
+		healthRunning:   make(map[string]struct{}),
+		healthGlobal:    make(chan struct{}, 4),
+		healthChannels:  make(map[uint]chan struct{}),
+		sourceWarningAt: make(map[string]time.Time),
+		rateTests:       make(map[string]struct{}),
+		probeTimeout:    15 * time.Second,
+		probeUserAgent:  "RelayDeck/main-station-health",
+		now:             time.Now,
 	}
 }
 

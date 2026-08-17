@@ -486,6 +486,9 @@ func TestHealthModelCatalogHasBuiltinsWithoutAccounts(t *testing.T) {
 }
 
 func TestEffectiveHealthCheckIntervalUsesFastRetryAfterFailure(t *testing.T) {
+	if healthFailureRetryInterval < time.Duration(minimumGlobalHealthIntervalSeconds)*time.Second {
+		t.Fatalf("failure retry interval = %s, want at least %ds", healthFailureRetryInterval, minimumGlobalHealthIntervalSeconds)
+	}
 	member := &storage.MainAccountPoolMember{HealthIntervalSeconds: 30}
 	if interval := effectiveHealthCheckInterval(member, 60, 10); interval != 30*time.Second {
 		t.Fatalf("healthy interval = %s, want 30s", interval)

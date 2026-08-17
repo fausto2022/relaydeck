@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	sourceBindingPageSize = 100
-	sourceBindingMaxPages = 10000
+	sourceBindingPageSize      = 100
+	sourceBindingMaxPages      = 10000
+	sourceRefreshWarningWindow = 15 * time.Minute
 )
 
 type sourceBindingRefreshResult struct {
@@ -77,9 +78,7 @@ func (s *Service) refreshSourceAPIKeyGroups(
 		result.LimitsChecked++
 		if limits, limitErr := s.channelSvc.GetAccountLimits(ctx, channelID); limitErr != nil || limits == nil || limits.Concurrency <= 0 {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s：读取上游最高并发失败，已保留原值", s.sourceChannelLabel(channelID)))
-			if s.log != nil {
-				s.log.Warn("refresh source account concurrency", "channel_id", channelID, "err", limitErr)
-			}
+			s.logSourceRefreshWarning("refresh source account concurrency", channelID, limitErr)
 		} else if !limits.Estimated {
 			dirtyPools := make(map[uint]struct{})
 			for i := range channelMembers {
@@ -121,18 +120,14 @@ func (s *Service) refreshSourceAPIKeyGroups(
 		keys, err := s.sourceAPIKeysByID(ctx, channelID, wanted)
 		if err != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s：读取上游 Key 失败，已保留原分组", s.sourceChannelLabel(channelID)))
-			if s.log != nil {
-				s.log.Warn("refresh source api key groups", "channel_id", channelID, "err", err)
-			}
+			s.logSourceRefreshWarning("refresh source api key groups", channelID, err)
 			continue
 		}
 		groups, groupErr := s.channelSvc.ListAPIKeyGroups(ctx, channelID)
 		groupsAuthoritative := groupErr == nil
 		if groupErr != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s：读取上游分组失败，已跳过删组清理", s.sourceChannelLabel(channelID)))
-			if s.log != nil {
-				s.log.Warn("refresh source api key groups: list groups", "channel_id", channelID, "err", groupErr)
-			}
+			s.logSourceRefreshWarning("refresh source api key groups: list groups", channelID, groupErr)
 		}
 		preservedMissing := 0
 		for i := range keyMembers {
@@ -264,6 +259,23 @@ func (s *Service) refreshSourceAPIKeyGroups(
 		}
 	}
 	return result, nil
+}
+
+func (s *Service) logSourceRefreshWarning(message string, channelID uint, err error) {
+	if s.log == nil {
+		return
+	}
+	key := fmt.Sprintf("%s:%d", message, channelID)
+	now := s.now()
+	s.sourceWarningMu.Lock()
+	last, exists := s.sourceWarningAt[key]
+	if exists && now.Sub(last) >= 0 && now.Sub(last) < sourceRefreshWarningWindow {
+		s.sourceWarningMu.Unlock()
+		return
+	}
+	s.sourceWarningAt[key] = now
+	s.sourceWarningMu.Unlock()
+	s.log.Warn(message, "channel_id", channelID, "err", err)
 }
 
 func renamedManagedSourceAPIKeyName(member *storage.MainAccountPoolMember, oldGroupName, newGroupName, currentKeyName string) string {
