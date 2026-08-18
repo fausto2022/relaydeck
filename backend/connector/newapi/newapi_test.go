@@ -65,6 +65,29 @@ func TestLoginAddsExtraParams(t *testing.T) {
 	}
 }
 
+func TestLoginAcceptsNestedUserID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/user/login" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		http.SetCookie(w, &http.Cookie{Name: "session", Value: "nested-user"})
+		_, _ = w.Write([]byte(`{"success":true,"message":"","data":{"user":{"id":3869}}}`))
+	}))
+	defer srv.Close()
+
+	session, err := New().Login(context.Background(), &connector.Channel{
+		SiteURL:  srv.URL,
+		Username: "u",
+		Password: "p",
+	})
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	if session.UserID != "3869" || session.Cookie == "" {
+		t.Fatalf("session = %#v", session)
+	}
+}
+
 func TestGetAccountLimits(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/user/self" {

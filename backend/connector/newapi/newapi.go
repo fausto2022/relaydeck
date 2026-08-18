@@ -115,10 +115,16 @@ func (c *Client) Login(ctx context.Context, ch *connector.Channel) (*connector.A
 	var data struct {
 		Require2FA bool  `json:"require_2fa"`
 		ID         int64 `json:"id"`
+		User       *struct {
+			ID int64 `json:"id"`
+		} `json:"user"`
 	}
 	_ = json.Unmarshal(wrapped.Data, &data)
 	if data.Require2FA {
 		return nil, errors.New("newapi account requires 2FA; please disable it for monitoring accounts")
+	}
+	if data.ID == 0 && data.User != nil {
+		data.ID = data.User.ID
 	}
 
 	cookie := joinCookies(resp.Cookies())
