@@ -71,7 +71,7 @@ func TestLoginAcceptsNestedUserID(t *testing.T) {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
 		http.SetCookie(w, &http.Cookie{Name: "session", Value: "nested-user"})
-		_, _ = w.Write([]byte(`{"success":true,"message":"","data":{"user":{"id":3869}}}`))
+		_, _ = w.Write([]byte(`{"success":true,"message":"","data":{"access_token":"token-3869","user":{"id":3869}}}`))
 	}))
 	defer srv.Close()
 
@@ -83,8 +83,26 @@ func TestLoginAcceptsNestedUserID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
-	if session.UserID != "3869" || session.Cookie == "" {
+	if session.UserID != "3869" || session.AccessToken != "token-3869" || session.Cookie == "" {
 		t.Fatalf("session = %#v", session)
+	}
+}
+
+func TestApplyNewAPIAuthPrefersAccessToken(t *testing.T) {
+	req := New().http.R()
+	applyNewAPIAuth(req, &connector.AuthSession{
+		UserID:      "3869",
+		AccessToken: "access-token",
+		Cookie:      "new_api_refresh=refresh-token",
+	})
+	if got := req.Header.Get("Authorization"); got != "access-token" {
+		t.Fatalf("authorization = %q", got)
+	}
+	if got := req.Header.Get("Cookie"); got != "" {
+		t.Fatalf("cookie = %q, want empty when access token is present", got)
+	}
+	if got := req.Header.Get("New-Api-User"); got != "3869" {
+		t.Fatalf("new-api-user = %q", got)
 	}
 }
 

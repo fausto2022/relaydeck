@@ -113,9 +113,10 @@ func (c *Client) Login(ctx context.Context, ch *connector.Channel) (*connector.A
 	}
 
 	var data struct {
-		Require2FA bool  `json:"require_2fa"`
-		ID         int64 `json:"id"`
-		User       *struct {
+		Require2FA  bool   `json:"require_2fa"`
+		ID          int64  `json:"id"`
+		AccessToken string `json:"access_token"`
+		User        *struct {
 			ID int64 `json:"id"`
 		} `json:"user"`
 	}
@@ -137,9 +138,10 @@ func (c *Client) Login(ctx context.Context, ch *connector.Channel) (*connector.A
 	}
 	// NewAPI session 默认有效期较长，保守按 7 天估算；CheckAuth 会兜底失效检测。
 	return &connector.AuthSession{
-		UserID:    strconv.FormatInt(data.ID, 10),
-		Cookie:    cookie,
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+		UserID:      strconv.FormatInt(data.ID, 10),
+		AccessToken: data.AccessToken,
+		Cookie:      cookie,
+		ExpiresAt:   time.Now().Add(7 * 24 * time.Hour),
 	}, nil
 }
 
@@ -172,11 +174,11 @@ func applyNewAPIAuth(req *resty.Request, session *connector.AuthSession) {
 	if session == nil {
 		return
 	}
-	if strings.TrimSpace(session.Cookie) != "" {
-		req.SetHeader("Cookie", session.Cookie)
-	} else if token := strings.TrimSpace(session.AccessToken); token != "" {
+	if token := strings.TrimSpace(session.AccessToken); token != "" {
 		// NewAPI middleware 会自动去掉 "Bearer " 前缀，这里直接给裸 token，行为最贴近 dashboard。
 		req.SetHeader("Authorization", token)
+	} else if strings.TrimSpace(session.Cookie) != "" {
+		req.SetHeader("Cookie", session.Cookie)
 	}
 	if strings.TrimSpace(session.UserID) != "" {
 		req.SetHeader("New-Api-User", session.UserID)
