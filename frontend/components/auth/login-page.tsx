@@ -45,7 +45,7 @@ export function LoginPage() {
       <div className="mx-auto grid w-full max-w-4xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-16">
         <div className="hidden min-w-0 lg:block">
           <div className="flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-lg bg-foreground text-background shadow-sm">
+            <span className="flex size-11 items-center justify-center rounded-xl bg-foreground text-background shadow-sm">
               <Activity className="size-5" strokeWidth={2.5} />
             </span>
             <div>
@@ -60,10 +60,10 @@ export function LoginPage() {
           </div>
         </div>
 
-        <Card className="dashboard-panel w-full gap-0 border-border/80 py-0">
-          <CardHeader className="border-b border-border/70 px-5 py-5 sm:px-6">
+        <Card className="dashboard-panel w-full gap-0 border-border/70 py-0">
+          <CardHeader className="border-b border-border/60 px-5 py-5 sm:px-6">
             <div className="flex items-center gap-2.5">
-              <span className="flex size-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <KeyRound className="size-4" />
               </span>
               <div>

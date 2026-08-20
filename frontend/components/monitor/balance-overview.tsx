@@ -93,18 +93,18 @@ export function BalanceOverview() {
         ) : null}
         {!isLoading && channels.length > 0 ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="sticky top-0 z-10 grid grid-cols-[minmax(4.5rem,1fr)_5.5rem_5.5rem] gap-2 border-b border-border/70 bg-card/95 py-2 text-[11px] font-medium text-muted-foreground backdrop-blur-sm sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:gap-3 sm:text-xs">
+            <div className="sticky top-0 z-10 grid grid-cols-[minmax(4.5rem,1fr)_5.5rem_5.5rem] gap-2 border-b border-border/60 bg-card/95 px-2 py-2 text-[11px] font-medium text-muted-foreground backdrop-blur-sm sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:gap-3 sm:text-xs">
               <span>账号</span>
               <span className="text-right">今日消耗</span>
               <span className="text-right">余额</span>
             </div>
-            <div className="divide-y divide-border/70">
+            <div className="space-y-1 py-1">
               {channels.map((channel, index) => {
                 const cost = channel.today_cost ?? 0
                 const status = monitorStatus(channel)
                 const StatusIcon = status.icon
                 return (
-                  <div key={channel.id} className={cn("grid grid-cols-[minmax(4.5rem,1fr)_5.5rem_5.5rem] items-center gap-2 py-2.5 pl-2 transition-colors hover:bg-muted/30 sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:gap-3", status.rowClass)}>
+                  <div key={channel.id} className={cn("grid grid-cols-[minmax(4.5rem,1fr)_5.5rem_5.5rem] items-center gap-2 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/40 sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:gap-3", status.rowClass)}>
                     <div className="flex min-w-0 items-center gap-2">
                       <span
                         aria-label={`第 ${index + 1} 名`}

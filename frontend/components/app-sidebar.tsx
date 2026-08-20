@@ -88,7 +88,7 @@ export function AppSidebar({
       <Dialog open={mobileOpen} onOpenChange={onMobileOpenChange}>
         <DialogContent
           showCloseButton={false}
-          className="!top-0 !left-0 !flex h-dvh !max-h-dvh w-[min(18rem,calc(100vw-2rem))] !max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-y-0 border-l-0 p-0 shadow-2xl lg:hidden"
+          className="!top-0 !left-0 !flex h-dvh !max-h-dvh w-[min(18rem,calc(100vw-2rem))] !max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-r-xl border-y-0 border-l-0 p-0 shadow-2xl lg:hidden"
         >
           <DialogTitle className="sr-only">主导航</DialogTitle>
           <Button
@@ -132,7 +132,7 @@ function SidebarContent({
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <div className={cn("flex h-16 shrink-0 items-center border-b border-sidebar-border", collapsed ? "justify-center px-2" : "gap-3 px-4")}>
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground shadow-sm">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-sm">
           <Activity className="size-4.5" strokeWidth={2.5} />
         </span>
         {!collapsed ? (
@@ -160,7 +160,7 @@ function SidebarContent({
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "relative flex min-h-10 items-center rounded-md text-sm font-medium outline-none transition-[background-color,color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/35",
+                      "relative flex min-h-10 items-center rounded-lg text-sm font-medium outline-none transition-[background-color,color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/35",
                       collapsed ? "justify-center px-2" : "gap-3 px-3",
                       active
                         ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
@@ -233,7 +233,7 @@ function SidebarAction({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex min-h-10 w-full items-center rounded-md text-sm font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/35",
+        "flex min-h-10 w-full items-center rounded-lg text-sm font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/35",
         collapsed ? "justify-center px-2" : "gap-3 px-3",
         danger
           ? "text-muted-foreground hover:bg-destructive/10 hover:text-destructive"

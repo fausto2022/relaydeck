@@ -912,13 +912,13 @@ export function ChannelCards() {
               const meta = statusMap[status]
               return (
                 <Card key={c.id} className="dashboard-panel relative flex flex-col gap-0 overflow-hidden border-border p-3 sm:p-4">
-                  <span className={cn("absolute inset-x-0 top-0 h-0.5", meta.accent)} />
+                  <span className={cn("absolute inset-x-3 top-0 h-0.5 rounded-b-full", meta.accent)} />
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="truncate text-sm font-semibold text-foreground">{c.name}</span>
                       <span
                         className={cn(
-                          "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset",
+                          "inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset",
                           c.type === "newapi"
                             ? "bg-brand/10 text-brand ring-brand/20"
                             : "bg-sky-500/10 text-sky-700 ring-sky-500/25 dark:text-sky-300",
@@ -927,7 +927,7 @@ export function ChannelCards() {
                         {channelTypeLabel(c.type)}
                       </span>
                       {!c.monitor_enabled ? (
-                        <span className="inline-flex items-center rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning ring-1 ring-inset ring-warning/20">
+                        <span className="inline-flex items-center rounded-md bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning ring-1 ring-inset ring-warning/20">
                           {"已暂停"}
                         </span>
                       ) : null}

@@ -28,7 +28,7 @@
   --chart-3: oklch(0.71 0.15 76);
   --chart-4: oklch(0.61 0.13 300);
   --chart-5: oklch(0.61 0.16 28);
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   --sidebar: oklch(0.955 0.006 235);
   --sidebar-foreground: oklch(0.21 0.018 248);
   --sidebar-primary: oklch(0.48 0.105 190);
@@ -45,7 +45,8 @@
   --danger-foreground: oklch(0.985 0 0);
   --brand: oklch(0.48 0.105 190);
   --brand-foreground: oklch(0.985 0 0);
-  --panel-shadow: 0 1px 2px oklch(0.2 0.02 245 / 0.05), 0 12px 30px -24px oklch(0.2 0.02 245 / 0.28);
+  --panel-shadow: 0 1px 2px oklch(0.2 0.02 245 / 0.055), 0 14px 34px -24px oklch(0.2 0.02 245 / 0.32);
+  --control-shadow: 0 1px 2px oklch(0.2 0.02 245 / 0.06);
 }
 
 .dark {
@@ -89,7 +90,8 @@
   --danger-foreground: oklch(0.985 0 0);
   --brand: oklch(0.72 0.105 184);
   --brand-foreground: oklch(0.15 0.02 190);
-  --panel-shadow: 0 1px 2px oklch(0 0 0 / 0.2), 0 16px 36px -26px oklch(0 0 0 / 0.75);
+  --panel-shadow: 0 1px 2px oklch(0 0 0 / 0.22), 0 18px 38px -26px oklch(0 0 0 / 0.78);
+  --control-shadow: 0 1px 2px oklch(0 0 0 / 0.2);
 }
 
 @theme inline {
@@ -172,7 +174,11 @@
   }
 
   .dashboard-panel-header {
-    @apply border-b border-border/70 bg-muted/20;
+    @apply border-b border-border/60 bg-card;
+  }
+
+  .control-shadow {
+    box-shadow: var(--control-shadow);
   }
 }
 
