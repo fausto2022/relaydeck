@@ -128,6 +128,29 @@ func TestUpdateChannelStarredOnly(t *testing.T) {
 	}
 }
 
+func TestUpdateChannelAutoExpandExcluded(t *testing.T) {
+	svc, cipher := testService(t)
+	encrypted, err := cipher.Encrypt("password")
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	item := &storage.Channel{
+		Name: "auto-expand-exclude", Type: storage.ChannelTypeSub2API, SiteURL: "https://example.com", Username: "user",
+		PasswordCipher: encrypted, CredentialMode: storage.CredentialModePassword, MonitorEnabled: true,
+	}
+	if err := svc.Channels.Create(item); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	excluded := true
+	updated, err := svc.Update(item.ID, UpdateInput{AutoExpandExcluded: &excluded})
+	if err != nil {
+		t.Fatalf("exclude channel from automatic expansion: %v", err)
+	}
+	if !updated.AutoExpandExcluded {
+		t.Fatalf("auto expansion exclusion = %v, want true", updated.AutoExpandExcluded)
+	}
+}
+
 func TestCreateChannelRechargeEntryDefaultsToDirect(t *testing.T) {
 	svc, _ := testService(t)
 	created, err := svc.Create(CreateInput{

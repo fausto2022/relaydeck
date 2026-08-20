@@ -77,6 +77,7 @@ type channelInput struct {
 	RechargeEntryMode      storage.RechargeEntryMode `json:"recharge_entry_mode"`
 	CardPurchaseURL        string                    `json:"card_purchase_url"`
 	MonitorEnabled         bool                      `json:"monitor_enabled"`
+	AutoExpandExcluded     bool                      `json:"auto_expand_excluded"`
 }
 
 type channelUpdateInput struct {
@@ -100,6 +101,7 @@ type channelUpdateInput struct {
 	RechargeEntryMode      *storage.RechargeEntryMode `json:"recharge_entry_mode"`
 	CardPurchaseURL        *string                    `json:"card_purchase_url"`
 	MonitorEnabled         *bool                      `json:"monitor_enabled"`
+	AutoExpandExcluded     *bool                      `json:"auto_expand_excluded"`
 }
 
 type channelOutput struct {
@@ -188,6 +190,7 @@ func createChannel(c *gin.Context, d *Deps) {
 		RechargeEntryMode:      in.RechargeEntryMode,
 		CardPurchaseURL:        in.CardPurchaseURL,
 		MonitorEnabled:         in.MonitorEnabled,
+		AutoExpandExcluded:     in.AutoExpandExcluded,
 	})
 	if err != nil {
 		fail(c, http.StatusInternalServerError, err)
@@ -290,6 +293,7 @@ func updateChannel(c *gin.Context, d *Deps) {
 		RechargeEntryMode:      in.RechargeEntryMode,
 		CardPurchaseURL:        in.CardPurchaseURL,
 		MonitorEnabled:         in.MonitorEnabled,
+		AutoExpandExcluded:     in.AutoExpandExcluded,
 	})
 	if err != nil {
 		fail(c, http.StatusInternalServerError, err)

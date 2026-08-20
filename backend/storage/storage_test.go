@@ -261,7 +261,7 @@ func TestAutoMigrateCreatesSQLiteIndexes(t *testing.T) {
 
 func TestAutoMigrateCreatesChannelRechargeEntryColumns(t *testing.T) {
 	db := openTestDB(t)
-	for _, column := range []string{"recharge_entry_mode", "card_purchase_url"} {
+	for _, column := range []string{"recharge_entry_mode", "card_purchase_url", "auto_expand_excluded"} {
 		if !db.Migrator().HasColumn(&Channel{}, column) {
 			t.Fatalf("channels.%s was not created", column)
 		}

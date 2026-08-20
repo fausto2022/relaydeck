@@ -73,6 +73,7 @@ interface FormState {
   recharge_entry_mode: RechargeEntryMode
   card_purchase_url: string
   monitor_enabled: boolean
+  auto_expand_excluded: boolean
   turnstile_enabled: boolean
   ignore_announcements: boolean
   subscription_enabled: boolean
@@ -103,6 +104,7 @@ function initialState(c?: Channel | null): FormState {
     recharge_entry_mode: c?.recharge_entry_mode === "card" ? "card" : "direct",
     card_purchase_url: c?.card_purchase_url ?? "",
     monitor_enabled: c?.monitor_enabled ?? true,
+    auto_expand_excluded: c?.auto_expand_excluded ?? false,
     turnstile_enabled: c?.turnstile_enabled ?? false,
     ignore_announcements: c?.ignore_announcements ?? false,
     subscription_enabled: c?.subscription_enabled ?? false,
@@ -276,6 +278,7 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
           recharge_entry_mode: form.recharge_entry_mode,
           card_purchase_url: form.recharge_entry_mode === "card" ? cardPurchaseURL : "",
           monitor_enabled: form.monitor_enabled,
+          auto_expand_excluded: form.auto_expand_excluded,
           turnstile_enabled: !isTokenMode && form.turnstile_enabled,
           ignore_announcements: form.ignore_announcements,
           subscription_enabled: supportsSubscription && form.subscription_enabled,
@@ -307,6 +310,7 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
             recharge_entry_mode: form.recharge_entry_mode,
             card_purchase_url: form.recharge_entry_mode === "card" ? cardPurchaseURL : "",
             monitor_enabled: form.monitor_enabled,
+            auto_expand_excluded: form.auto_expand_excluded,
             turnstile_enabled: !isTokenMode && form.turnstile_enabled,
             ignore_announcements: form.ignore_announcements,
             subscription_enabled: supportsSubscription && form.subscription_enabled,
@@ -753,6 +757,18 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
             <Switch
               checked={form.ignore_announcements}
               onCheckedChange={(v) => setForm({ ...form, ignore_announcements: v })}
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+            <div>
+              <p className="text-sm font-medium">排除自动扩池</p>
+              <p className="text-xs text-muted-foreground">开启后自动扩池不会选择此渠道，手动绑定不受影响</p>
+            </div>
+            <Switch
+              checked={form.auto_expand_excluded}
+              onCheckedChange={(v) => setForm({ ...form, auto_expand_excluded: v })}
               disabled={submitting}
             />
           </div>

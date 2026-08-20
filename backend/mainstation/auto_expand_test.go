@@ -257,6 +257,19 @@ func TestAutoExpansionSkipsBlockedGroupKeywords(t *testing.T) {
 	}
 }
 
+func TestAutoExpansionSkipsExcludedChannel(t *testing.T) {
+	fixture := newAutoExpansionTestFixture(t, 1000)
+	if err := fixture.db.Model(&storage.Channel{}).Where("id = ?", fixture.rate.ChannelID).Update("auto_expand_excluded", true).Error; err != nil {
+		t.Fatalf("exclude channel from automatic expansion: %v", err)
+	}
+
+	fixture.service.RunAutoExpansion(context.Background())
+
+	if fixture.chatCalls.Load() != 0 || len(fixture.channels.createdKeys) != 0 || len(fixture.admin.createRequests) != 0 {
+		t.Fatalf("excluded channel was used for expansion: chat=%d keys=%d accounts=%d", fixture.chatCalls.Load(), len(fixture.channels.createdKeys), len(fixture.admin.createRequests))
+	}
+}
+
 func TestValidateAutoExpandConditions(t *testing.T) {
 	tests := []struct {
 		name      string

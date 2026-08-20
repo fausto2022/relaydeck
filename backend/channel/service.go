@@ -194,6 +194,7 @@ type CreateInput struct {
 	RechargeEntryMode      storage.RechargeEntryMode
 	CardPurchaseURL        string
 	MonitorEnabled         bool
+	AutoExpandExcluded     bool
 }
 
 func (s *Service) Create(in CreateInput) (*storage.Channel, error) {
@@ -242,6 +243,7 @@ func (s *Service) Create(in CreateInput) (*storage.Channel, error) {
 		RechargeEntryMode:      rechargeEntryMode,
 		CardPurchaseURL:        cardPurchaseURL,
 		MonitorEnabled:         in.MonitorEnabled,
+		AutoExpandExcluded:     in.AutoExpandExcluded,
 	}
 	if mode == storage.CredentialModeToken {
 		// token 模式不依赖打码 provider
@@ -275,6 +277,7 @@ type UpdateInput struct {
 	RechargeEntryMode      *storage.RechargeEntryMode
 	CardPurchaseURL        *string
 	MonitorEnabled         *bool
+	AutoExpandExcluded     *bool
 }
 
 func (s *Service) Update(id uint, in UpdateInput) (*storage.Channel, error) {
@@ -404,6 +407,9 @@ func (s *Service) Update(id uint, in UpdateInput) (*storage.Channel, error) {
 	}
 	if in.MonitorEnabled != nil {
 		c.MonitorEnabled = *in.MonitorEnabled
+	}
+	if in.AutoExpandExcluded != nil {
+		c.AutoExpandExcluded = *in.AutoExpandExcluded
 	}
 	if err := s.Channels.Update(c); err != nil {
 		return nil, err

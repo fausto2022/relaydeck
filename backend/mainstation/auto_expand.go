@@ -342,6 +342,9 @@ func (s *Service) autoExpansionCandidates(
 	channelIDs := make([]uint, 0, len(channels))
 	channelsByID := make(map[uint]storage.Channel, len(channels))
 	for i := range channels {
+		if channels[i].AutoExpandExcluded {
+			continue
+		}
 		channelIDs = append(channelIDs, channels[i].ID)
 		channelsByID[channels[i].ID] = channels[i]
 	}

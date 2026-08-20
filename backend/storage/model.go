@@ -63,6 +63,7 @@ type Channel struct {
 	RechargeEntryMode      RechargeEntryMode `gorm:"size:16;not null;default:'direct'" json:"recharge_entry_mode"`
 	CardPurchaseURL        string            `gorm:"size:1024;not null;default:''" json:"card_purchase_url"`
 	MonitorEnabled         bool              `gorm:"default:true" json:"monitor_enabled"`
+	AutoExpandExcluded     bool              `gorm:"not null;default:false;index" json:"auto_expand_excluded"`
 
 	// 最近一次采集结果（聚合视图，便于列表页直接展示）
 	LastBalance   *float64   `json:"last_balance,omitempty"`

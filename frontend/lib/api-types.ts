@@ -80,6 +80,7 @@ export interface Channel {
   recharge_entry_mode: RechargeEntryMode
   card_purchase_url: string
   monitor_enabled: boolean
+  auto_expand_excluded: boolean
   last_balance?: number | null
   last_balance_at?: string | null
   today_cost?: number | null
