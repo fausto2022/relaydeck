@@ -1276,6 +1276,42 @@ func TestDeleteChannelRejectsAccountReferences(t *testing.T) {
 	}
 }
 
+func TestDeleteChannelUnbindsBoundMembers(t *testing.T) {
+	db := openTestDB(t)
+	channels := NewChannels(db)
+	channel := &Channel{Name: "bound-channel", Type: ChannelTypeSub2API, SiteURL: "https://example.com"}
+	if err := channels.Create(channel); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	remoteAccountID := int64(117)
+	member := &MainAccountPoolMember{
+		PoolID: 1, SourceChannelID: channel.ID, OwnershipMode: "bound", BindingStatus: "manual_confirmed", Status: "active",
+		RemoteAccountID: &remoteAccountID,
+	}
+	if err := db.Create(member).Error; err != nil {
+		t.Fatalf("create bound member: %v", err)
+	}
+	if err := db.Create(&MainAccountGuardLock{RemoteAccountID: 117, MemberID: member.ID, LockType: "health", CreatedBy: "test"}).Error; err != nil {
+		t.Fatalf("create guard lock: %v", err)
+	}
+	if err := channels.Delete(channel.ID); err != nil {
+		t.Fatalf("delete channel: %v", err)
+	}
+	var memberCount, lockCount, channelCount int64
+	if err := db.Model(&MainAccountPoolMember{}).Where("id = ?", member.ID).Count(&memberCount).Error; err != nil {
+		t.Fatalf("count member: %v", err)
+	}
+	if err := db.Model(&MainAccountGuardLock{}).Where("member_id = ?", member.ID).Count(&lockCount).Error; err != nil {
+		t.Fatalf("count guard lock: %v", err)
+	}
+	if err := db.Model(&Channel{}).Where("id = ?", channel.ID).Count(&channelCount).Error; err != nil {
+		t.Fatalf("count channel: %v", err)
+	}
+	if memberCount != 0 || lockCount != 0 || channelCount != 0 {
+		t.Fatalf("bound reference cleanup = members:%d locks:%d channels:%d, want all zero", memberCount, lockCount, channelCount)
+	}
+}
+
 func TestAutoMigrateDropsDeletedAtColumns(t *testing.T) {
 	db := openTestDB(t)
 

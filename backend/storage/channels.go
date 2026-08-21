@@ -31,7 +31,9 @@ func (r *Channels) Delete(id uint) error {
 			return err
 		}
 		var mainStationMembers int64
-		if err := tx.Model(&MainAccountPoolMember{}).Where("source_channel_id = ?", id).Count(&mainStationMembers).Error; err != nil {
+		if err := tx.Model(&MainAccountPoolMember{}).
+			Where("source_channel_id = ? AND ownership_mode <> ?", id, "bound").
+			Count(&mainStationMembers).Error; err != nil {
 			return err
 		}
 		var upstreamSyncAccounts int64
@@ -40,6 +42,21 @@ func (r *Channels) Delete(id uint) error {
 		}
 		if mainStationMembers > 0 || upstreamSyncAccounts > 0 {
 			return &ChannelInUseError{MainStationMembers: mainStationMembers, UpstreamSyncAccounts: upstreamSyncAccounts}
+		}
+		// 手工绑定账号的删除语义是解除本地绑定、保留远端账号；渠道删除时复用该语义，避免残留引用阻塞删除。
+		var boundMemberIDs []uint
+		if err := tx.Model(&MainAccountPoolMember{}).
+			Where("source_channel_id = ? AND ownership_mode = ?", id, "bound").
+			Pluck("id", &boundMemberIDs).Error; err != nil {
+			return err
+		}
+		if len(boundMemberIDs) > 0 {
+			if err := tx.Where("member_id IN ?", boundMemberIDs).Delete(&MainAccountGuardLock{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id IN ?", boundMemberIDs).Delete(&MainAccountPoolMember{}).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Where("channel_id = ?", id).Delete(&AuthSession{}).Error; err != nil {
 			return err
