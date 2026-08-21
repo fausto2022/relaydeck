@@ -157,7 +157,7 @@ export function DockBar() {
       icon: Plus,
       label: "添加渠道",
       onAction: openAdd,
-      gradient: "from-emerald-400 via-emerald-500 to-teal-600",
+      gradient: "from-blue-400 via-blue-500 to-indigo-600",
     },
     {
       icon: ShieldCheck,
