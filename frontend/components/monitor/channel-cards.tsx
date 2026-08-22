@@ -101,8 +101,8 @@ const statusMap: Record<Status, { label: string; cls: string; accent: string }> 
 
 function StatTile({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex h-16 min-w-0 flex-col justify-between rounded-md border border-border/70 bg-muted/30 px-2.5 py-2">
-      <span className="text-[10px] leading-none text-muted-foreground">{label}</span>
+    <div className="flex h-16 min-w-0 flex-col justify-between border-r border-border/60 bg-muted/20 px-2.5 py-2 last:border-r-0">
+      <span className="text-[10px] font-medium leading-none text-muted-foreground">{label}</span>
       <div className="min-w-0 overflow-hidden text-[13px] font-semibold leading-tight text-foreground">
         {typeof children === "string" ? <span className="block truncate">{children}</span> : children}
       </div>
@@ -814,19 +814,19 @@ export function ChannelCards() {
   }
 
   return (
-    <section className="space-y-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="space-y-4">
+      <div className="workspace-toolbar flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-primary/15 bg-primary/10 text-primary">
             <Network className="size-4" />
           </span>
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-foreground">{"渠道管理"}</h2>
-            <p className="truncate text-xs text-muted-foreground">{"实时健康、余额与同步状态"}</p>
+            <p className="section-kicker">上游接入工作区</p>
+            <h2 className="mt-0.5 text-base font-semibold text-foreground">{"渠道管理"}</h2>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <span className="text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded border border-border bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
             {totalChannels}{" 个渠道"}
           </span>
           <Select
@@ -911,8 +911,9 @@ export function ChannelCards() {
               const status = statusOf(c)
               const meta = statusMap[status]
               return (
-                <Card key={c.id} className="dashboard-panel relative flex flex-col gap-0 overflow-hidden border-border p-3 sm:p-4">
-                  <span className={cn("absolute inset-x-3 top-0 h-0.5 rounded-b-full", meta.accent)} />
+                <Card key={c.id} className="dashboard-panel relative flex flex-col gap-0 overflow-hidden border-border p-0 transition-[border-color,box-shadow] hover:border-primary/20">
+                  <span className={cn("absolute inset-y-0 left-0 w-0.5", meta.accent)} />
+                  <div className="border-b border-border/70 bg-muted/20 px-3 py-3 sm:px-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="truncate text-sm font-semibold text-foreground">{c.name}</span>
@@ -988,8 +989,9 @@ export function ChannelCards() {
                       </Tooltip>
                     </div>
                   </div>
+                  </div>
 
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <div className="grid grid-cols-2 border-b border-border/70 sm:grid-cols-3">
                     <StatTile label="余额">
                       <Tooltip delayDuration={150}>
                         <TooltipTrigger asChild>
@@ -1024,7 +1026,7 @@ export function ChannelCards() {
                     </StatTile>
                     <ChannelSubscriptionUsageMetricTiles channel={c} />
                     {c.last_error ? (
-                      <div className="col-span-3 rounded-md border border-border bg-muted/20 px-2.5 py-2">
+                      <div className="col-span-3 border-t border-border bg-danger/5 px-3 py-2">
                         <p className="max-h-16 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-[11px] leading-4 text-danger" title={c.last_error}>
                           {c.last_error}
                         </p>
@@ -1032,9 +1034,9 @@ export function ChannelCards() {
                     ) : null}
                   </div>
 
-                  <InlineRates channel={c} onSelect={(rate) => setSelectedGroup({ channel: c, rate })} />
+                  <div className="px-3 sm:px-4"><InlineRates channel={c} onSelect={(rate) => setSelectedGroup({ channel: c, rate })} /></div>
 
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <div className="mt-3 grid grid-cols-2 gap-2 px-3 sm:grid-cols-3 sm:px-4">
                     <Button
                       variant="outline"
                       size="sm"
@@ -1098,9 +1100,9 @@ export function ChannelCards() {
                     </Button>
                   </div>
 
-                  <SyncProgressStrip state={syncState[c.id] ?? emptySyncState()} />
+                  <div className="px-3 sm:px-4"><SyncProgressStrip state={syncState[c.id] ?? emptySyncState()} /></div>
 
-                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2.5">
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-border bg-muted/20 px-3 py-2.5 sm:px-4">
                     <Button
                       variant="ghost"
                       size="sm"

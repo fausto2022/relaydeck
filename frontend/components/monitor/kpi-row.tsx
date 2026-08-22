@@ -1,7 +1,6 @@
 "use client"
 
 import { DollarSign, HandCoins, Wallet } from "lucide-react"
-import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { useDashboardProfit, useDashboardSummary } from "@/lib/queries"
 import { money } from "@/lib/format"
@@ -77,24 +76,33 @@ export function KpiRow() {
   ]
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:gap-4">
-      {kpis.map((k) => (
-        <Card
-          key={k.label}
-          className="group min-h-22 min-w-0 gap-0 overflow-hidden px-4 py-3 transition-[border-color,box-shadow] hover:border-border sm:min-h-28 sm:px-5"
-        >
-          <div className="flex min-w-0 items-center gap-3">
-            <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ring-current/10", k.iconBg, k.iconColor)}>
-              <k.icon className="size-5" />
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="text-xs font-medium text-muted-foreground">{k.label}</span>
-              <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground sm:text-2xl">{k.value}</p>
+    <section className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-[var(--panel-shadow)]" aria-label="今日运行指标">
+      <div className="flex items-center justify-between border-b border-border/70 bg-muted/25 px-4 py-2.5">
+        <div>
+          <p className="section-kicker">实时财务状态</p>
+          <h2 className="mt-0.5 text-sm font-semibold">今日运行指标</h2>
+        </div>
+        <span className="rounded border border-border bg-card px-2 py-1 text-[10px] font-medium text-muted-foreground">自动采集</span>
+      </div>
+      <div className="grid sm:grid-cols-3">
+        {kpis.map((k) => (
+          <div
+            key={k.label}
+            className="group min-w-0 border-b border-border/70 px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:px-5 sm:py-4 sm:last:border-r-0"
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-md ring-1 ring-inset ring-current/10", k.iconBg, k.iconColor)}>
+                <k.icon className="size-4.5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="text-[11px] font-semibold text-muted-foreground">{k.label}</span>
+                <p className="mt-0.5 truncate text-xl font-semibold tabular-nums text-foreground sm:text-2xl">{k.value}</p>
+              </div>
             </div>
+            <p className="mt-2 min-w-0 text-[11px] leading-4">{k.footer}</p>
           </div>
-          <p className="mt-2 min-w-0 text-[11px] leading-4 sm:text-xs">{k.footer}</p>
-        </Card>
-      ))}
-    </div>
+        ))}
+      </div>
+    </section>
   )
 }

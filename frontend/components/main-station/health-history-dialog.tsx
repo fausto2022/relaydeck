@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Activity, RefreshCw } from "lucide-react"
+import { Activity, Clock3, Gauge, RefreshCw, X } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -75,39 +76,47 @@ export function HealthHistoryDialog({ open, onOpenChange, groupID, account }: Pr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader className="pr-8">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <DialogTitle className="flex items-center gap-2 truncate">
-                <Activity className="size-5 shrink-0 text-emerald-600" />
-                <span className="truncate">{account?.name ?? "账号"} · 探测记录</span>
-              </DialogTitle>
-              <DialogDescription className="mt-1">{account?.member?.source_group_name || "默认来源分组"}</DialogDescription>
+      <DialogContent
+        showCloseButton={false}
+        className="!flex h-[calc(100dvh-0.5rem)] max-h-[calc(100dvh-0.5rem)] flex-col gap-0 overflow-hidden p-0 sm:h-[min(48rem,calc(100dvh-2rem))] sm:max-w-4xl"
+      >
+        <DialogHeader className="shrink-0 border-b border-border/80 bg-muted/25 px-4 py-3 pr-4 sm:px-5 sm:py-4 sm:pr-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-primary/15 bg-primary/10 text-primary">
+              <Activity className="size-4.5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="truncate text-base leading-5 sm:text-lg">{account?.name ?? "账号"}</DialogTitle>
+              <DialogDescription className="mt-0.5 truncate text-xs">探测记录 · {account?.member?.source_group_name || "默认来源分组"}</DialogDescription>
             </div>
-            <Button variant="outline" size="icon" aria-label="刷新探测记录" onClick={() => void load(true)} disabled={loading || refreshing}>
-              <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-            </Button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button variant="outline" size="icon" aria-label="刷新探测记录" title="刷新探测记录" onClick={() => void load(true)} disabled={loading || refreshing}>
+                <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+              </Button>
+              <DialogClose asChild>
+                <Button variant="ghost" size="icon" aria-label="关闭探测记录" title="关闭"><X className="size-4" /></Button>
+              </DialogClose>
+            </div>
           </div>
         </DialogHeader>
 
-        {!account?.member ? <div className="py-8 text-center text-sm text-muted-foreground">账号尚未接管，暂无探测记录</div> : null}
-        {account?.member && loading ? <div className="flex justify-center py-12"><Spinner /></div> : null}
+        {!account?.member ? <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">账号尚未接管，暂无探测记录</div> : null}
+        {account?.member && loading ? <div className="flex flex-1 items-center justify-center"><Spinner /></div> : null}
         {account?.member && !loading ? (
-          <div className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Stat label="可用性 · 7 天" value={formatPercent(stats?.seven_day_success_rate)} tone={successTone(stats?.seven_day_success_rate)} />
-              <Stat label="平均延迟" value={formatLatency(stats?.average_latency_ms)} />
-              <Stat label="P95 延迟" value={formatLatency(stats?.p95_latency_ms)} />
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+            <div className="grid overflow-hidden rounded-lg border border-border/80 bg-card sm:grid-cols-3">
+              <Stat icon={Activity} label="7 天可用性" value={formatPercent(stats?.seven_day_success_rate)} tone={successTone(stats?.seven_day_success_rate)} />
+              <Stat icon={Clock3} label="平均延迟" value={formatLatency(stats?.average_latency_ms)} />
+              <Stat icon={Gauge} label="P95 延迟" value={formatLatency(stats?.p95_latency_ms)} />
             </div>
 
-            <section className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium">最近 60 次</span>
+            <section className="mt-5">
+              <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                <span className="font-semibold">最近 60 次探测</span>
                 <span className="text-xs text-muted-foreground">{stats?.last_success_at ? `最近成功 ${relativeTime(stats.last_success_at)}` : "暂无成功记录"}</span>
               </div>
               {timeline.length > 0 ? (
-                <div className="grid h-10 grid-flow-col auto-cols-fr items-end gap-0.5 rounded border bg-muted/20 p-1" title="从左到右为较早到较新的探测记录">
+                <div className="grid h-14 grid-flow-col auto-cols-fr items-end gap-0.5 rounded-lg border border-border/80 bg-muted/35 p-1.5" title="从左到右为较早到较新的探测记录">
                   {timeline.map((check) => (
                     <span
                       key={check.id}
@@ -118,16 +127,16 @@ export function HealthHistoryDialog({ open, onOpenChange, groupID, account }: Pr
                   ))}
                 </div>
               ) : <div className="rounded border border-dashed py-8 text-center text-sm text-muted-foreground">暂无探测记录</div>}
-              <div className="flex justify-between text-[11px] uppercase tracking-wide text-muted-foreground"><span>较早</span><span>现在</span></div>
+              <div className="mt-1.5 flex justify-between text-[10px] font-medium text-muted-foreground"><span>较早</span><span>现在</span></div>
             </section>
 
             {stats?.last_error_message ? (
-              <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <div className="mt-4 rounded-md border border-danger/25 bg-danger/5 px-3 py-2 text-sm text-danger">
                 最近错误：{stats.last_error_message}
               </div>
             ) : null}
 
-            <div className="overflow-x-auto border">
+            <div className="mt-5 overflow-hidden rounded-lg border border-border/80">
               <Table>
                 <TableHeader><TableRow><TableHead>时间</TableHead><TableHead>级别</TableHead><TableHead>状态</TableHead><TableHead>延迟</TableHead><TableHead>HTTP</TableHead><TableHead>模型</TableHead></TableRow></TableHeader>
                 <TableBody>
@@ -152,8 +161,13 @@ export function HealthHistoryDialog({ open, onOpenChange, groupID, account }: Pr
   )
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return <div className="rounded border bg-muted/10 p-3"><div className="text-xs text-muted-foreground">{label}</div><div className={cn("mt-2 text-2xl font-semibold tabular-nums", tone)}>{value}</div></div>
+function Stat({ icon: Icon, label, value, tone }: { icon: typeof Activity; label: string; value: string; tone?: string }) {
+  return (
+    <div className="flex items-center gap-3 border-b border-border/70 px-3 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><Icon className="size-4" /></span>
+      <div className="min-w-0"><div className="text-[11px] font-medium text-muted-foreground">{label}</div><div className={cn("mt-0.5 truncate text-xl font-semibold tabular-nums", tone)}>{value}</div></div>
+    </div>
+  )
 }
 
 function StatusBadge({ status }: { status: string }) {

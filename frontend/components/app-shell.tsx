@@ -37,14 +37,14 @@ export function AppShell() {
       <div
         className={cn(
           "min-h-dvh min-w-0 overflow-x-hidden transition-[padding] duration-200",
-          sidebarCollapsed ? "lg:pl-17" : "lg:pl-58",
+          sidebarCollapsed ? "lg:pl-17" : "lg:pl-64",
         )}
       >
         <MonitorHeader onOpenNavigation={() => setMobileSidebarOpen(true)} />
         <main
           id="main-content"
           tabIndex={-1}
-          className="mx-auto min-w-0 max-w-400 space-y-4 px-3 py-4 sm:px-5 sm:py-5 lg:space-y-5 lg:px-6"
+          className="mx-auto min-w-0 max-w-[100rem] space-y-4 px-3 py-4 pb-10 sm:px-5 sm:py-5 lg:space-y-5 lg:px-7 lg:py-6"
         >
           <Outlet />
         </main>

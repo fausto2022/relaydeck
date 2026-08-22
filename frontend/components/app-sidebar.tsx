@@ -75,7 +75,7 @@ export function AppSidebar({
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:flex",
-          collapsed ? "w-17" : "w-58",
+          collapsed ? "w-17" : "w-64",
         )}
       >
         <SidebarContent
@@ -88,13 +88,13 @@ export function AppSidebar({
       <Dialog open={mobileOpen} onOpenChange={onMobileOpenChange}>
         <DialogContent
           showCloseButton={false}
-          className="!top-0 !left-0 !flex h-dvh !max-h-dvh w-[min(18rem,calc(100vw-2rem))] !max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-r-xl border-y-0 border-l-0 p-0 shadow-2xl lg:hidden"
+          className="!top-0 !left-0 !flex h-dvh !max-h-dvh w-[min(19rem,calc(100vw-2rem))] !max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-r-2xl border-y-0 border-l-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground shadow-2xl lg:hidden"
         >
           <DialogTitle className="sr-only">主导航</DialogTitle>
           <Button
             variant="ghost"
             size="icon"
-            className="absolute right-2 top-2 z-10"
+            className="absolute right-2 top-2 z-10 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
             onClick={() => onMobileOpenChange(false)}
             aria-label="关闭主导航"
           >
@@ -131,23 +131,23 @@ function SidebarContent({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className={cn("flex h-16 shrink-0 items-center border-b border-sidebar-border", collapsed ? "justify-center px-2" : "gap-3 px-4")}>
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-sm">
-          <Activity className="size-4.5" strokeWidth={2.5} />
+      <div className={cn("flex h-[4.5rem] shrink-0 items-center border-b border-sidebar-border", collapsed ? "justify-center px-2" : "gap-3 px-4")}>
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-white/10 bg-sidebar-primary/15 text-sidebar-primary shadow-inner">
+          <Activity className="size-4.5" strokeWidth={2.25} />
         </span>
         {!collapsed ? (
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold">管理后台</div>
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">工作台</div>
+            <div className="truncate text-sm font-semibold text-sidebar-foreground">运维控制台</div>
+            <div className="mt-0.5 truncate text-[11px] text-sidebar-foreground/45">OPERATIONS WORKSPACE</div>
           </div>
         ) : null}
       </div>
 
-      <nav aria-label="主导航" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3">
+      <nav aria-label="主导航" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-4">
         {navigationGroups.map((group) => (
-          <div key={group.label} className="mb-4 last:mb-0">
-            {!collapsed ? <div className="mb-1 px-2 text-[11px] font-medium text-muted-foreground">{group.label}</div> : null}
-            <div className="space-y-1">
+          <div key={group.label} className="mb-5 last:mb-0">
+            {!collapsed ? <div className="mb-1.5 px-2 text-[10px] font-semibold text-sidebar-foreground/35">{group.label}</div> : <div className="mx-2 mb-2 h-px bg-sidebar-border" />}
+            <div className="space-y-0.5">
               {group.items.map((item) => {
                 const active = item.tab
                   ? location.pathname === "/settings" && activeTab === item.tab
@@ -160,11 +160,11 @@ function SidebarContent({
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "relative flex min-h-10 items-center rounded-lg text-sm font-medium outline-none transition-[background-color,color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/35",
+                      "relative flex min-h-10 items-center rounded-md text-sm font-medium outline-none transition-[background-color,color,box-shadow] focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/35",
                       collapsed ? "justify-center px-2" : "gap-3 px-3",
                       active
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
-                        : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
+                        : "text-sidebar-foreground/58 hover:bg-sidebar-accent/55 hover:text-sidebar-foreground",
                     )}
                   >
                     {active ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-sidebar-primary" /> : null}
@@ -186,7 +186,7 @@ function SidebarContent({
         ))}
       </nav>
 
-      <div className="shrink-0 border-t border-sidebar-border p-2">
+      <div className="shrink-0 border-t border-sidebar-border bg-black/10 p-2.5">
         <SidebarAction
           collapsed={collapsed}
           label={darkMode ? "切换浅色模式" : "切换深色模式"}
@@ -233,11 +233,11 @@ function SidebarAction({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex min-h-10 w-full items-center rounded-lg text-sm font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/35",
+        "flex min-h-10 w-full items-center rounded-md text-sm font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/35",
         collapsed ? "justify-center px-2" : "gap-3 px-3",
         danger
-          ? "text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-          : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+          ? "text-sidebar-foreground/50 hover:bg-destructive/15 hover:text-red-300"
+          : "text-sidebar-foreground/50 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
       )}
     >
       <Icon className="size-4.5 shrink-0" />

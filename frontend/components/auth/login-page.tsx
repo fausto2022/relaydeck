@@ -41,29 +41,31 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center bg-background px-4 py-8 sm:px-6">
-      <div className="mx-auto grid w-full max-w-4xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-16">
-        <div className="hidden min-w-0 lg:block">
+    <div className="flex min-h-dvh items-stretch bg-background">
+      <div className="mx-auto grid w-full max-w-6xl lg:grid-cols-[minmax(0,1fr)_28rem]">
+        <div className="hidden min-w-0 flex-col justify-between bg-sidebar px-12 py-12 text-sidebar-foreground lg:flex">
           <div className="flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-xl bg-foreground text-background shadow-sm">
+            <span className="flex size-10 items-center justify-center rounded-md border border-white/10 bg-sidebar-primary/15 text-sidebar-primary">
               <Activity className="size-5" strokeWidth={2.5} />
             </span>
             <div>
-              <p className="text-lg font-semibold text-foreground">安全入口</p>
-              <p className="text-xs text-muted-foreground">身份验证 · 管理入口</p>
+              <p className="text-base font-semibold">安全入口</p>
+              <p className="text-[11px] text-sidebar-foreground/45">IDENTITY GATEWAY</p>
             </div>
           </div>
-          <div className="mt-14 max-w-md border-l-2 border-primary/30 pl-5">
-            <p className="text-sm font-medium text-primary">安全登录</p>
-            <p className="mt-2 text-3xl font-semibold leading-tight tracking-normal text-foreground">欢迎进入管理后台</p>
-            <p className="mt-4 text-sm leading-6 text-muted-foreground">请输入管理员账号和密码。</p>
+          <div className="max-w-md">
+            <p className="text-[11px] font-semibold text-sidebar-primary">受保护的工作区</p>
+            <p className="mt-3 text-3xl font-semibold leading-tight">登录以继续</p>
+            <p className="mt-4 text-sm leading-6 text-sidebar-foreground/55">使用管理员凭据完成身份验证。</p>
           </div>
+          <p className="text-[11px] text-sidebar-foreground/35">SESSION PROTECTED · ACCESS CONTROLLED</p>
         </div>
 
-        <Card className="dashboard-panel w-full gap-0 border-border/70 py-0">
+        <div className="flex items-center px-4 py-8 sm:px-10 lg:px-12">
+        <Card className="dashboard-panel mx-auto w-full max-w-md gap-0 border-border/80 py-0">
           <CardHeader className="border-b border-border/60 px-5 py-5 sm:px-6">
             <div className="flex items-center gap-2.5">
-              <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <span className="flex size-9 items-center justify-center rounded-md border border-primary/15 bg-primary/10 text-primary">
                 <KeyRound className="size-4" />
               </span>
               <div>
@@ -132,6 +134,7 @@ export function LoginPage() {
             </form>
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   )

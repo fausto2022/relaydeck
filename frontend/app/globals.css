@@ -4,38 +4,38 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
+  --background: #f3f5f8;
+  --foreground: #172033;
+  --card: #fcfdff;
+  --card-foreground: #172033;
   --popover: #ffffff;
   --popover-foreground: #0f172a;
   --primary: #1e40af;
   --primary-foreground: #ffffff;
-  --secondary: #e9eef6;
+  --secondary: #e8edf5;
   --secondary-foreground: #1e293b;
-  --muted: #eef2f7;
-  --muted-foreground: #64748b;
-  --accent: #fef3c7;
-  --accent-foreground: #92400e;
+  --muted: #edf1f6;
+  --muted-foreground: #667085;
+  --accent: #e8eefb;
+  --accent-foreground: #1e3a8a;
   --destructive: oklch(0.57 0.21 25);
   --destructive-foreground: oklch(0.985 0.004 25);
-  --border: #dbe4f0;
-  --input: #cbd5e1;
+  --border: #d7dee9;
+  --input: #c5cfdd;
   --ring: #3b82f6;
   --chart-1: #1e40af;
   --chart-2: #3b82f6;
   --chart-3: #d97706;
   --chart-4: #7c3aed;
   --chart-5: #e11d48;
-  --radius: 0.625rem;
-  --sidebar: #f1f5f9;
-  --sidebar-foreground: #0f172a;
-  --sidebar-primary: #1e40af;
+  --radius: 0.75rem;
+  --sidebar: #121a2a;
+  --sidebar-foreground: #eef2f8;
+  --sidebar-primary: #60a5fa;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e0e7ff;
-  --sidebar-accent-foreground: #1e3a8a;
-  --sidebar-border: #dbe4f0;
+  --sidebar-accent: #21304a;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #2b3850;
   --sidebar-ring: #3b82f6;
   --success: oklch(0.59 0.14 158);
   --success-foreground: oklch(0.985 0 0);
@@ -45,14 +45,14 @@
   --danger-foreground: oklch(0.985 0 0);
   --brand: #1e40af;
   --brand-foreground: oklch(0.985 0 0);
-  --panel-shadow: 0 1px 2px rgb(15 23 42 / 0.05), 0 14px 34px -24px rgb(30 64 175 / 0.22);
+  --panel-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 10px 24px -20px rgb(15 23 42 / 0.34);
   --control-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
 }
 
 .dark {
-  --background: #0b1220;
+  --background: #0b111d;
   --foreground: #e5e7eb;
-  --card: #111b2e;
+  --card: #121b2b;
   --card-foreground: #e5e7eb;
   --popover: #16233a;
   --popover-foreground: #e5e7eb;
@@ -74,7 +74,7 @@
   --chart-3: #fbbf24;
   --chart-4: #a78bfa;
   --chart-5: #fb7185;
-  --sidebar: #101827;
+  --sidebar: #0c1422;
   --sidebar-foreground: #e5e7eb;
   --sidebar-primary: #3b82f6;
   --sidebar-primary-foreground: #eff6ff;
@@ -174,7 +174,15 @@
   }
 
   .dashboard-panel-header {
-    @apply border-b border-border/60 bg-card;
+    @apply border-b border-border/70 bg-muted/25;
+  }
+
+  .workspace-toolbar {
+    @apply rounded-xl border border-border/80 bg-card px-3 py-3 shadow-[var(--panel-shadow)] sm:px-4;
+  }
+
+  .section-kicker {
+    @apply text-[11px] font-semibold text-muted-foreground;
   }
 
   .control-shadow {

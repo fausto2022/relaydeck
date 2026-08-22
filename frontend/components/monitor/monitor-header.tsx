@@ -12,12 +12,12 @@ import { useTriggerRefresh } from "@/lib/refresh-context"
 import { useChannels } from "@/lib/queries"
 import { relativeTime } from "@/lib/format"
 
-const pageMeta: Record<string, { section: string; title: string }> = {
-  "/": { section: "工作台", title: "首页看板" },
-  "/channels": { section: "工作台", title: "渠道管理" },
-  "/main-station": { section: "业务运营", title: "主站管理" },
-  "/rates": { section: "业务运营", title: "倍率排行" },
-  "/settings": { section: "系统", title: "系统设置" },
+const pageMeta: Record<string, { section: string; title: string; description: string }> = {
+  "/": { section: "工作台", title: "运行总览", description: "余额、消耗与渠道状态" },
+  "/channels": { section: "工作台", title: "渠道管理", description: "上游账号与同步作业" },
+  "/main-station": { section: "业务运营", title: "主站管理", description: "账号池、健康探测与调度" },
+  "/rates": { section: "业务运营", title: "倍率排行", description: "成本倍率与价格变化" },
+  "/settings": { section: "系统", title: "系统设置", description: "运行策略与系统服务" },
 }
 
 const settingsTitle: Record<string, string> = {
@@ -58,13 +58,13 @@ export function MonitorHeader({ onOpenNavigation }: { onOpenNavigation: () => vo
     setTimeout(() => setSyncing(false), 800)
   }
 
-  const meta = pageMeta[location.pathname] ?? { section: "工作台", title: "管理后台" }
+  const meta = pageMeta[location.pathname] ?? { section: "工作台", title: "管理后台", description: "" }
   const activeSettingsTab = new URLSearchParams(location.search).get("tab") || "system"
   const title = location.pathname === "/settings" ? settingsTitle[activeSettingsTab] || meta.title : meta.title
 
   return (
-    <header className="sticky top-0 z-20 border-b border-border/80 bg-background/94 backdrop-blur-md">
-      <div className="mx-auto flex h-14 max-w-400 items-center gap-2 px-3 sm:px-5 lg:h-15 lg:px-6">
+    <header className="sticky top-0 z-20 border-b border-border/80 bg-card/92 backdrop-blur-xl">
+      <div className="mx-auto flex min-h-16 max-w-[100rem] items-center gap-3 px-3 py-2 sm:px-5 lg:min-h-[4.5rem] lg:px-7">
         <Button
           variant="ghost"
           size="icon"
@@ -75,15 +75,16 @@ export function MonitorHeader({ onOpenNavigation }: { onOpenNavigation: () => vo
           <Menu />
         </Button>
         <div className="min-w-0 flex-1">
-          <div className="hidden text-[11px] font-medium text-muted-foreground sm:block">{meta.section}</div>
-          <div className="truncate text-sm font-semibold text-foreground sm:text-base">
-            {title}
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h1 className="truncate text-base font-semibold text-foreground lg:text-lg">{title}</h1>
+            <span className="hidden text-[11px] text-muted-foreground sm:inline">/ {meta.section}</span>
           </div>
+          <p className="mt-0.5 hidden truncate text-xs text-muted-foreground sm:block">{meta.description}</p>
         </div>
         <div className="flex items-center justify-end gap-1.5">
-          <span className="mr-1 hidden items-center gap-1.5 text-xs text-muted-foreground md:inline-flex">
-            <span className="size-1.5 rounded-full bg-success" />
-            上次采集 <span className="font-medium text-foreground">{relativeTime(lastCollectedAt)}</span>
+          <span className="mr-1 hidden items-center gap-2 rounded-md border border-border bg-muted/35 px-2.5 py-1.5 text-xs text-muted-foreground md:inline-flex">
+            <span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-success/40" /><span className="relative inline-flex size-2 rounded-full bg-success" /></span>
+            采集状态 <span className="font-medium text-foreground">{relativeTime(lastCollectedAt)}</span>
           </span>
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
@@ -92,7 +93,7 @@ export function MonitorHeader({ onOpenNavigation }: { onOpenNavigation: () => vo
                 size="icon"
                 onClick={handleRefresh}
                 disabled={syncing}
-                className="bg-card shadow-sm"
+                className="bg-card"
                 aria-label="刷新视图"
               >
                 <RefreshCw className={cn("size-4", syncing && "animate-spin")} />

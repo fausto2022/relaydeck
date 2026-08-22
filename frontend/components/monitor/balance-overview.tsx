@@ -69,13 +69,13 @@ export function BalanceOverview() {
   const isLoading = summary.loading && !summary.data
 
   return (
-    <Card className="dashboard-panel min-h-72 gap-0 overflow-hidden border-border/80 py-0 lg:h-96">
+    <Card className="dashboard-panel min-h-72 gap-0 overflow-hidden border-border/80 py-0 lg:h-[26rem]">
       <CardHeader className="dashboard-panel-header flex shrink-0 flex-row items-center justify-between gap-3 px-4 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/15 bg-primary/10 text-primary">
             <ListOrdered className="size-4" />
           </span>
-          <CardTitle className="truncate text-sm font-semibold sm:text-base">今日消耗排行</CardTitle>
+          <div className="min-w-0"><p className="section-kicker">账号资金分布</p><CardTitle className="mt-0.5 truncate text-sm font-semibold">今日消耗排行</CardTitle></div>
         </div>
         <span className="shrink-0 rounded-md bg-card px-2 py-1 text-xs font-medium tabular-nums text-muted-foreground ring-1 ring-border/80">
           {channels.length} 个账号
@@ -93,18 +93,18 @@ export function BalanceOverview() {
         ) : null}
         {!isLoading && channels.length > 0 ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="sticky top-0 z-10 grid grid-cols-[minmax(4.5rem,1fr)_5.5rem_5.5rem] gap-2 border-b border-border/60 bg-card/95 px-2 py-2 text-[11px] font-medium text-muted-foreground backdrop-blur-sm sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:gap-3 sm:text-xs">
+            <div className="sticky top-0 z-10 grid grid-cols-[minmax(4.5rem,1fr)_5.5rem_5.5rem] gap-2 border-b border-border/70 bg-muted/45 px-3 py-2 text-[10px] font-semibold text-muted-foreground backdrop-blur-sm sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:gap-3">
               <span>账号</span>
               <span className="text-right">今日消耗</span>
               <span className="text-right">余额</span>
             </div>
-            <div className="space-y-1 py-1">
+            <div>
               {channels.map((channel, index) => {
                 const cost = channel.today_cost ?? 0
                 const status = monitorStatus(channel)
                 const StatusIcon = status.icon
                 return (
-                  <div key={channel.id} className={cn("grid grid-cols-[minmax(4.5rem,1fr)_5.5rem_5.5rem] items-center gap-2 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/40 sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:gap-3", status.rowClass)}>
+                  <div key={channel.id} className={cn("grid grid-cols-[minmax(4.5rem,1fr)_5.5rem_5.5rem] items-center gap-2 border-b border-border/60 px-3 py-2.5 transition-colors last:border-b-0 hover:bg-primary/[0.035] sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:gap-3", status.rowClass)}>
                     <div className="flex min-w-0 items-center gap-2">
                       <span
                         aria-label={`第 ${index + 1} 名`}
