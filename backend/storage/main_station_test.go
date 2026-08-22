@@ -126,6 +126,32 @@ func TestListLatestProfitChecksForMemberGroupsFiltersTargetGroups(t *testing.T) 
 	}
 }
 
+func TestDailyHealthAggregateOnlyCountsCurrentDay(t *testing.T) {
+	db := openTestDB(t)
+	store := NewMainStationStore(db)
+	dayStart := time.Date(2026, 8, 22, 0, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	oldTokens := int64(100)
+	l1Tokens := int64(7)
+	l2Tokens := int64(11)
+	checks := []MainAccountHealthCheck{
+		{PoolID: 1, MemberID: 9, RemoteAccountID: 90, Level: "L1", Status: "success", TotalTokens: &oldTokens, CreatedAt: dayStart.Add(-time.Minute)},
+		{PoolID: 1, MemberID: 9, RemoteAccountID: 90, Level: "L1", Status: "success", TotalTokens: &l1Tokens, CreatedAt: dayStart.Add(time.Hour)},
+		{PoolID: 1, MemberID: 9, RemoteAccountID: 90, Level: "L2", Status: "success", TotalTokens: &l2Tokens, CreatedAt: dayStart.Add(2 * time.Hour)},
+		{PoolID: 1, MemberID: 9, RemoteAccountID: 90, Level: "L1", Status: "skipped_budget", CreatedAt: dayStart.Add(3 * time.Hour)},
+	}
+	if err := db.Create(&checks).Error; err != nil {
+		t.Fatalf("create health checks: %v", err)
+	}
+
+	aggregate, err := store.DailyHealthAggregate(9, dayStart)
+	if err != nil {
+		t.Fatalf("daily health aggregate: %v", err)
+	}
+	if aggregate.MemberID != 9 || aggregate.DailyChecks != 3 || aggregate.DailyTokens != 18 || aggregate.DailyL1Checks != 1 || aggregate.DailyL2Checks != 1 {
+		t.Fatalf("daily aggregate = %#v", aggregate)
+	}
+}
+
 func TestMainStationModelsUseMySQLCompatibleUpsertAndIndexes(t *testing.T) {
 	db, err := gorm.Open(mysqlDriver.New(mysqlDriver.Config{
 		DSN:                       "user:password@tcp(127.0.0.1:3306)/relaydeck?charset=utf8mb4&parseTime=True&loc=Local",

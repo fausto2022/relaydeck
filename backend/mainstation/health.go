@@ -225,6 +225,9 @@ func (s *Service) CheckMember(ctx context.Context, poolID, memberID uint, in Hea
 		s.log.Warn("mark main station scheduling rank dirty", "err", rankingErr, "pool_id", pool.ID)
 	}
 	_, _ = s.EvaluatePoolCapacity(ctx, pool.ID)
+	if in.Scheduled {
+		return &HealthCheckResult{Check: check, Member: *updated, Budget: budget}, nil
+	}
 	stats, err := s.MemberHealthStats(member.ID)
 	if err != nil {
 		return nil, err
@@ -1073,11 +1076,12 @@ func (s *Service) PoolHealthSummary(poolID uint) ([]MemberHealthSummary, error) 
 }
 
 func (s *Service) healthBudget(memberID uint, policy healthPolicy, now time.Time) (HealthBudget, error) {
-	aggregates, err := s.store.HealthAggregates([]uint{memberID}, now)
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	aggregate, err := s.store.DailyHealthAggregate(memberID, dayStart)
 	if err != nil {
 		return HealthBudget{}, err
 	}
-	return healthBudgetFromAggregate(aggregates[memberID], policy), nil
+	return healthBudgetFromAggregate(aggregate, policy), nil
 }
 
 func healthBudgetFromAggregate(aggregate storage.MainAccountHealthAggregate, policy healthPolicy) HealthBudget {

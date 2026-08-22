@@ -901,6 +901,15 @@ func (s *Service) loginBackoffError(channelID uint) error {
 	return fmt.Errorf("上游登录连续失败，请等待 %s 后重试", remaining.Round(time.Second))
 }
 
+// LoginBackoffActive 判断周期任务是否应暂缓扫描该渠道。
+// 手动操作仍会进入 EnsureSession，并返回剩余等待时间。
+func (s *Service) LoginBackoffActive(channelID uint) bool {
+	s.backoffMu.Lock()
+	defer s.backoffMu.Unlock()
+	state, ok := s.loginBackoff[channelID]
+	return ok && time.Until(state.until) > 0
+}
+
 func (s *Service) updateLoginBackoff(channelID uint, err error) {
 	s.backoffMu.Lock()
 	defer s.backoffMu.Unlock()

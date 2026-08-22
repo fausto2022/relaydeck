@@ -63,7 +63,7 @@ func (b *SQLiteBackups) rotate() error {
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "relaydeck-") && strings.HasSuffix(entry.Name(), ".db") {
+		if !entry.IsDir() && isAutomaticSQLiteBackup(entry.Name()) {
 			names = append(names, entry.Name())
 		}
 	}
@@ -76,4 +76,18 @@ func (b *SQLiteBackups) rotate() error {
 		names = names[1:]
 	}
 	return nil
+}
+
+func isAutomaticSQLiteBackup(name string) bool {
+	const (
+		prefix = "relaydeck-"
+		suffix = ".db"
+		layout = "20060102-150405.000000000"
+	)
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
+		return false
+	}
+	timestamp := strings.TrimSuffix(strings.TrimPrefix(name, prefix), suffix)
+	_, err := time.Parse(layout, timestamp)
+	return err == nil
 }

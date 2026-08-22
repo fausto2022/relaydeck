@@ -708,6 +708,21 @@ func (r *MainStationStore) HealthAggregates(memberIDs []uint, now time.Time) (ma
 	return result, nil
 }
 
+// DailyHealthAggregate 只读取健康探测预算需要的当日记录。
+// 看板与稳定优先排名所需的七天统计仍由 HealthAggregates 计算。
+func (r *MainStationStore) DailyHealthAggregate(memberID uint, since time.Time) (MainAccountHealthAggregate, error) {
+	var item MainAccountHealthAggregate
+	err := r.db.Model(&MainAccountHealthCheck{}).
+		Select("? AS member_id, "+
+			"COUNT(*) AS daily_checks, "+
+			"COALESCE(SUM(COALESCE(total_tokens, 0)), 0) AS daily_tokens, "+
+			"SUM(CASE WHEN level = 'L1' AND status <> 'skipped_budget' THEN 1 ELSE 0 END) AS daily_l1_checks, "+
+			"SUM(CASE WHEN level = 'L2' AND status <> 'skipped_budget' THEN 1 ELSE 0 END) AS daily_l2_checks", memberID).
+		Where("member_id = ? AND created_at >= ?", memberID, since).
+		Scan(&item).Error
+	return item, err
+}
+
 func (r *MainStationStore) CountDailyHealthChecks(memberID uint, level string, since time.Time) (int64, error) {
 	var count int64
 	err := r.db.Model(&MainAccountHealthCheck{}).

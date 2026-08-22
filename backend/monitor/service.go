@@ -73,6 +73,9 @@ func (s *Service) ScanAllBalances(ctx context.Context) {
 	}
 	for i := range list {
 		c := list[i]
+		if s.channelSvc.LoginBackoffActive(c.ID) {
+			continue
+		}
 		if err := s.RefreshBalance(ctx, &c); err != nil {
 			s.log.Warn("refresh balance failed", "channel", c.Name, "err", err)
 			continue
@@ -92,6 +95,9 @@ func (s *Service) ScanAllRates(ctx context.Context) {
 	}
 	for i := range list {
 		c := list[i]
+		if s.channelSvc.LoginBackoffActive(c.ID) {
+			continue
+		}
 		if err := s.RefreshRates(ctx, &c); err != nil {
 			s.log.Warn("refresh rates failed", "channel", c.Name, "err", err)
 		}

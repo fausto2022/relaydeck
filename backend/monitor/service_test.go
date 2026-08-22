@@ -156,6 +156,48 @@ func TestRefreshRatesSyncAnnouncementsAndNotify(t *testing.T) {
 	}
 }
 
+func TestScheduledScansSkipChannelsDuringLoginBackoff(t *testing.T) {
+	db := openTestDB(t)
+	channels := storage.NewChannels(db)
+	authSessions := storage.NewAuthSessions(db)
+	captchas := storage.NewCaptchas(db)
+	rates := storage.NewRates(db)
+	monitorLogs := storage.NewMonitorLogs(db)
+	notifies := storage.NewNotifications(db)
+	cipher, err := crypto.NewCipher("secret")
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	var loginCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		loginCalls.Add(1)
+		http.Error(w, "invalid password", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	password, err := cipher.Encrypt("bad-password")
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	item := &storage.Channel{
+		Name: "backoff", Type: storage.ChannelTypeNewAPI, SiteURL: server.URL, Username: "user",
+		PasswordCipher: password, CredentialMode: storage.CredentialModePassword, MonitorEnabled: true,
+	}
+	if err := channels.Create(item); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	channelSvc := channel.NewService(channels, authSessions, captchas, rates, monitorLogs, cipher)
+	dispatcher := notify.NewDispatcher(notifies, cipher, slog.New(slog.NewTextHandler(io.Discard, nil)), notify.Policy{SendMaxAttempts: 1})
+	service := NewService(channels, nil, rates, monitorLogs, channelSvc, dispatcher, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := service.RefreshBalance(context.Background(), item); err == nil {
+		t.Fatal("initial refresh unexpectedly succeeded")
+	}
+	service.ScanAllBalances(context.Background())
+	service.ScanAllRates(context.Background())
+	if got := loginCalls.Load(); got != 1 {
+		t.Fatalf("login calls during backoff = %d, want 1", got)
+	}
+}
+
 func TestCalculateRechargeSuggestionUsesRecentAndDailyConsumption(t *testing.T) {
 	location := time.FixedZone("Asia/Shanghai", 8*60*60)
 	now := time.Date(2026, 7, 19, 12, 0, 0, 0, location)

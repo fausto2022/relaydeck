@@ -26,6 +26,13 @@ func TestSQLiteBackupsCreatesConsistentCopyAndRotates(t *testing.T) {
 	}
 
 	backups := NewSQLiteBackups(db, DBConfig{Driver: DBDriverSQLite, Path: databasePath}, 2)
+	if err := os.MkdirAll(backups.directory, 0o755); err != nil {
+		t.Fatalf("create backup directory: %v", err)
+	}
+	manualBackup := filepath.Join(backups.directory, "relaydeck-before-release.db")
+	if err := os.WriteFile(manualBackup, []byte("manual"), 0o600); err != nil {
+		t.Fatalf("create manual backup: %v", err)
+	}
 	current := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
 	backups.now = func() time.Time { return current }
 	first, err := backups.Backup()
@@ -56,7 +63,10 @@ func TestSQLiteBackupsCreatesConsistentCopyAndRotates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read backup directory: %v", err)
 	}
-	if len(entries) != 2 {
-		t.Fatalf("backup count = %d, want 2", len(entries))
+	if len(entries) != 3 {
+		t.Fatalf("backup count = %d, want 2 automatic and 1 manual", len(entries))
+	}
+	if _, err := os.Stat(manualBackup); err != nil {
+		t.Fatalf("manual backup was removed: %v", err)
 	}
 }
