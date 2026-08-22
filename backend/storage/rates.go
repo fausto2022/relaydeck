@@ -9,7 +9,8 @@ import (
 	"gorm.io/gorm"
 )
 
-const trendCacheTTL = 30 * time.Second
+// 趋势数据随五分钟采样任务更新；新快照写入时会主动清空缓存。
+const trendCacheTTL = 5 * time.Minute
 
 type Rates struct {
 	db                *gorm.DB
